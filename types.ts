@@ -22,6 +22,7 @@ export interface Project {
   value: number;
   deadline: string;
   type: 'business' | 'factory' | 'store';
+  blueprint_url?: string;
 }
 
 export interface Task {

@@ -140,6 +140,27 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
                         </div>
                     </div>
 
+                    {project.blueprint_url && (
+                        <div className="mt-6">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Arquivos do Projeto</label>
+                            <a
+                                href={project.blueprint_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-4 p-4 rounded-xl bg-primary/5 border border-primary/20 hover:bg-primary/10 transition-all group"
+                            >
+                                <div className="h-12 w-12 rounded-lg bg-primary/20 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                                    <span className="material-symbols-outlined text-2xl">description</span>
+                                </div>
+                                <div className="flex-1">
+                                    <div className="font-bold text-white text-sm uppercase tracking-wide">Planta / Memoriais</div>
+                                    <div className="text-xs text-primary font-medium mt-0.5">Clique para visualizar ou baixar</div>
+                                </div>
+                                <span className="material-symbols-outlined text-slate-500 group-hover:text-primary transition-colors">open_in_new</span>
+                            </a>
+                        </div>
+                    )}
+
                 </div>
 
                 {/* Actions Footer */}

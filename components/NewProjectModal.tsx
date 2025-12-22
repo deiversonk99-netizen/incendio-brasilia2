@@ -24,6 +24,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
         deadline: '',
         type: 'business',
     });
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -70,6 +71,27 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 });
             }
 
+            let blueprint_url = '';
+
+            if (selectedFile) {
+                const fileExt = selectedFile.name.split('.').pop();
+                const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+                const filePath = `${user.id}/${fileName}`;
+
+                const { error: uploadError, data: uploadData } = await supabase.storage
+                    .from('project-files')
+                    .upload(filePath, selectedFile);
+
+                if (uploadError) throw uploadError;
+
+                if (uploadData) {
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('project-files')
+                        .getPublicUrl(filePath);
+                    blueprint_url = publicUrl;
+                }
+            }
+
             const { error } = await supabase.from('projects').insert({
                 name: formData.name,
                 client: formData.client,
@@ -78,6 +100,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 type: formData.type,
                 status: 'ANALYSIS',
                 user_id: user.id,
+                blueprint_url: blueprint_url || null,
             });
 
             if (error) throw error;
@@ -85,6 +108,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
             onSuccess();
             onClose();
             setFormData({ name: '', client: '', value: '', deadline: '', type: 'business' });
+            setSelectedFile(null);
             setClientSearch('');
         } catch (error) {
             console.error('Error creating project:', error);
