@@ -156,7 +156,7 @@ const DashboardView: React.FC = () => {
             <div className="rounded-xl bg-surface-dark border border-white/5 p-6 lg:col-span-2 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-base font-semibold text-white">Valor de Projetos (YTD)</h3>
+                  <h3 className="text-base font-semibold text-white">Valor Global de Projetos (YTD)</h3>
                   <p className="text-sm text-slate-400">Total acumulado de projetos criados por mês</p>
                 </div>
               </div>
@@ -267,6 +267,7 @@ const DashboardView: React.FC = () => {
                           <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
                           <div className="flex justify-between items-center">
                             <div className="text-right w-full">
+                              <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
                               <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                               <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
                             </div>

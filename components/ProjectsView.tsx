@@ -107,6 +107,7 @@ const ProjectsView: React.FC = () => {
                             ))}
                           </div>
                           <div className="text-right">
+                            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
                             <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                             <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
                           </div>
