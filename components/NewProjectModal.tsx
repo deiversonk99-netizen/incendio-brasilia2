@@ -20,8 +20,6 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
     const [formData, setFormData] = useState({
         name: '',
         client: '',
-        value: '',
-        deadline: '',
         type: 'business',
     });
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -95,8 +93,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
             const { error } = await supabase.from('projects').insert({
                 name: formData.name,
                 client: formData.client,
-                value: parseFloat(formData.value) || 0,
-                deadline: formData.deadline,
+                value: 0,
+                deadline: null,
                 type: formData.type,
                 status: 'ANALYSIS',
                 user_id: user.id,
@@ -107,7 +105,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
 
             onSuccess();
             onClose();
-            setFormData({ name: '', client: '', value: '', deadline: '', type: 'business' });
+            setFormData({ name: '', client: '', type: 'business' });
             setSelectedFile(null);
             setClientSearch('');
         } catch (error) {
@@ -211,30 +209,6 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Valor (R$)</label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                required
-                                value={formData.value}
-                                onChange={e => setFormData({ ...formData, value: e.target.value })}
-                                className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                placeholder="0.00"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Prazo</label>
-                            <input
-                                type="date"
-                                required
-                                value={formData.deadline}
-                                onChange={e => setFormData({ ...formData, deadline: e.target.value })}
-                                className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                        </div>
-                    </div>
 
                     <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-3">
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">

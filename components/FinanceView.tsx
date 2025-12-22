@@ -189,7 +189,7 @@ const FinanceView: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-surface-dark border border-white/5 rounded-2xl p-8 shadow-2xl">
             <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-black text-white italic">Lucro Real vs. Previsto</h3>
+              <h3 className="text-xl font-black text-white italic">Lucro Real vs. Valor Global</h3>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-primary"></div>
@@ -197,7 +197,7 @@ const FinanceView: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500"></div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase">Previsto</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">Valor Global</span>
                 </div>
               </div>
             </div>

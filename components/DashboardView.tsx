@@ -132,7 +132,7 @@ const DashboardView: React.FC = () => {
             {[
               { label: 'Projetos Ativos', val: activeProjects.toString(), trend: 'Atualizado agora', icon: 'engineering', color: 'emerald' },
               { label: 'Cotações Pendentes', val: pendingQuotes.toString(), trend: 'Prioridade alta', icon: 'pending_actions', color: 'slate' },
-              { label: 'Valor em Pipeline', val: `R$ ${(totalValue / 1000).toFixed(1)}k`, trend: 'Total Acumulado', icon: 'payments', color: 'emerald' },
+              { label: 'Valor Global', val: `R$ ${(totalValue / 1000).toFixed(1)}k`, trend: 'Total Acumulado', icon: 'payments', color: 'emerald' },
               { label: 'Lucro Projetado', val: 'R$ --', trend: 'Requer dados fin.', icon: 'insights', color: 'orange' },
             ].map((kpi, idx) => (
               <div key={idx} className="relative overflow-hidden rounded-xl bg-surface-dark border border-white/5 p-6 hover:border-white/10 transition-colors group">
