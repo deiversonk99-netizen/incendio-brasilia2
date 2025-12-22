@@ -87,7 +87,16 @@ const EngineeringProposal: React.FC = () => {
       } else {
         await supabase.from('proposals').insert({ ...payload, project_id: selectedProjectId });
       }
-      alert('Proposta salva com sucesso!');
+
+      // Sync project value with the final calculated global price
+      const { final } = calculateValues();
+      await supabase
+        .from('projects')
+        .update({ value: final })
+        .eq('id', selectedProjectId);
+
+      alert('Proposta salva com sucesso! O Valor Global do projeto foi atualizado.');
+      fetchProjects(); // Refresh project list to reflect new value
     } catch (error) {
       console.error(error);
       alert('Erro ao salvar proposta.');

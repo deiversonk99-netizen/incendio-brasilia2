@@ -131,7 +131,7 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-background-dark p-4 rounded-lg border border-white/5">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">Valor do Projeto</label>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">Valor Global</label>
                             <div className="text-xl font-bold text-white">R$ {Number(project.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                         </div>
                         <div className="bg-background-dark p-4 rounded-lg border border-white/5">
