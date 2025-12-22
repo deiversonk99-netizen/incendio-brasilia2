@@ -236,6 +236,49 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                         </div>
                     </div>
 
+                    <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-3">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                            Planta ou Documento (Opcional)
+                        </label>
+                        <div className="relative group">
+                            <input
+                                type="file"
+                                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                                className="hidden"
+                                id="file-upload"
+                                accept=".pdf,image/*,.dwg"
+                            />
+                            <label
+                                htmlFor="file-upload"
+                                className={`flex items-center justify-center gap-3 w-full rounded-lg border border-dashed px-4 py-8 transition-all cursor-pointer ${selectedFile
+                                    ? 'bg-primary/10 border-primary text-primary'
+                                    : 'bg-background-dark border-white/20 text-slate-400 hover:border-white/40 hover:text-white'
+                                    }`}
+                            >
+                                <span className="material-symbols-outlined text-3xl">
+                                    {selectedFile ? 'check_circle' : 'upload_file'}
+                                </span>
+                                <div className="text-left">
+                                    <p className="text-sm font-bold uppercase tracking-tight">
+                                        {selectedFile ? 'Arquivo Selecionado' : 'Carregar Planta/Arquivo'}
+                                    </p>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        {selectedFile ? selectedFile.name : 'PDF, Imagens ou DWG'}
+                                    </p>
+                                </div>
+                            </label>
+                            {selectedFile && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedFile(null)}
+                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 shadow-xl"
+                                >
+                                    <span className="material-symbols-outlined text-sm">close</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
                     <div className="pt-4 flex gap-3">
                         <button
                             type="button"
