@@ -10,6 +10,7 @@ export enum AppView {
   ENGINEERING_PHASE_C = 'ENG_C',
   KITS = 'KITS',
   CATALOG = 'CATALOG',
+  SUPPLIERS = 'SUPPLIERS',
   SETTINGS = 'SETTINGS'
 }
 
@@ -55,6 +56,30 @@ export interface Product {
   category?: string;
   created_at?: string;
   user_id?: string;
+  supplier_id?: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_name?: string;
+  email?: string;
+  phone?: string;
+  tax_id?: string;
+  created_at?: string;
+}
+
+export interface SupplierPurchase {
+  id: string;
+  supplier_id: string;
+  product_id: string;
+  quantity: number;
+  unit_cost: number;
+  purchase_date: string;
+  notes?: string;
+  created_at?: string;
+  // Joins
+  products?: Product;
 }
 
 export interface Proposal {

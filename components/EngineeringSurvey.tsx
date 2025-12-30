@@ -19,6 +19,8 @@ interface Floor {
   width: number;
   length: number;
   height: number;
+  replication_factor?: number;
+  calculation_type?: string;
   items: Record<string, number>;
 }
 
@@ -41,6 +43,12 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
 
+  // New State
+  const [replicationFactor, setReplicationFactor] = useState(1);
+  const [isReplicationEnabled, setIsReplicationEnabled] = useState(false);
+  const [calculationType, setCalculationType] = useState('area');
+  const [enabledItems, setEnabledItems] = useState<Record<string, boolean>>({});
+
   const FLOOR_TYPES = [
     'Subsolo',
     'Garagem',
@@ -61,6 +69,8 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     { label: 'Extintor ABC', icon: 'fire_extinguisher' },
     { label: 'Caixa Hidrante', icon: 'water_drop' },
     { label: 'Bomba', icon: 'propane' },
+    { label: 'Recalque', icon: 'water_pump' }, // New Item
+    { label: 'Bicos de Sprinklers', icon: 'opacity' } // New Item
   ];
 
   // Fetch Kits
@@ -103,6 +113,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     setLoading(false);
   };
 
+
   const handleEditFloor = (floor: Floor) => {
     setEditingFloorId(floor.id);
     setFloorName(floor.name);
@@ -120,15 +131,36 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     setLength(floor.length);
     setHeight(floor.height || 0);
 
+    // New Fields
+    setReplicationFactor(floor.replication_factor || 1);
+    setCalculationType((floor.calculation_type as any) || 'area');
+
     // Parse Items
     const items = floor.items as any;
     if (items.central_items) {
       setItemCounts({ ...itemCounts, ...items.central_items });
+
+      // Determine enabled based on value > 0 or existing logic
+      const enabled: Record<string, boolean> = {};
+      CENTRAL_ITEMS.forEach(item => {
+        enabled[item.label] = (items.central_items[item.label] > 0);
+      });
+      // Merge with manual check logic if needed, but for now assuming if count > 0 it is enabled is safe default
+      // However user specifically asked for "check", so let's allow 0 with check.
+      // Since we don't store "checked" state separately in JSON yet, we might lose "checked but 0" state.
+      // Use > -1 as a hack? No.
+      // Let's infer for now: count > 0 -> checked.
+      setEnabledItems(enabled);
+
     } else {
-      // Legacy support or flat structure
       const initialCounts: Record<string, number> = {};
-      CENTRAL_ITEMS.forEach(item => initialCounts[item.label] = items[item.label] || 0);
+      const enabled: Record<string, boolean> = {};
+      CENTRAL_ITEMS.forEach(item => {
+        initialCounts[item.label] = items[item.label] || 0;
+        enabled[item.label] = (items[item.label] > 0);
+      });
       setItemCounts(initialCounts);
+      setEnabledItems(enabled);
     }
 
     if (items.infra_kits) {
@@ -149,9 +181,18 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     setWidth(0);
     setLength(0);
     setHeight(0);
+    setReplicationFactor(1);
+    setIsReplicationEnabled(false);
+    setCalculationType('area');
+
     const initialCounts: Record<string, number> = {};
-    CENTRAL_ITEMS.forEach(item => initialCounts[item.label] = 0);
+    const enabled: Record<string, boolean> = {};
+    CENTRAL_ITEMS.forEach(item => {
+      initialCounts[item.label] = 0;
+      enabled[item.label] = false;
+    });
     setItemCounts(initialCounts);
+    setEnabledItems(enabled);
     setFloorKits([]);
   };
 
@@ -173,6 +214,17 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     setFloorKits(floorKits.filter((_, i) => i !== index));
   };
 
+  const toggleItem = (label: string) => {
+    setEnabledItems(prev => {
+      const newState = { ...prev, [label]: !prev[label] };
+      // If unchecked, maybe reset count to 0? Or keep it?
+      // User asked: "adicionar o check... aparecendo os itens que estivem com ok".
+      // Implicitly if unchecked, should correspond to 0 or "not included".
+      // Let's NOT reset count instantly to allow re-checking without re-typing.
+      return newState;
+    });
+  };
+
   const handleSaveFloor = async () => {
     if (!selectedProjectId) {
       alert('Selecione um projeto primeiro.');
@@ -192,9 +244,12 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     setIsSubmitting(true);
 
     // Save structured data
+    // Filter out unchecked items? Or save all and filter in composition?
+    // Saving all is safer.
     const structuredItems = {
       central_items: itemCounts,
-      infra_kits: floorKits
+      infra_kits: floorKits,
+      item_checks: enabledItems // Save checked state explicitly
     };
 
     const floorData = {
@@ -205,6 +260,8 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
       width: width,
       length: length,
       height: height,
+      replication_factor: isReplicationEnabled ? replicationFactor : 1,
+      calculation_type: calculationType,
       items: structuredItems
     };
 
@@ -230,7 +287,13 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     }
   };
 
-  const totalArea = floors.reduce((acc, floor) => acc + (Number(floor.width) * Number(floor.length)), 0);
+  const totalArea = floors.reduce((acc, floor) => {
+    const floorArea = (Number(floor.width) * Number(floor.length));
+    // Multiply by replication factor for total project area?
+    // Usually project area includes all floors.
+    return acc + (floorArea * (floor.replication_factor || 1));
+  }, 0);
+
   const currentArea = width * length;
 
   return (
@@ -307,7 +370,14 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                         <span className="material-symbols-outlined text-sm text-primary">edit</span>
                       </div>
                       <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-bold text-white text-sm">{floor.name}</h4>
+                        <div className="flex flex-col">
+                          <h4 className="font-bold text-white text-sm">{floor.name}</h4>
+                          {floor.replication_factor && floor.replication_factor > 1 && (
+                            <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded w-fit mt-1">
+                              {floor.replication_factor}x Repetições
+                            </span>
+                          )}
+                        </div>
                         <span className="text-xs text-slate-500">{floor.prancha}</span>
                       </div>
                       <div className="text-xs text-slate-400 mb-2">{floor.type}</div>
@@ -368,11 +438,65 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                           />
                         </div>
                       </div>
+
+                      {/* Replication Logic */}
+                      <div className="bg-indigo-500/5 p-4 rounded-lg border border-indigo-500/20">
+                        <div className="flex items-center gap-2 mb-2">
+                          <input
+                            type="checkbox"
+                            id="replication"
+                            className="w-4 h-4 rounded"
+                            checked={isReplicationEnabled}
+                            onChange={(e) => {
+                              setIsReplicationEnabled(e.target.checked);
+                              if (!e.target.checked) setReplicationFactor(1);
+                            }}
+                          />
+                          <label htmlFor="replication" className="text-sm font-bold text-white cursor-pointer select-none">Repetir Andares?</label>
+                        </div>
+                        {isReplicationEnabled && (
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">Quantidade de Andares Iguais</label>
+                            <input
+                              type="number"
+                              min="1"
+                              className="w-full bg-background-dark border border-card-dark rounded px-2 py-2 text-white focus:border-primary outline-none"
+                              value={replicationFactor}
+                              onChange={(e) => setReplicationFactor(Number(e.target.value))}
+                            />
+                          </div>
+                        )}
+                      </div>
+
                     </div>
+
+
                     <div className="bg-background-dark/30 p-4 rounded-lg border border-card-dark mt-4">
                       <div className="flex justify-between items-center mb-3">
                         <label className="text-sm font-bold text-white">Dimensões (m)</label>
                         <span className="text-xs text-primary font-bold">{currentArea.toFixed(2)} m²</span>
+                      </div>
+                      <div className="mb-3">
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="calcType"
+                              checked={calculationType === 'area'}
+                              onChange={() => setCalculationType('area')}
+                            />
+                            <span className="text-xs text-slate-300">Superfície</span>
+                          </label>
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="calcType"
+                              checked={calculationType === 'complete'}
+                              onChange={() => setCalculationType('complete')}
+                            />
+                            <span className="text-xs text-slate-300">Completa</span>
+                          </label>
+                        </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2 mb-3">
                         <div className="flex flex-col gap-1">
@@ -410,18 +534,40 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                   </div>
 
                   <div className="lg:col-span-9 flex flex-col gap-8">
-                    {/* Central Items */}
+                    {/* Quotation Items */}
                     <div>
-                      <h4 className="text-white text-sm font-bold uppercase tracking-wider mb-4 border-b border-card-dark pb-2">Itens da Central</h4>
+                      <h4 className="text-white text-sm font-bold uppercase tracking-wider mb-4 border-b border-card-dark pb-2">Itens da Cotação</h4>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {CENTRAL_ITEMS.map((item, i) => (
-                          <div key={i} className="bg-background-dark/50 border border-card-dark rounded-lg p-3 hover:border-primary/50 transition-colors group focus-within:border-primary">
-                            <span className="material-symbols-outlined text-slate-500 group-focus-within:text-primary transition-colors text-[24px]">{item.icon}</span>
-                            <label className="block text-[10px] text-slate-400 mt-2 truncate">{item.label}</label>
+                          <div
+                            key={i}
+                            className={`bg-background-dark/50 border rounded-lg p-3 transition-colors group focus-within:border-primary relative
+                                ${enabledItems[item.label] ? 'border-primary/50 bg-primary/5' : 'border-card-dark opacity-75'}
+                             `}
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <span className={`material-symbols-outlined transition-colors text-[24px] ${enabledItems[item.label] ? 'text-primary' : 'text-slate-600'}`}>
+                                {item.icon}
+                              </span>
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-slate-600"
+                                checked={enabledItems[item.label] || false}
+                                onChange={() => toggleItem(item.label)}
+                              />
+                            </div>
+
+                            <label className={`block text-[10px] mt-1 truncate ${enabledItems[item.label] ? 'text-white' : 'text-slate-500'}`}>
+                              {item.label}
+                            </label>
+
                             <input
                               type="number"
                               min="0"
-                              className="w-full bg-transparent border-b border-card-dark py-1 text-white font-bold text-xl text-right outline-none focus:border-primary transition-colors"
+                              disabled={!enabledItems[item.label]}
+                              className={`w-full bg-transparent border-b py-1 font-bold text-xl text-right outline-none transition-colors 
+                                ${enabledItems[item.label] ? 'text-white border-card-dark focus:border-primary' : 'text-slate-600 border-transparent cursor-not-allowed'}
+                              `}
                               value={itemCounts[item.label] || 0}
                               onChange={(e) => setItemCounts(prev => ({ ...prev, [item.label]: Number(e.target.value) }))}
                             />

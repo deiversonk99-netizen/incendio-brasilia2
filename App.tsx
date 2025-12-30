@@ -13,6 +13,7 @@ import KitsConfigurationView from './components/KitsConfigurationView';
 import LoginView from './components/LoginView';
 import ProductsView from './components/ProductsView';
 import ClientsView from './components/ClientsView';
+import SuppliersView from './components/SuppliersView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 const AppContent: React.FC = () => {
@@ -50,6 +51,8 @@ const AppContent: React.FC = () => {
         return <KitsConfigurationView />;
       case AppView.CATALOG:
         return <ProductsView />;
+      case AppView.SUPPLIERS:
+        return <SuppliersView />;
       default:
         return <DashboardView />;
     }

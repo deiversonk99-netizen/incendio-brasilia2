@@ -17,8 +17,11 @@ const ProductsView: React.FC = () => {
         name: '',
         category: 'Material',
         unit: 'un',
-        price: 0
+        price: 0,
+        supplier_id: ''
     });
+
+    const [suppliers, setSuppliers] = useState<{ id: string, name: string }[]>([]);
 
     useEffect(() => {
         fetchProducts();
@@ -36,6 +39,11 @@ const ProductsView: React.FC = () => {
         } else if (data) {
             setProducts(data);
         }
+
+        // Fetch suppliers for dropdown
+        const { data: suppliersData } = await supabase.from('suppliers').select('id, name').order('name');
+        if (suppliersData) setSuppliers(suppliersData);
+
         setLoading(false);
     };
 
@@ -46,7 +54,8 @@ const ProductsView: React.FC = () => {
                 name: product.name,
                 category: product.category,
                 unit: product.unit,
-                price: product.price
+                price: product.price,
+                supplier_id: product.supplier_id || ''
             });
         } else {
             setEditingProduct(null);
@@ -54,7 +63,8 @@ const ProductsView: React.FC = () => {
                 name: '',
                 category: 'Material',
                 unit: 'un',
-                price: 0
+                price: 0,
+                supplier_id: ''
             });
         }
         setIsModalOpen(true);
@@ -809,6 +819,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                     <tr>
                                         <th className="px-6 py-4">Nome do Produto</th>
                                         <th className="px-6 py-4">Categoria</th>
+                                        <th className="px-6 py-4">Fornecedor</th>
                                         <th className="px-6 py-4 text-center">Unidade</th>
                                         <th className="px-6 py-4 text-right">Preço Unit.</th>
                                         <th className="px-6 py-4 text-right">Ações</th>
@@ -839,6 +850,9 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                     <span className="bg-white/5 border border-white/10 px-2 py-1 rounded text-xs">
                                                         {product.category || 'Material'}
                                                     </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-400 text-sm">
+                                                    {suppliers.find(s => s.id === product.supplier_id)?.name || '-'}
                                                 </td>
                                                 <td className="px-6 py-4 text-center text-slate-400">{product.unit || 'un'}</td>
                                                 <td className="px-6 py-4 text-right font-medium text-emerald-400">
@@ -898,6 +912,18 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                     value={formData.name}
                                     onChange={e => setFormData({ ...formData, name: e.target.value })}
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-400 mb-1">Fornecedor</label>
+                                <select
+                                    className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none"
+                                    value={formData.supplier_id}
+                                    onChange={e => setFormData({ ...formData, supplier_id: e.target.value })}
+                                >
+                                    <option value="">Selecione...</option>
+                                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">

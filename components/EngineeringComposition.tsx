@@ -31,6 +31,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState(0);
+  const [replicationSummary, setReplicationSummary] = useState<{ name: string, factor: number, type: string }[]>([]);
 
   // Load catalog for the add modal
   useEffect(() => {
@@ -58,6 +59,25 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     if (data) setProjects(data);
   };
 
+  useEffect(() => {
+    if (selectedProjectId) {
+      const fetchReplicationInfo = async () => {
+        const { data: floors } = await supabase.from('floors').select('name, replication_factor, calculation_type').eq('project_id', selectedProjectId);
+        if (floors) {
+          const summary = floors
+            .filter((f: any) => f.replication_factor > 1)
+            .map((f: any) => ({
+              name: f.name,
+              factor: f.replication_factor,
+              type: f.calculation_type === 'complete' ? 'Completa' : 'Superfície'
+            }));
+          setReplicationSummary(summary);
+        }
+      };
+      fetchReplicationInfo();
+    }
+  }, [selectedProjectId]);
+
   const loadBudgetItems = async () => {
     setLoading(true);
     // Try to load existing items first
@@ -81,9 +101,10 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     console.log('Calculating from Phase A...');
 
     // 1. Fetch all floors
+    // 1. Fetch all floors
     const { data: floors } = await supabase
       .from('floors')
-      .select('items')
+      .select('items, replication_factor, calculation_type')
       .eq('project_id', selectedProjectId);
 
     if (!floors) {
@@ -126,15 +147,23 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
     floors.forEach(floor => {
       const items = floor.items as any;
+      const replication = floor.replication_factor || 1;
+      const checks = items.item_checks || {};
 
       const central = items.central_items || {};
       Object.entries(central).forEach(([name, qty]) => {
-        aggregation[name] = (aggregation[name] || 0) + Number(qty);
+        // Skip if explicitly unchecked
+        if (checks[name] === false) return;
+
+        aggregation[name] = (aggregation[name] || 0) + (Number(qty) * replication);
       });
 
       Object.entries(items).forEach(([key, val]) => {
-        if (key !== 'central_items' && key !== 'infra_kits' && typeof val === 'number') {
-          aggregation[key] = (aggregation[key] || 0) + Number(val);
+        if (key !== 'central_items' && key !== 'infra_kits' && key !== 'item_checks' && typeof val === 'number') {
+          // Legacy or direct items
+          // Assuming these might also need replication if they exist? 
+          // For safety, apply replication to everything that looks like a quantity
+          aggregation[key] = (aggregation[key] || 0) + (Number(val) * replication);
         }
       });
 
@@ -143,8 +172,11 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         const kitDef = kitMap[kitUsage.kit_id];
         if (kitDef) {
           const meters = Number(kitUsage.meters);
+          // Apply replication to meters (more floors = more pipes)
+          const totalMeters = meters * replication;
+
           kitDef.components.forEach(comp => {
-            const baseQty = meters * Number(comp.conversion_factor);
+            const baseQty = totalMeters * Number(comp.conversion_factor);
             const withLoss = baseQty * (1 + (Number(kitDef.loss) / 100));
             // Round up to avoid fractional units for things that are integers
             const roundedQty = Math.ceil(withLoss);
@@ -154,6 +186,17 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         }
       });
     });
+
+
+    // Set Replication Summary for display
+    const summary = floors
+      .filter((f: any) => f.replication_factor > 1)
+      .map((f: any) => ({
+        name: f.name,
+        factor: f.replication_factor,
+        type: f.calculation_type === 'complete' ? 'Completa' : 'Superfície'
+      }));
+    setReplicationSummary(summary);
 
     // 4. Prepare inserts
     const newItems = Object.entries(aggregation).map(([name, qty]) => {
@@ -308,6 +351,23 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                   <div className="text-3xl font-black text-white">R$ {calculateTotal().toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
+
+              {/* Replication Info Alert */}
+              {replicationSummary.length > 0 && (
+                <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-indigo-400 font-bold text-sm uppercase tracking-wider">
+                    <span className="material-symbols-outlined text-[20px]">content_copy</span>
+                    Fatores de Replicação Considerados
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {replicationSummary.map((item, idx) => (
+                      <span key={idx} className="bg-indigo-500/20 text-indigo-300 text-xs px-2 py-1 rounded border border-indigo-500/30">
+                        {item.name}: <strong>{item.factor}x</strong> <span className="text-indigo-400/70">({item.type})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Items Table */}
               <div className="bg-surface-dark rounded-xl border border-white/5 overflow-hidden shadow-sm">
