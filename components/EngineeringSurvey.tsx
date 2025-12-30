@@ -32,6 +32,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const [editingFloorId, setEditingFloorId] = useState<string | null>(null);
   const [floorName, setFloorName] = useState('');
   const [floorType, setFloorType] = useState('Garagem');
+  const [customFloorType, setCustomFloorType] = useState('');
   const [prancha, setPrancha] = useState('');
 
   const [width, setWidth] = useState(0);
@@ -39,6 +40,17 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const [height, setHeight] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
+
+  const FLOOR_TYPES = [
+    'Subsolo',
+    'Garagem',
+    'Térreo',
+    'Pilotis',
+    'Pavimento Tipo',
+    'Cobertura',
+    'Casa de Máquinas',
+    'Outros'
+  ];
 
   const CENTRAL_ITEMS = [
     { label: 'Placas Sinaliz.', icon: 'exit_to_app' },
@@ -94,7 +106,15 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const handleEditFloor = (floor: Floor) => {
     setEditingFloorId(floor.id);
     setFloorName(floor.name);
-    setFloorType(floor.type);
+
+    if (FLOOR_TYPES.includes(floor.type) && floor.type !== 'Outros') {
+      setFloorType(floor.type);
+      setCustomFloorType('');
+    } else {
+      setFloorType('Outros');
+      setCustomFloorType(floor.type);
+    }
+
     setPrancha(floor.prancha);
     setWidth(floor.width);
     setLength(floor.length);
@@ -123,6 +143,8 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const resetForm = () => {
     setEditingFloorId(null);
     setFloorName('');
+    setFloorType('Garagem');
+    setCustomFloorType('');
     setPrancha('');
     setWidth(0);
     setLength(0);
@@ -161,6 +183,12 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
       return;
     }
 
+    const finalType = floorType === 'Outros' ? customFloorType : floorType;
+    if (!finalType) {
+      alert('Selecione ou digite o tipo do pavimento.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     // Save structured data
@@ -172,7 +200,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     const floorData = {
       project_id: selectedProjectId,
       name: floorName,
-      type: floorType,
+      type: finalType,
       prancha: prancha,
       width: width,
       length: length,
@@ -317,15 +345,19 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                             value={floorType}
                             onChange={(e) => setFloorType(e.target.value)}
                           >
-                            <option>Subsolo</option>
-                            <option>Garagem</option>
-                            <option>Térreo</option>
-                            <option>Pilotis</option>
-                            <option>Pavimento Tipo</option>
-                            <option>Cobertura</option>
-                            <option>Casa de Máquinas</option>
-                            <option>Outros</option>
+                            {FLOOR_TYPES.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
                           </select>
+                          {floorType === 'Outros' && (
+                            <input
+                              className="w-full mt-2 bg-background-dark border border-card-dark rounded-lg px-3 py-2.5 text-white focus:border-primary outline-none transition-colors"
+                              placeholder="Digite o tipo..."
+                              value={customFloorType}
+                              onChange={(e) => setCustomFloorType(e.target.value)}
+                              autoFocus
+                            />
+                          )}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-400 mb-1.5">Nº Prancha</label>
