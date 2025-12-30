@@ -18,6 +18,7 @@ interface Floor {
   prancha: string;
   width: number;
   length: number;
+  height: number;
   items: Record<string, number>;
 }
 
@@ -32,8 +33,10 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const [floorName, setFloorName] = useState('');
   const [floorType, setFloorType] = useState('Garagem');
   const [prancha, setPrancha] = useState('');
+
   const [width, setWidth] = useState(0);
   const [length, setLength] = useState(0);
+  const [height, setHeight] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
 
@@ -95,6 +98,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     setPrancha(floor.prancha);
     setWidth(floor.width);
     setLength(floor.length);
+    setHeight(floor.height || 0);
 
     // Parse Items
     const items = floor.items as any;
@@ -122,6 +126,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     setPrancha('');
     setWidth(0);
     setLength(0);
+    setHeight(0);
     const initialCounts: Record<string, number> = {};
     CENTRAL_ITEMS.forEach(item => initialCounts[item.label] = 0);
     setItemCounts(initialCounts);
@@ -171,6 +176,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
       prancha: prancha,
       width: width,
       length: length,
+      height: height,
       items: structuredItems
     };
 
@@ -311,11 +317,14 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                             value={floorType}
                             onChange={(e) => setFloorType(e.target.value)}
                           >
+                            <option>Subsolo</option>
                             <option>Garagem</option>
+                            <option>Térreo</option>
+                            <option>Pilotis</option>
                             <option>Pavimento Tipo</option>
                             <option>Cobertura</option>
-                            <option>Térreo</option>
-                            <option>Subsolo</option>
+                            <option>Casa de Máquinas</option>
+                            <option>Outros</option>
                           </select>
                         </div>
                         <div>
@@ -333,21 +342,37 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                         <label className="text-sm font-bold text-white">Dimensões (m)</label>
                         <span className="text-xs text-primary font-bold">{currentArea.toFixed(2)} m²</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <input
-                          type="number"
-                          className="w-full bg-background-dark border border-card-dark rounded px-3 py-2 text-white focus:border-primary outline-none text-center"
-                          value={width || ''}
-                          onChange={(e) => setWidth(parseFloat(e.target.value))}
-                          placeholder="Largura"
-                        />
-                        <input
-                          type="number"
-                          className="w-full bg-background-dark border border-card-dark rounded px-3 py-2 text-white focus:border-primary outline-none text-center"
-                          value={length || ''}
-                          onChange={(e) => setLength(parseFloat(e.target.value))}
-                          placeholder="Comprimento"
-                        />
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-slate-500 uppercase">Largura</label>
+                          <input
+                            type="number"
+                            className="w-full bg-background-dark border border-card-dark rounded px-2 py-2 text-white focus:border-primary outline-none text-center text-sm"
+                            value={width || ''}
+                            onChange={(e) => setWidth(parseFloat(e.target.value))}
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-slate-500 uppercase">Comp.</label>
+                          <input
+                            type="number"
+                            className="w-full bg-background-dark border border-card-dark rounded px-2 py-2 text-white focus:border-primary outline-none text-center text-sm"
+                            value={length || ''}
+                            onChange={(e) => setLength(parseFloat(e.target.value))}
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-slate-500 uppercase">Altura</label>
+                          <input
+                            type="number"
+                            className="w-full bg-background-dark border border-card-dark rounded px-2 py-2 text-white focus:border-primary outline-none text-center text-sm"
+                            value={height || ''}
+                            onChange={(e) => setHeight(parseFloat(e.target.value))}
+                            placeholder="0"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
