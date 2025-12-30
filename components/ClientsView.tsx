@@ -9,6 +9,7 @@ interface ClientEntry {
     name: string;
     email?: string;
     phone?: string;
+    client_type?: string;
 }
 
 interface ClientStats {
@@ -190,12 +191,20 @@ const ClientsView: React.FC = () => {
                                 <h3 className="text-lg font-black text-white mb-1 group-hover:text-primary transition-colors truncate italic pr-20">
                                     {client.clientName}
                                 </h3>
-                                {client.details?.email && (
-                                    <p className="text-[10px] text-slate-500 font-bold flex items-center gap-1 mb-4">
-                                        <span className="material-symbols-outlined text-[12px]">mail</span>
-                                        {client.details.email}
-                                    </p>
-                                )}
+
+                                <div className="flex items-center gap-2 mb-4 flex-wrap">
+                                    {client.details?.client_type && (
+                                        <span className="text-[9px] font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/20">
+                                            {client.details.client_type}
+                                        </span>
+                                    )}
+                                    {client.details?.email && (
+                                        <p className="text-[10px] text-slate-500 font-bold flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[12px]">mail</span>
+                                            {client.details.email}
+                                        </p>
+                                    )}
+                                </div>
 
                                 <div className="space-y-4 flex-1">
                                     <div className="grid grid-cols-2 gap-3">

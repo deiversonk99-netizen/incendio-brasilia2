@@ -8,6 +8,7 @@ interface Client {
     email?: string;
     phone?: string;
     notes?: string;
+    client_type?: string;
 }
 
 interface NewClientModalProps {
@@ -24,7 +25,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
         name: '',
         email: '',
         phone: '',
-        notes: ''
+        notes: '',
+        client_type: ''
     });
 
     React.useEffect(() => {
@@ -33,10 +35,11 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                 name: client.name || '',
                 email: client.email || '',
                 phone: client.phone || '',
-                notes: client.notes || ''
+                notes: client.notes || '',
+                client_type: client.client_type || ''
             });
         } else {
-            setFormData({ name: '', email: '', phone: '', notes: '' });
+            setFormData({ name: '', email: '', phone: '', notes: '', client_type: 'Condomínio' }); // Default to Condomínio? Or empty.
         }
     }, [client, isOpen]);
 
@@ -66,7 +69,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
 
             onSuccess();
             onClose();
-            setFormData({ name: '', email: '', phone: '', notes: '' });
+            setFormData({ name: '', email: '', phone: '', notes: '', client_type: '' });
         } catch (error: any) {
             console.error('Error saving client:', error);
             alert('Erro ao salvar cliente: ' + error.message);
@@ -98,6 +101,24 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                             className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none transition-all"
                             placeholder="Ex: Construtora Alfa"
                         />
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1.5 tracking-widest">Tipo de Cliente</label>
+                        <select
+                            value={formData.client_type}
+                            onChange={e => setFormData({ ...formData, client_type: e.target.value })}
+                            className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none transition-all"
+                        >
+                            <option value="">Selecione...</option>
+                            <option value="Condomínio">Condomínio</option>
+                            <option value="Comercial">Comercial</option>
+                            <option value="Residencial">Residencial</option>
+                            <option value="Industrial">Industrial</option>
+                            <option value="Construtora">Construtora</option>
+                            <option value="Governo">Governo</option>
+                            <option value="Outros">Outros</option>
+                        </select>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
