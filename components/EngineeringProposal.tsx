@@ -6,6 +6,18 @@ import { useAuth } from '../contexts/AuthContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// Add PaymentMethod interface
+interface PaymentMethod {
+  id: string;
+  label: string;
+}
+
+// Add ExecutionSchedule interface
+interface ExecutionSchedule {
+  id: string;
+  label: string;
+}
+
 const EngineeringProposal: React.FC = () => {
   const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -13,6 +25,8 @@ const EngineeringProposal: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [budgetItems, setBudgetItems] = useState<any[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [executionSchedules, setExecutionSchedules] = useState<ExecutionSchedule[]>([]);
 
   // Proposal State
   const [proposal, setProposal] = useState<Partial<Proposal>>({
@@ -20,14 +34,16 @@ const EngineeringProposal: React.FC = () => {
     profit_percent: 15,
     discount_type: 'FIXED',
     discount_value: 0,
-    payment_conditions: '50% Sinal / 50% Finalização',
-    execution_schedule: '15 dias úteis',
+    payment_conditions: '',
+    execution_schedule: '', // Default empty
     validity_days: 10,
     cost_material_base: 0
   });
 
   useEffect(() => {
     fetchProjects();
+    fetchPaymentMethods();
+    fetchExecutionSchedules();
   }, []);
 
   useEffect(() => {
@@ -39,6 +55,26 @@ const EngineeringProposal: React.FC = () => {
   const fetchProjects = async () => {
     const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
     if (data) setProjects(data);
+  };
+
+  const fetchPaymentMethods = async () => {
+    const { data } = await supabase
+      .from('payment_methods')
+      .select('*')
+      .eq('active', true)
+      .order('label', { ascending: true });
+
+    if (data) setPaymentMethods(data);
+  };
+
+  const fetchExecutionSchedules = async () => {
+    const { data } = await supabase
+      .from('execution_schedules')
+      .select('*')
+      .eq('active', true)
+      .order('label');
+
+    if (data) setExecutionSchedules(data);
   };
 
   const loadProposalData = async (projectId: string) => {
@@ -379,20 +415,30 @@ const EngineeringProposal: React.FC = () => {
 
                       <div>
                         <label className="text-slate-400 text-sm font-medium block mb-2">Condições de Pagamento</label>
-                        <input
+                        <select
                           className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
                           value={proposal.payment_conditions}
                           onChange={e => setProposal({ ...proposal, payment_conditions: e.target.value })}
-                        />
+                        >
+                          <option value="">Selecione...</option>
+                          {paymentMethods.map(method => (
+                            <option key={method.id} value={method.label}>{method.label}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="grid grid-cols-2 gap-6">
                         <div>
                           <label className="text-slate-400 text-sm font-medium block mb-2">Cronograma Estimado</label>
-                          <input
+                          <select
                             className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
                             value={proposal.execution_schedule}
                             onChange={e => setProposal({ ...proposal, execution_schedule: e.target.value })}
-                          />
+                          >
+                            <option value="">Selecione...</option>
+                            {executionSchedules.map(schedule => (
+                              <option key={schedule.id} value={schedule.label}>{schedule.label}</option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <label className="text-slate-400 text-sm font-medium block mb-2">Validade (Dias)</label>
