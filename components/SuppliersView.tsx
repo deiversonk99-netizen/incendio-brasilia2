@@ -18,21 +18,37 @@ const SuppliersView: React.FC = () => {
     const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
     const [supplierForm, setSupplierForm] = useState<Partial<Supplier>>({ name: '', contact_name: '', email: '', phone: '', tax_id: '' });
 
-    // Purchase Entry State
-    const [entryForm, setEntryForm] = useState({
+    // Bulk Grid Entry State
+    const [batchHeader, setBatchHeader] = useState({
         supplier_id: '',
-        product_id: '',
-        quantity: 0,
-        unit_cost: 0,
-        notes: '',
-        purchase_date: new Date().toISOString().split('T')[0]
+        purchase_date: new Date().toISOString().split('T')[0],
+        notes: ''
     });
+
+    // Map: productId -> { quantity, unit_cost, checked }
+    const [entryGrid, setEntryGrid] = useState<Record<string, { quantity: number, unit_cost: number, checked: boolean }>>({});
+
+    // Quick Add Product State
+    const [isAddProductOpen, setIsAddProductOpen] = useState(false);
+    const [quickProduct, setQuickProduct] = useState({ name: '', unit: 'un', price: 0 });
+    const [productFilter, setProductFilter] = useState('');
+
+    // Wizard Step State
+    const [purchaseStep, setPurchaseStep] = useState<'context' | 'items'>('context');
 
     useEffect(() => {
         fetchSuppliers();
         fetchProducts();
+    }, []);
+
+    useEffect(() => {
         if (activeTab === 'report') fetchPurchases();
     }, [activeTab]);
+
+    const handleNextStep = () => {
+        if (!batchHeader.supplier_id) return alert('Selecione o fornecedor para continuar.');
+        setPurchaseStep('items');
+    };
 
     const fetchSuppliers = async () => {
         setLoading(true);
@@ -86,28 +102,84 @@ const SuppliersView: React.FC = () => {
         fetchSuppliers();
     };
 
-    // --- Purchase Entry ---
-    const handleSaveEntry = async () => {
-        if (!entryForm.supplier_id || !entryForm.product_id || entryForm.quantity <= 0) {
-            return alert('Preencha os campos obrigatórios corretamente.');
-        }
+    // --- Bulk Entry Logic ---
+    const handleGridChange = (productId: string, field: 'quantity' | 'unit_cost', value: number) => {
+        setEntryGrid(prev => {
+            const current = prev[productId] || { quantity: 0, unit_cost: 0, checked: false };
+            const newData = { ...current, [field]: value };
 
-        const { error } = await supabase.from('supplier_purchases').insert({
-            supplier_id: entryForm.supplier_id,
-            product_id: entryForm.product_id,
-            quantity: entryForm.quantity,
-            unit_cost: entryForm.unit_cost,
-            notes: entryForm.notes,
-            purchase_date: entryForm.purchase_date
+            // Auto-check if quantity > 0
+            if (field === 'quantity' && value > 0) newData.checked = true;
+
+            return { ...prev, [productId]: newData };
         });
+    };
+
+    const toggleProductCheck = (productId: string) => {
+        setEntryGrid(prev => {
+            const current = prev[productId] || { quantity: 0, unit_cost: products.find(p => p.id === productId)?.price || 0, checked: false };
+            return { ...prev, [productId]: { ...current, checked: !current.checked } };
+        });
+    };
+
+    const handleCreateProduct = async () => {
+        if (!quickProduct.name) return alert('Nome do produto é obrigatório.');
+
+        setLoading(true);
+        const { data, error } = await supabase.from('product_catalog').insert({
+            name: quickProduct.name,
+            unit: quickProduct.unit,
+            price: quickProduct.price,
+            supplier_id: batchHeader.supplier_id || null // Link to current supplier if selected
+        }).select();
 
         if (error) {
-            alert('Erro ao lançar compra: ' + error.message);
-        } else {
-            alert('Compra registrada com sucesso!');
-            setEntryForm({ ...entryForm, quantity: 0, unit_cost: 0, notes: '' });
-            setActiveTab('report'); // Determine flow
+            alert('Erro ao criar produto: ' + error.message);
+        } else if (data) {
+            await fetchProducts(); // Refresh list
+            setIsAddProductOpen(false);
+            setQuickProduct({ name: '', unit: 'un', price: 0 });
+
+            // Optionally auto-select the new product in the grid
+            const newId = data[0].id;
+            setEntryGrid(prev => ({
+                ...prev,
+                [newId]: { quantity: 0, unit_cost: quickProduct.price, checked: true }
+            }));
         }
+        setLoading(false);
+    };
+
+    const handleSaveBulk = async () => {
+        if (!batchHeader.supplier_id) return alert('Selecione o fornecedor.');
+
+        const itemsToSave = Object.entries(entryGrid)
+            .filter(([_, data]: [string, any]) => data.checked && data.quantity > 0)
+            .map(([productId, data]: [string, any]) => ({
+                supplier_id: batchHeader.supplier_id,
+                purchase_date: batchHeader.purchase_date,
+                notes: batchHeader.notes,
+                product_id: productId,
+                quantity: data.quantity,
+                unit_cost: data.unit_cost
+            }));
+
+        if (itemsToSave.length === 0) return alert('Nenhum item selecionado com quantidade válida.');
+
+        if (!confirm(`Confirma o lançamento de ${itemsToSave.length} itens?`)) return;
+
+        setLoading(true);
+        const { error } = await supabase.from('supplier_purchases').insert(itemsToSave);
+
+        if (error) {
+            alert('Erro ao salvar compras: ' + error.message);
+        } else {
+            alert('Compras registradas com sucesso!');
+            setEntryGrid({});
+            setBatchHeader({ ...batchHeader, notes: '' });
+            setActiveTab('report');
+        }
+        setLoading(false);
     };
 
     // --- Render Helpers ---
@@ -147,7 +219,7 @@ const SuppliersView: React.FC = () => {
                 </button>
             </div>
 
-            <main className="flex-1 overflow-y-auto p-8">
+            <main className={`flex-1 ${activeTab === 'entry' && purchaseStep === 'items' ? 'overflow-hidden flex flex-col p-4' : 'overflow-y-auto p-8'}`}>
                 {activeTab === 'list' && (
                     <div className="max-w-7xl mx-auto">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -174,87 +246,231 @@ const SuppliersView: React.FC = () => {
                     </div>
                 )}
 
-                {activeTab === 'entry' && (
-                    <div className="max-w-2xl mx-auto bg-surface-dark border border-white/5 rounded-xl p-8">
-                        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                            <span className="material-symbols-outlined text-emerald-500">shopping_cart_checkout</span>
-                            Lançamento Rápido
-                        </h3>
+                {activeTab === 'entry' && purchaseStep === 'context' && (
+                    <div className="max-w-2xl mx-auto py-6 w-full flex-1">
+                        <div className="bg-surface-dark border border-white/5 rounded-2xl p-6 shadow-2xl">
+                            <div className="text-center mb-6">
+                                <div className="h-12 w-12 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <span className="material-symbols-outlined text-emerald-500 text-2xl">post_add</span>
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Novo Lançamento de Compra</h2>
+                                <p className="text-slate-400 mt-1 text-sm">Defina os dados da nota para começar a lançar os itens.</p>
+                            </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="md:col-span-2">
-                                <label className="block text-slate-400 text-sm font-bold mb-2">Fornecedor</label>
-                                <select
-                                    className="w-full bg-background-dark border border-white/10 rounded-lg p-3 text-white outline-none focus:border-emerald-500"
-                                    value={entryForm.supplier_id}
-                                    onChange={(e) => setEntryForm({ ...entryForm, supplier_id: e.target.value })}
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-300 mb-2 uppercase tracking-wider">Fornecedor</label>
+                                    <select
+                                        className="w-full bg-background-dark border border-white/10 rounded-xl p-4 text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all text-lg"
+                                        value={batchHeader.supplier_id}
+                                        onChange={(e) => setBatchHeader({ ...batchHeader, supplier_id: e.target.value })}
+                                        autoFocus
+                                    >
+                                        <option value="">Selecione o Fornecedor...</option>
+                                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-300 mb-1 uppercase tracking-wider">Data da Compra</label>
+                                        <input
+                                            type="date"
+                                            className="w-full bg-background-dark border border-white/10 rounded-xl p-3 text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all text-sm"
+                                            value={batchHeader.purchase_date}
+                                            onChange={(e) => setBatchHeader({ ...batchHeader, purchase_date: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-300 mb-1 uppercase tracking-wider">Observações / NF</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Ex: NF-e 123456"
+                                            className="w-full bg-background-dark border border-white/10 rounded-xl p-3 text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all text-sm"
+                                            value={batchHeader.notes}
+                                            onChange={(e) => setBatchHeader({ ...batchHeader, notes: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleNextStep}
+                                    disabled={!batchHeader.supplier_id}
+                                    className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-3"
                                 >
-                                    <option value="">Selecione...</option>
-                                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                </select>
-                            </div>
-
-                            <div className="md:col-span-2">
-                                <label className="block text-slate-400 text-sm font-bold mb-2">Produto</label>
-                                <select
-                                    className="w-full bg-background-dark border border-white/10 rounded-lg p-3 text-white outline-none focus:border-emerald-500"
-                                    value={entryForm.product_id}
-                                    onChange={(e) => {
-                                        const prod = products.find(p => p.id === e.target.value);
-                                        setEntryForm({ ...entryForm, product_id: e.target.value, unit_cost: prod?.price || 0 });
-                                    }}
-                                >
-                                    <option value="">Selecione do Catálogo...</option>
-                                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-400 text-sm font-bold mb-2">Data da Compra</label>
-                                <input
-                                    type="date"
-                                    className="w-full bg-background-dark border border-white/10 rounded-lg p-3 text-white outline-none focus:border-emerald-500"
-                                    value={entryForm.purchase_date}
-                                    onChange={(e) => setEntryForm({ ...entryForm, purchase_date: e.target.value })}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-400 text-sm font-bold mb-2">Quantidade</label>
-                                <input
-                                    type="number"
-                                    className="w-full bg-background-dark border border-white/10 rounded-lg p-3 text-white outline-none focus:border-emerald-500"
-                                    value={entryForm.quantity}
-                                    onChange={(e) => setEntryForm({ ...entryForm, quantity: Number(e.target.value) })}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-400 text-sm font-bold mb-2">Custo Unitário (R$)</label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    className="w-full bg-background-dark border border-white/10 rounded-lg p-3 text-white outline-none focus:border-emerald-500"
-                                    value={entryForm.unit_cost}
-                                    onChange={(e) => setEntryForm({ ...entryForm, unit_cost: Number(e.target.value) })}
-                                />
-                            </div>
-
-                            <div className="md:col-span-2">
-                                <label className="block text-slate-400 text-sm font-bold mb-2">Observações</label>
-                                <textarea
-                                    className="w-full bg-background-dark border border-white/10 rounded-lg p-3 text-white outline-none focus:border-emerald-500 h-24 resize-none"
-                                    value={entryForm.notes}
-                                    onChange={(e) => setEntryForm({ ...entryForm, notes: e.target.value })}
-                                />
-                            </div>
-
-                            <div className="md:col-span-2 flex justify-end">
-                                <button onClick={handleSaveEntry} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-8 rounded-lg transition-colors shadow-lg shadow-emerald-500/20">
-                                    Registrar Compra
+                                    <span>Selecionar Produtos</span>
+                                    <span className="material-symbols-outlined">arrow_forward</span>
                                 </button>
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {activeTab === 'entry' && purchaseStep === 'items' && (
+                    <div className="max-w-7xl mx-auto flex flex-col gap-4 h-full w-full">
+                        {/* Compact Context Bar */}
+                        <div className="bg-surface-dark border border-white/5 rounded-xl p-4 flex justify-between items-center shrink-0 shadow-md">
+                            <div className="flex items-center gap-6">
+                                <button onClick={() => setPurchaseStep('context')} className="h-10 w-10 bg-white/5 rounded-lg flex items-center justify-center hover:bg-white/10 text-slate-400 hover:text-white transition-colors" title="Voltar">
+                                    <span className="material-symbols-outlined">arrow_back</span>
+                                </button>
+                                <div>
+                                    <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-0.5">Editando Lançamento</div>
+                                    <div className="text-white font-medium flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-emerald-500 text-lg">store</span>
+                                        {suppliers.find(s => s.id === batchHeader.supplier_id)?.name}
+                                        <span className="text-slate-600 mx-1">|</span>
+                                        <span className="text-slate-300">{new Date(batchHeader.purchase_date).toLocaleDateString()}</span>
+                                        {batchHeader.notes && <span className="text-slate-500 text-sm italic ml-2">- {batchHeader.notes}</span>}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="hidden md:flex items-center gap-6 text-sm text-slate-400">
+                                <div className="flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-emerald-500">check_box</span>
+                                    Clique ou Digite Qtd
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-emerald-500">search</span>
+                                    Filtre Rápido
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Bulk Grid */}
+                        <div className="bg-surface-dark border border-white/5 rounded-xl flex-1 flex flex-col min-h-0 overflow-hidden shadow-2xl relative">
+                            <div className="p-4 border-b border-white/5 flex gap-4 items-center justify-between bg-black/20">
+                                <div className="relative flex-1 max-w-md">
+                                    <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-500">search</span>
+                                    <input
+                                        type="text"
+                                        placeholder="Filtrar produtos..."
+                                        className="w-full bg-background-dark border border-white/10 rounded-lg pl-10 pr-4 py-2 text-white outline-none focus:border-emerald-500"
+                                        value={productFilter}
+                                        onChange={(e) => setProductFilter(e.target.value)}
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => setIsAddProductOpen(true)}
+                                    className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-sm font-bold flex items-center gap-2 border border-emerald-500/20"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                                    Novo Produto
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-auto">
+                                <table className="w-full text-left text-sm relative border-collapse">
+                                    <thead className="bg-background-dark text-slate-400 font-bold uppercase text-xs sticky top-0 z-10 shadow-md">
+                                        <tr>
+                                            <th className="px-6 py-3 w-12 text-center">
+                                                <span className="material-symbols-outlined text-[18px]">check_box</span>
+                                            </th>
+                                            <th className="px-6 py-3">Produto</th>
+                                            <th className="px-6 py-3 w-32">Unidade</th>
+                                            <th className="px-6 py-3 w-40">Quantidade</th>
+                                            <th className="px-6 py-3 w-40">Custo (R$)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {products.filter(p => !productFilter || p.name.toLowerCase().includes(productFilter.toLowerCase())).map(product => {
+                                            const state = entryGrid[product.id] || { quantity: 0, unit_cost: product.price, checked: false };
+                                            return (
+                                                <tr key={product.id} className={`transition-colors ${state.checked ? 'bg-emerald-900/10' : 'hover:bg-white/5'}`}>
+                                                    <td className="px-6 py-3 text-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={state.checked}
+                                                            onChange={() => toggleProductCheck(product.id)}
+                                                            className="w-5 h-5 rounded border-white/20 bg-black/40 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                                                        />
+                                                    </td>
+                                                    <td className="px-6 py-3 font-medium text-white">{product.name}</td>
+                                                    <td className="px-6 py-3 text-slate-400 text-xs">{product.unit || 'un'}</td>
+                                                    <td className="px-6 py-3">
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            className={`w-full bg-black/20 border rounded px-3 py-1.5 text-white outline-none focus:border-emerald-500 transition-colors ${state.checked ? 'border-emerald-500/50' : 'border-white/10 opacity-50'}`}
+                                                            value={state.quantity || ''}
+                                                            // If checked, placeholder hidden, otherwise 0
+                                                            placeholder={state.checked ? '' : '0'}
+                                                            onChange={(e) => handleGridChange(product.id, 'quantity', Number(e.target.value))}
+                                                            onFocus={() => {
+                                                                // Auto check on focus if not checked
+                                                                if (!state.checked) toggleProductCheck(product.id);
+                                                            }}
+                                                        />
+                                                    </td>
+                                                    <td className="px-6 py-3">
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            className={`w-full bg-black/20 border rounded px-3 py-1.5 text-white outline-none focus:border-emerald-500 transition-colors ${state.checked ? 'border-emerald-500/50' : 'border-white/10 opacity-50'}`}
+                                                            value={state.unit_cost}
+                                                            onChange={(e) => handleGridChange(product.id, 'unit_cost', Number(e.target.value))}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                        {products.length === 0 && (
+                                            <tr><td colSpan={5} className="p-8 text-center text-slate-500">Nenhum produto cadastrado.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="p-4 border-t border-white/10 bg-black/20 flex justify-between items-center shrink-0">
+                                <div className="text-sm text-slate-400">
+                                    {(Object.values(entryGrid) as any[]).filter(x => x.checked && x.quantity > 0).length} itens selecionados
+                                </div>
+                                <div className="flex gap-4 items-center">
+                                    <div className="text-xl font-bold text-white">
+                                        Total: <span className="text-emerald-400">R$ {(Object.values(entryGrid) as any[]).reduce((acc: number, curr: any) => curr.checked ? acc + (curr.quantity * curr.unit_cost) : acc, 0).toFixed(2)}</span>
+                                    </div>
+                                    <button
+                                        onClick={handleSaveBulk}
+                                        className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+                                    >
+                                        <span className="material-symbols-outlined">check_circle</span>
+                                        Finalizar Compra
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Quick Add Product Modal */}
+                        {isAddProductOpen && (
+                            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                                <div className="bg-surface-dark border border-white/10 rounded-xl p-6 w-full max-w-md shadow-2xl">
+                                    <h3 className="text-lg font-bold text-white mb-4">Adicionar Novo Produto</h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nome do Produto</label>
+                                            <input type="text" className="w-full bg-background-dark border border-white/10 rounded px-3 py-2 text-white outline-none focus:border-emerald-500"
+                                                value={quickProduct.name} onChange={e => setQuickProduct({ ...quickProduct, name: e.target.value })} autoFocus />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Unidade</label>
+                                                <input type="text" className="w-full bg-background-dark border border-white/10 rounded px-3 py-2 text-white outline-none focus:border-emerald-500"
+                                                    value={quickProduct.unit} onChange={e => setQuickProduct({ ...quickProduct, unit: e.target.value })} />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Preço Padrão</label>
+                                                <input type="number" step="0.01" className="w-full bg-background-dark border border-white/10 rounded px-3 py-2 text-white outline-none focus:border-emerald-500"
+                                                    value={quickProduct.price} onChange={e => setQuickProduct({ ...quickProduct, price: Number(e.target.value) })} />
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-end gap-2 mt-2">
+                                            <button onClick={() => setIsAddProductOpen(false)} className="px-4 py-2 text-slate-400 hover:text-white">Cancelar</button>
+                                            <button onClick={handleCreateProduct} className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded font-bold">Salvar e Adicionar</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
