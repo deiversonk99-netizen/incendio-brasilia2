@@ -18,7 +18,8 @@ const ProductsView: React.FC = () => {
         category: 'Material',
         unit: 'un',
         price: 0,
-        supplier_id: ''
+        supplier_id: '',
+        is_signage: false
     });
 
     const [suppliers, setSuppliers] = useState<{ id: string, name: string }[]>([]);
@@ -55,7 +56,8 @@ const ProductsView: React.FC = () => {
                 category: product.category,
                 unit: product.unit,
                 price: product.price,
-                supplier_id: product.supplier_id || ''
+                supplier_id: product.supplier_id || '',
+                is_signage: !!product.is_signage
             });
         } else {
             setEditingProduct(null);
@@ -64,7 +66,8 @@ const ProductsView: React.FC = () => {
                 category: 'Material',
                 unit: 'un',
                 price: 0,
-                supplier_id: ''
+                supplier_id: '',
+                is_signage: false
             });
         }
         setIsModalOpen(true);
@@ -818,6 +821,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 <thead className="bg-white/5 text-slate-400 font-medium uppercase text-xs tracking-wider">
                                     <tr>
                                         <th className="px-6 py-4">Nome do Produto</th>
+                                        <th className="px-6 py-4 text-center">Placa?</th>
                                         <th className="px-6 py-4">Categoria</th>
                                         <th className="px-6 py-4">Fornecedor</th>
                                         <th className="px-6 py-4 text-center">Unidade</th>
@@ -846,6 +850,13 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                         filteredProducts.map(product => (
                                             <tr key={product.id} className="hover:bg-white/5 transition-colors group">
                                                 <td className="px-6 py-4 font-medium text-white">{product.name}</td>
+                                                <td className="px-6 py-4 text-center">
+                                                    {product.is_signage ? (
+                                                        <span className="material-symbols-outlined text-amber-500 text-[18px]" title="Identificado como Placa">warning</span>
+                                                    ) : (
+                                                        <span className="text-slate-600">-</span>
+                                                    )}
+                                                </td>
                                                 <td className="px-6 py-4 text-slate-400">
                                                     <span className="bg-white/5 border border-white/10 px-2 py-1 rounded text-xs">
                                                         {product.category || 'Material'}
@@ -965,6 +976,19 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                     value={formData.price}
                                     onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
                                 />
+                            </div>
+
+                            <div className="flex items-center gap-3 bg-white/5 p-3 rounded-lg border border-white/10">
+                                <input
+                                    type="checkbox"
+                                    id="is_signage"
+                                    className="w-5 h-5 rounded border-white/20 bg-black/40 text-primary focus:ring-primary cursor-pointer accent-primary"
+                                    checked={formData.is_signage}
+                                    onChange={e => setFormData({ ...formData, is_signage: e.target.checked })}
+                                />
+                                <label htmlFor="is_signage" className="text-sm font-medium text-white cursor-pointer select-none">
+                                    Este produto é uma Placa/Sinalização
+                                </label>
                             </div>
 
                             <div className="flex gap-3 mt-4">

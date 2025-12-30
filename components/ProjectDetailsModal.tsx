@@ -11,6 +11,29 @@ interface ProjectDetailsModalProps {
 
 const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClose, project, onUpdate }) => {
     const [updating, setUpdating] = useState(false);
+    const [projectServices, setProjectServices] = useState<any[]>([]);
+
+    React.useEffect(() => {
+        if (isOpen && project) {
+            fetchProjectServices();
+        }
+    }, [isOpen, project]);
+
+    const fetchProjectServices = async () => {
+        const { data, error } = await supabase
+            .from('project_services')
+            .select(`
+                service_id,
+                services_catalog (
+                    name
+                )
+            `)
+            .eq('project_id', project?.id);
+
+        if (data) {
+            setProjectServices(data.map((ps: any) => ps.services_catalog.name));
+        }
+    };
 
     if (!isOpen || !project) return null;
 
@@ -126,6 +149,22 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
                                     {project.status === statusKey && <span className="material-symbols-outlined text-[16px] mt-1">check_circle</span>}
                                 </button>
                             ))}
+                        </div>
+                    </div>
+
+                    <div className="mt-8 mb-8">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Serviços Contratados</label>
+                        <div className="flex flex-wrap gap-2">
+                            {projectServices.length > 0 ? (
+                                projectServices.map((serviceName, idx) => (
+                                    <span key={idx} className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5">
+                                        <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                                        {serviceName}
+                                    </span>
+                                ))
+                            ) : (
+                                <p className="text-slate-500 text-sm italic">Nenhum serviço vinculado a este projeto.</p>
+                            )}
                         </div>
                     </div>
 

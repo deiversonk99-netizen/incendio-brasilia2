@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import PageHeader from './PageHeader';
 import { Supplier, Product, SupplierPurchase } from '../types';
 
 const SuppliersView: React.FC = () => {
+    const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<'list' | 'entry' | 'report'>('list');
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
@@ -152,34 +154,52 @@ const SuppliersView: React.FC = () => {
 
     const handleSaveBulk = async () => {
         if (!batchHeader.supplier_id) return alert('Selecione o fornecedor.');
+        if (!user) return alert('Usuário não autenticado.');
 
-        const itemsToSave = Object.entries(entryGrid)
-            .filter(([_, data]: [string, any]) => data.checked && data.quantity > 0)
-            .map(([productId, data]: [string, any]) => ({
-                supplier_id: batchHeader.supplier_id,
-                purchase_date: batchHeader.purchase_date,
-                notes: batchHeader.notes,
-                product_id: productId,
-                quantity: data.quantity,
-                unit_cost: data.unit_cost
-            }));
+        const selectedItems = Object.entries(entryGrid)
+            .filter(([_, data]: [string, any]) => data.checked && data.quantity > 0);
 
-        if (itemsToSave.length === 0) return alert('Nenhum item selecionado com quantidade válida.');
+        if (selectedItems.length === 0) return alert('Nenhum item selecionado com quantidade válida.');
+
+        const itemsToSave = selectedItems.map(([productId, data]: [string, any]) => ({
+            supplier_id: batchHeader.supplier_id,
+            purchase_date: batchHeader.purchase_date,
+            notes: batchHeader.notes,
+            product_id: productId,
+            quantity: data.quantity,
+            unit_cost: data.unit_cost
+        }));
 
         if (!confirm(`Confirma o lançamento de ${itemsToSave.length} itens?`)) return;
 
         setLoading(true);
-        const { error } = await supabase.from('supplier_purchases').insert(itemsToSave);
+        try {
+            // 1. Insert into supplier_purchases
+            const { error: purchaseError } = await supabase.from('supplier_purchases').insert(itemsToSave);
+            if (purchaseError) throw purchaseError;
 
-        if (error) {
-            alert('Erro ao salvar compras: ' + error.message);
-        } else {
-            alert('Compras registradas com sucesso!');
+            // 2. Insert into stock_movements (Entry)
+            const stockMovements = selectedItems.map(([productId, data]: [string, any]) => ({
+                product_id: productId,
+                quantity: data.quantity,
+                type: 'PURCHASE',
+                notes: `Compra de ${suppliers.find(s => s.id === batchHeader.supplier_id)?.name} - ${batchHeader.notes}`,
+                user_id: user.id
+            }));
+
+            const { error: stockError } = await supabase.from('stock_movements').insert(stockMovements);
+            if (stockError) throw stockError;
+
+            alert('Compras e estoque registrados com sucesso!');
             setEntryGrid({});
             setBatchHeader({ ...batchHeader, notes: '' });
             setActiveTab('report');
+        } catch (error: any) {
+            console.error('Error saving bulk purchase:', error);
+            alert('Erro ao salvar compras e estoque: ' + error.message);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     // --- Render Helpers ---

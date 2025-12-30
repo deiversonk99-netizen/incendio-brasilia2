@@ -11,6 +11,8 @@ export enum AppView {
   KITS = 'KITS',
   CATALOG = 'CATALOG',
   SUPPLIERS = 'SUPPLIERS',
+  SERVICES = 'SERVICES',
+  PLACAS = 'PLACAS',
   SETTINGS = 'SETTINGS'
 }
 
@@ -57,6 +59,7 @@ export interface Product {
   created_at?: string;
   user_id?: string;
   supplier_id?: string;
+  is_signage?: boolean;
 }
 
 export interface Supplier {

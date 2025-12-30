@@ -3,6 +3,8 @@ import PageHeader from './PageHeader';
 import { supabase } from '../lib/supabase';
 import { Project } from '../types';
 import NewProjectModal from './NewProjectModal';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface EngineeringSurveyProps {
   // ... existing props ...
@@ -287,6 +289,146 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     }
   };
 
+  const generateSurveyPDF = () => {
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!project || floors.length === 0) {
+      alert('Selecione um projeto com pavimentos cadastrados.');
+      return;
+    }
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // Utility for adding footer
+    const addFooter = (doc: any, pageNum: number, totalPages: number) => {
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      const footerText = `Levantamento Técnico - ${project.name} | Página ${pageNum} de ${totalPages}`;
+      doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
+    };
+
+    // --- Page 1: Header and Summary ---
+    doc.setFillColor(30, 41, 59);
+    doc.rect(0, 0, pageWidth, 50, 'F');
+
+    doc.setFontSize(22);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RELATÓRIO DE LEVANTAMENTO', 20, 28);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(200, 200, 200);
+    doc.text(`Identificação: PRJ-${project.id.slice(0, 5).toUpperCase()}`, 20, 36);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 20, 28, { align: 'right' });
+
+    doc.setTextColor(40);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DADOS DO PROJETO', 20, 65);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(20, 67, pageWidth - 20, 67);
+
+    // Summary Table
+    const totalAreaCalc = floors.reduce((acc, f) => acc + (Number(f.width) * Number(f.length) * (f.replication_factor || 1)), 0);
+    const totalEquipCount = floors.reduce((acc, f) => {
+      const central = (f.items as any).central_items || {};
+      const checks = (f.items as any).item_checks || {};
+      return acc + Object.entries(central).reduce((sum, [name, qty]) => sum + (checks[name] !== false ? Number(qty) : 0), 0) * (f.replication_factor || 1);
+    }, 0);
+
+    autoTable(doc, {
+      startY: 72,
+      head: [['Indicador', 'Valor']],
+      body: [
+        ['Cliente', project.client || 'N/A'],
+        ['Projeto', project.name],
+        ['Tipo de Obra', project.type || 'N/A'],
+        ['Total de Pavimentos', floors.length.toString()],
+        ['Área Total (Estimada)', `${totalAreaCalc.toFixed(2)} m²`],
+        ['Total de Equipamentos', totalEquipCount.toString()]
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
+      styles: { fontSize: 10, cellPadding: 4 },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } }
+    });
+
+    let yPos = (doc as any).lastAutoTable.finalY + 20;
+
+    // --- Detail Section ---
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DETALHAMENTO POR PAVIMENTO', 20, yPos);
+    doc.line(20, yPos + 2, pageWidth - 20, yPos + 2);
+    yPos += 12;
+
+    floors.forEach((floor, index) => {
+      // Check for page break
+      if (yPos > 240) {
+        doc.addPage();
+        yPos = 30;
+      }
+
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.setFillColor(248, 250, 252);
+      doc.rect(20, yPos - 5, pageWidth - 40, 7, 'F');
+      doc.text(`${index + 1}. ${floor.name.toUpperCase()}`, 25, yPos);
+
+      yPos += 8;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Prancha: ${floor.prancha || 'N/A'} | Dimensões: ${floor.width}x${floor.length}m | Área: ${(floor.width * floor.length).toFixed(2)}m²`, 25, yPos);
+
+      if (floor.replication_factor && floor.replication_factor > 1) {
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(79, 70, 229); // Indigo
+        doc.text(`[REPLICAÇÃO: ${floor.replication_factor}x]`, pageWidth - 25, yPos, { align: 'right' });
+        doc.setTextColor(40);
+      }
+
+      yPos += 6;
+
+      const items = floor.items as any;
+      const central = items.central_items || {};
+      const checks = items.item_checks || {};
+
+      const tableData = Object.entries(central)
+        .filter(([name]) => checks[name] !== false)
+        .map(([name, qty]) => [name, qty]);
+
+      if (tableData.length > 0) {
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Equipamento', 'Quant.']],
+          body: tableData,
+          theme: 'striped',
+          headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
+          styles: { fontSize: 8, cellPadding: 2 },
+          margin: { left: 40 },
+          tableWidth: 80
+        });
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+      } else {
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.text('Nenhum equipamento selecionado para este pavimento.', 40, yPos);
+        yPos += 12;
+      }
+    });
+
+    // Add page numbers to all pages
+    const totalPages = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      addFooter(doc, i, totalPages);
+    }
+
+    doc.save(`Levantamento_${project.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   const totalArea = floors.reduce((acc, floor) => {
     const floorArea = (Number(floor.width) * Number(floor.length));
     // Multiply by replication factor for total project area?
@@ -309,10 +451,20 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
           </div>
         }
         actions={
-          <button className="flex items-center gap-2 h-10 px-6 rounded-lg bg-primary hover:bg-primary-dark text-white shadow-lg shadow-primary/20 transition-all font-bold text-sm" onClick={onNext}>
-            Próxima Fase
-            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={generateSurveyPDF}
+              disabled={!selectedProjectId || floors.length === 0}
+              className="flex items-center gap-2 h-10 px-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white transition-all font-bold text-sm disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+              PDF Levantamento
+            </button>
+            <button className="flex items-center gap-2 h-10 px-6 rounded-lg bg-primary hover:bg-primary-dark text-white shadow-lg shadow-primary/20 transition-all font-bold text-sm" onClick={onNext}>
+              Próxima Fase
+              <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+            </button>
+          </div>
         }
       />
 

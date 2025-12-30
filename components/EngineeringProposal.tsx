@@ -18,10 +18,15 @@ interface ExecutionSchedule {
   label: string;
 }
 
-const EngineeringProposal: React.FC = () => {
+interface EngineeringProposalProps {
+  selectedProjectId: string;
+  onSelectProject: (id: string) => void;
+}
+
+const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProjectId, onSelectProject }) => {
   const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  // selectedProjectId is now a prop
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [budgetItems, setBudgetItems] = useState<any[]>([]);
@@ -40,11 +45,26 @@ const EngineeringProposal: React.FC = () => {
     cost_material_base: 0
   });
 
+  // Modal State
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<'product' | 'service' | 'custom'>('product');
+  const [catalogItems, setCatalogItems] = useState<any[]>([]);
+  const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
+  const [newItem, setNewItem] = useState({ name: '', quantity: 1, price: 0 });
+
   useEffect(() => {
     fetchProjects();
     fetchPaymentMethods();
     fetchExecutionSchedules();
+    fetchCatalogs();
   }, []);
+
+  const fetchCatalogs = async () => {
+    const { data: products } = await supabase.from('product_catalog').select('name, price').order('name');
+    const { data: services } = await supabase.from('services_catalog').select('name, description').order('name');
+    if (products) setCatalogItems(products);
+    if (services) setServiceCatalog(services);
+  };
 
   useEffect(() => {
     if (selectedProjectId) {
@@ -83,7 +103,7 @@ const EngineeringProposal: React.FC = () => {
     // 1. Fetch Items Cost from Phase B
     const { data: budgetItemsData } = await supabase
       .from('budget_items')
-      .select('name, quantity_final, unit_price')
+      .select('id, name, quantity_final, unit_price, origin')
       .eq('project_id', projectId);
 
     if (budgetItemsData) setBudgetItems(budgetItemsData);
@@ -140,6 +160,38 @@ const EngineeringProposal: React.FC = () => {
     setSaving(false);
   };
 
+  const handleAddItem = async () => {
+    if (!selectedProjectId || !user) return;
+    setLoading(true);
+
+    const newItemData = {
+      project_id: selectedProjectId,
+      name: newItem.name,
+      quantity_calculated: 0,
+      quantity_final: newItem.quantity,
+      unit_price: newItem.price,
+      origin: 'MANUAL' as const
+    };
+
+    const { data, error } = await supabase.from('budget_items').insert(newItemData).select();
+
+    if (error) {
+      alert('Erro ao adicionar item: ' + error.message);
+    } else {
+      setBudgetItems(prev => [...prev, data?.[0]]);
+      setIsAddItemModalOpen(false);
+      setNewItem({ name: '', quantity: 1, price: 0 });
+    }
+    setLoading(false);
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    if (!confirm('Tem certeza que deseja remover este item da proposta?')) return;
+    const { error } = await supabase.from('budget_items').delete().eq('id', id);
+    if (error) alert('Erro ao excluir: ' + error.message);
+    else setBudgetItems(prev => prev.filter(i => i.id !== id));
+  };
+
   const generatePDF = (mode: 'download' | 'preview' = 'download') => {
     try {
       const project = projects.find(p => p.id === selectedProjectId);
@@ -150,40 +202,100 @@ const EngineeringProposal: React.FC = () => {
 
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const vals = calculateValues();
 
-      // -- Header --
-      doc.setFillColor(30, 41, 59); // surface-dark like color
-      doc.rect(0, 0, pageWidth, 40, 'F');
+      // Utility for adding footer
+      const addFooter = (doc: any, pageNum: number, totalPages: number) => {
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        const footerText = `Proposta Comercial - ${project.name} | Página ${pageNum} de ${totalPages}`;
+        doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      };
 
-      doc.setFontSize(22);
+      // --- PAGE 1: COVER ---
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+      // Logo Placeholder or Design Element
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(1);
+      doc.line(20, 40, 60, 40);
+
+      doc.setFontSize(40);
       doc.setTextColor(255, 255, 255);
-      doc.text('PROPOSTA COMERCIAL', 20, 25);
-
-      doc.setFontSize(10);
-      doc.setTextColor(200, 200, 200);
-      doc.text('Incêndio Brasília - Engenharia de Segurança', 20, 33);
-      doc.text(`Data: ${new Date().toLocaleDateString()}`, pageWidth - 20, 25, { align: 'right' });
-
-      // -- Client Info --
-      doc.setFontSize(12);
-      doc.setTextColor(40);
       doc.setFont('helvetica', 'bold');
-      doc.text('DADOS DO CLIENTE', 20, 55);
-      doc.setDrawColor(200, 200, 200);
-      doc.line(20, 57, 100, 57);
+      doc.text('PROPOSTA', 20, 80);
+      doc.text('COMERCIAL', 20, 100);
 
+      doc.setFontSize(14);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(`Cliente: ${project.client || 'N/A'}`, 20, 65);
-      doc.text(`Referência: ${project.name || 'N/A'}`, 20, 71);
-      doc.text(`Tipo de Obra: ${project.type || 'N/A'}`, 20, 77);
-      doc.text(`Prazo Estimado: ${proposal.execution_schedule || 'N/A'}`, 20, 83);
-      doc.text(`Validade da Proposta: ${proposal.validity_days || 10} dias`, 20, 89);
+      doc.setTextColor(200, 200, 200);
+      doc.text('INCÊNDIO BRASÍLIA', 20, 115);
+      doc.text('Engenharia de Segurança', 20, 122);
 
-      // -- Items Table --
+      doc.setFillColor(239, 68, 68); // Red Accent
+      doc.rect(0, 140, pageWidth * 0.4, 2, 'F');
+
+      // Project Info on cover
       doc.setFontSize(12);
+      doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      doc.text('DETALHAMENTO TÉCNICO', 20, 105);
+      doc.text('PREPARADO PARA:', 20, 200);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(230, 230, 230);
+      doc.text(project.client || 'N/A', 20, 208);
+      doc.text(project.name, 20, 215);
+
+      doc.setFontSize(10);
+      doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 20, pageHeight - 20);
+      doc.text(`Validade: ${proposal.validity_days || 10} dias`, pageWidth - 20, pageHeight - 20, { align: 'right' });
+
+      // --- PAGE 2: SCOPE & OBJECTIVE ---
+      doc.addPage();
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('ESCOPO E OBJETIVO', 20, 25);
+
+      doc.setTextColor(40);
+      doc.setFontSize(12);
+      doc.text('OBJETIVO DA PROPOSTA', 20, 60);
+      doc.setDrawColor(200);
+      doc.line(20, 62, 80, 62);
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${project.name}", contemplando o fornecimento de materiais e mão de obra conforme detalhamento técnico a seguir.`;
+      const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
+      doc.text(splitIntro, 20, 72);
+
+      if (proposal.observations) {
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('DETALHAMENTO DO ESCOPO', 20, 110);
+        doc.line(20, 112, 80, 112);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        const splitObs = doc.splitTextToSize(proposal.observations, pageWidth - 40);
+        doc.text(splitObs, 20, 122);
+      }
+
+      // --- PAGE 3: INVESTMENT DETAIL ---
+      doc.addPage();
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('DETALHAMENTO DO INVESTIMENTO', 20, 25);
+
+      doc.setTextColor(40);
+      doc.setFontSize(11);
+      doc.text('ITENS E EQUIPAMENTOS', 20, 55);
 
       const tableBody = budgetItems.map(item => [
         item.name || 'Item',
@@ -193,11 +305,11 @@ const EngineeringProposal: React.FC = () => {
       ]);
 
       autoTable(doc, {
-        startY: 108,
+        startY: 60,
         head: [['Descrição', 'Qtd', 'Unit. (R$)', 'Total (R$)']],
         body: tableBody,
         theme: 'striped',
-        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] },
+        headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
         styles: { fontSize: 9 },
         columnStyles: {
           0: { cellWidth: 100 },
@@ -208,59 +320,80 @@ const EngineeringProposal: React.FC = () => {
       });
 
       let yPos = (doc as any).lastAutoTable.finalY + 15;
+      if (yPos > pageHeight - 60) { doc.addPage(); yPos = 30; }
 
-      // -- Financial Summary --
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text('RESUMO FINANCEIRO', 20, yPos);
-      doc.line(20, yPos + 2, 100, yPos + 2);
+      doc.line(20, yPos + 2, 80, yPos + 2);
 
-      const vals = calculateValues();
       autoTable(doc, {
-        startY: yPos + 5,
+        startY: yPos + 6,
         body: [
-          ['Preço Base (Materiais/Mão de Obra)', `R$ ${vals.base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-          ['BDI e Encargos', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-          ['Lucro Operacional', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+          ['Subtotal de Itens', `R$ ${vals.base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+          ['BDI e Taxas Operacionais', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+          ['Lucro e Encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
           ['Descontos Aplicados', `- R$ ${vals.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-          [{ content: 'VALOR TOTAL FINAL', styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } },
+          [{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } },
           { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } }]
         ],
         theme: 'grid',
         styles: { fontSize: 10 },
-        columnStyles: {
-          1: { halign: 'right', cellWidth: 50 }
-        }
+        columnStyles: { 1: { halign: 'right', cellWidth: 60 } }
       });
 
-      yPos = (doc as any).lastAutoTable.finalY + 15;
+      // --- PAGE 4: COMMERCIAL TERMS & SIGNATURES ---
+      doc.addPage();
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('CONDIÇÕES COMERCIAIS', 20, 25);
 
-      // -- Observations --
-      if (proposal.observations) {
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.text('OBSERVAÇÕES E ESCOPO', 20, yPos);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        const splitObs = doc.splitTextToSize(proposal.observations, pageWidth - 40);
-        doc.text(splitObs, 20, yPos + 8);
-        yPos += (splitObs.length * 5) + 15;
-      }
+      doc.setTextColor(40);
+      autoTable(doc, {
+        startY: 60,
+        body: [
+          ['Cronograma de Execução', proposal.execution_schedule || 'A combinar'],
+          ['Condições de Pagamento', proposal.payment_conditions || 'A combinar'],
+          ['Validade da Proposta', `${proposal.validity_days || 10} dias a partir desta data`]
+        ],
+        theme: 'grid',
+        styles: { fontSize: 10, cellPadding: 5 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60, fillColor: [248, 250, 252] } }
+      });
 
-      // -- Signatures --
-      if (yPos > 240) { doc.addPage(); yPos = 30; }
+      yPos = (doc as any).lastAutoTable.finalY + 40;
+
+      // Signatures
+      doc.setDrawColor(200);
+      doc.line(30, yPos, 90, yPos);
       doc.setFontSize(10);
-      doc.text('_________________________________', 20, yPos + 20);
-      doc.text('Responsável Técnico', 20, yPos + 26);
+      doc.text('INCÊNDIO BRASÍLIA', 60, yPos + 6, { align: 'center' });
+      doc.setFontSize(8);
+      doc.text('Departamento de Engenharia', 60, yPos + 12, { align: 'center' });
 
-      doc.text('_________________________________', pageWidth - 20, yPos + 20, { align: 'right' });
-      doc.text('Aceite do Cliente', pageWidth - 20, yPos + 26, { align: 'right' });
+      doc.line(pageWidth - 30, yPos, pageWidth - 90, yPos);
+      doc.setFontSize(10);
+      doc.text('ACEITE DO CLIENTE', pageWidth - 60, yPos + 6, { align: 'center' });
+      doc.setFontSize(8);
+      doc.text('Carimbo e Assinatura', pageWidth - 60, yPos + 12, { align: 'center' });
+
+      // Add page numbers to all pages except cover? Or all.
+      const totalPages = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        if (i > 1) { // Skip footer on cover
+          addFooter(doc, i, totalPages);
+        }
+      }
 
       if (mode === 'preview') {
         const blobUrl = doc.output('bloburl');
         window.open(blobUrl, '_blank');
       } else {
-        doc.save(`Proposta_${(project?.client || 'Cliente').replace(/\s+/g, '_')}.pdf`);
+        doc.save(`Proposta_${project.name.replace(/\s+/g, '_')}.pdf`);
       }
     } catch (error: any) {
       console.error('Erro ao gerar PDF:', error);
@@ -311,11 +444,19 @@ const EngineeringProposal: React.FC = () => {
           </div>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <span className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-xs font-bold uppercase tracking-wide">
               <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
               Em Elaboração
             </span>
+            <button
+              onClick={() => setIsAddItemModalOpen(true)}
+              disabled={!selectedProjectId}
+              className="flex items-center gap-2 h-10 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20 transition-all font-bold text-sm disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              Adicionar Item
+            </button>
           </div>
         }
       />
@@ -328,7 +469,7 @@ const EngineeringProposal: React.FC = () => {
             <label className="block text-sm font-medium text-slate-400 mb-2">Selecione o Projeto para Proposta</label>
             <select
               value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
+              onChange={(e) => onSelectProject(e.target.value)}
               className="w-full md:w-1/2 bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
             >
               <option value="">Selecione...</option>
@@ -378,6 +519,59 @@ const EngineeringProposal: React.FC = () => {
                   {(values.discountVal > 0) && (
                     <p className="text-xs text-red-400 mt-1 font-bold">Desconto: - R$ {values.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                   )}
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div className="bg-surface-dark border border-white/5 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-black/10">
+                  <h3 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
+                    <span className="material-symbols-outlined text-primary text-[20px]">list_alt</span>
+                    Itens da Proposta
+                  </h3>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase">{budgetItems.length} Itens</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white/5 text-slate-400 font-medium uppercase text-[10px] tracking-wider">
+                      <tr>
+                        <th className="px-6 py-3">Descrição</th>
+                        <th className="px-6 py-3 text-center">Qtd</th>
+                        <th className="px-6 py-3 text-right">Unitário</th>
+                        <th className="px-6 py-3 text-right">Total</th>
+                        <th className="px-6 py-3 w-16"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {budgetItems.map(item => (
+                        <tr key={item.id} className="hover:bg-white/5 transition-colors group">
+                          <td className="px-6 py-4">
+                            <div className="text-white font-medium text-sm">{item.name}</div>
+                            <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">
+                              {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center text-slate-300 font-bold">{item.quantity_final}</td>
+                          <td className="px-6 py-4 text-right text-slate-400">R$ {Number(item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td className="px-6 py-4 text-right text-white font-bold">R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td className="px-6 py-4 text-right">
+                            {item.origin === 'MANUAL' && (
+                              <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 hover:bg-rose-500/10 rounded-lg text-rose-500 opacity-0 group-hover:opacity-100 transition-all">
+                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {budgetItems.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
+                            Nenhum item na proposta. Adicione itens acima ou finalize a composição na Fase B.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -506,6 +700,117 @@ const EngineeringProposal: React.FC = () => {
           )}
         </div>
       </main>
+
+      {/* Add Item Modal */}
+      {isAddItemModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-6">Adicionar à Proposta</h3>
+
+            {/* Tabs */}
+            <div className="flex bg-background-dark p-1 rounded-lg mb-6 border border-white/5">
+              {(['product', 'service', 'custom'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => {
+                    setModalTab(tab);
+                    setNewItem({ name: '', quantity: 1, price: 0 });
+                  }}
+                  className={`flex-1 py-2 text-xs font-bold rounded-md transition-all uppercase ${modalTab === tab ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  {tab === 'product' ? 'Produto' : tab === 'service' ? 'Serviço' : 'Personalizado'}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              {modalTab === 'product' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Produto</label>
+                  <select
+                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                    onChange={e => {
+                      const p = catalogItems.find(x => x.name === e.target.value);
+                      if (p) setNewItem({ ...newItem, name: p.name, price: p.price });
+                    }}
+                  >
+                    <option value="">Selecione...</option>
+                    {catalogItems.map(p => <option key={p.name} value={p.name}>{p.name} - R${p.price}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {modalTab === 'service' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Serviço</label>
+                  <select
+                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                    onChange={e => {
+                      const s = serviceCatalog.find(x => x.name === e.target.value);
+                      // In a real scenario, services might have prices. For now using 0 or descriptive.
+                      if (s) setNewItem({ ...newItem, name: s.name, price: 0 });
+                    }}
+                  >
+                    <option value="">Selecione...</option>
+                    {serviceCatalog.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {modalTab === 'custom' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Descrição da Proposta (Subjetiva)</label>
+                  <textarea
+                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 h-24 resize-none"
+                    placeholder="Ex: Fornecimento de uma ampliação de uma tubulação enterrada..."
+                    value={newItem.name}
+                    onChange={e => setNewItem({ ...newItem, name: e.target.value })}
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Quantidade</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                    value={newItem.quantity}
+                    onChange={e => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Preço Unitário (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                    value={newItem.price}
+                    onChange={e => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-4 mt-8">
+              <button
+                onClick={() => setIsAddItemModalOpen(false)}
+                className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAddItem}
+                disabled={!newItem.name || loading}
+                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold shadow-lg shadow-indigo-900/20 disabled:opacity-50 transition-all"
+              >
+                Adicionar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

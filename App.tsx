@@ -14,6 +14,8 @@ import LoginView from './components/LoginView';
 import ProductsView from './components/ProductsView';
 import ClientsView from './components/ClientsView';
 import SuppliersView from './components/SuppliersView';
+import ServicesView from './components/ServicesView';
+import InventoryView from './components/InventoryView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 const AppContent: React.FC = () => {
@@ -46,13 +48,20 @@ const AppContent: React.FC = () => {
           onSelectProject={setEngineeringProjectId}
         />;
       case AppView.ENGINEERING_PHASE_C:
-        return <EngineeringProposal />;
+        return <EngineeringProposal
+          selectedProjectId={engineeringProjectId}
+          onSelectProject={setEngineeringProjectId}
+        />;
       case AppView.KITS:
         return <KitsConfigurationView />;
       case AppView.CATALOG:
         return <ProductsView />;
       case AppView.SUPPLIERS:
         return <SuppliersView />;
+      case AppView.SERVICES:
+        return <ServicesView />;
+      case AppView.PLACAS:
+        return <InventoryView />;
       default:
         return <DashboardView />;
     }

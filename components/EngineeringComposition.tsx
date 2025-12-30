@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import PageHeader from './PageHeader';
 import { supabase } from '../lib/supabase';
 import { Project } from '../types';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface EngineeringCompositionProps {
   onNext: () => void;
@@ -274,6 +276,110 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     }
   };
 
+  const generateCompositionPDF = () => {
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!project || items.length === 0) {
+      alert('Selecione um projeto com itens calculados.');
+      return;
+    }
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // Utility for adding footer
+    const addFooter = (doc: any, pageNum: number, totalPages: number) => {
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      const footerText = `Composição de Materiais - ${project.name} | Página ${pageNum} de ${totalPages}`;
+      doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
+    };
+
+    // --- Page 1: Header and Summary ---
+    doc.setFillColor(30, 41, 59);
+    doc.rect(0, 0, pageWidth, 50, 'F');
+
+    doc.setFontSize(22);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.text('COMPOSIÇÃO DE MATERIAIS', 20, 28);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(200, 200, 200);
+    doc.text(`Identificação: PRJ-${project.id.slice(0, 5).toUpperCase()}`, 20, 36);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 20, 28, { align: 'right' });
+
+    doc.setTextColor(40);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RESUMO DE CUSTOS', 20, 65);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(20, 67, pageWidth - 20, 67);
+
+    const calcItems = items.filter(i => i.origin === 'CALCULATED');
+    const manualItems = items.filter(i => i.origin === 'MANUAL');
+    const calcTotal = calcItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+    const manualTotal = manualItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+    const total = calcTotal + manualTotal;
+
+    autoTable(doc, {
+      startY: 72,
+      head: [['Categoria', 'Qtd Itens', 'Total Etapa (R$)']],
+      body: [
+        ['Itens Projetados (Sistema)', calcItems.length.toString(), `R$ ${calcTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Itens Manuais (Extra)', manualItems.length.toString(), `R$ ${manualTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        [{ content: 'INVESTIMENTO TOTAL ESTIMADO', styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } },
+        { content: items.length.toString(), styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } },
+        { content: `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } }]
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
+      styles: { fontSize: 10, cellPadding: 4 }
+    });
+
+    let yPos = (doc as any).lastAutoTable.finalY + 20;
+
+    // --- Items Table ---
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('LISTA DETALHADA DE MATERIAIS', 20, yPos);
+    doc.line(20, yPos + 2, pageWidth - 20, yPos + 2);
+    yPos += 10;
+
+    const tableData = items.map(item => [
+      item.name,
+      item.origin === 'CALCULATED' ? 'Sistema' : 'Manual',
+      item.quantity_final,
+      `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+    ]);
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Produto', 'Origem', 'Qtd Final', 'Custo Unit.', 'Total']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [30, 41, 59], fontSize: 9 },
+      styles: { fontSize: 9 },
+      columnStyles: {
+        1: { cellWidth: 25 },
+        2: { halign: 'center', cellWidth: 25 },
+        3: { halign: 'right', cellWidth: 35 },
+        4: { halign: 'right', cellWidth: 35 }
+      }
+    });
+
+    // Page numbers
+    const totalPages = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      addFooter(doc, i, totalPages);
+    }
+
+    doc.save(`Composicao_${project.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <PageHeader
@@ -306,6 +412,14 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
               Adicionar Item
+            </button>
+            <button
+              onClick={generateCompositionPDF}
+              disabled={!selectedProjectId || items.length === 0}
+              className="flex items-center gap-2 h-10 px-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white transition-all font-bold text-sm disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+              PDF Materiais
             </button>
             <button className="flex items-center gap-2 h-10 px-6 rounded-lg bg-primary hover:bg-primary-dark text-white shadow-lg shadow-primary/20 transition-all font-bold text-sm" onClick={onNext}>
               <span className="material-symbols-outlined text-[18px]">check</span>
