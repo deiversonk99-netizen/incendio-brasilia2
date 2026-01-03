@@ -98,6 +98,8 @@ export interface Proposal {
   execution_schedule: string;
   validity_days: number;
   observations?: string;
+  hide_services_pdf?: boolean;
+  hide_products_pdf?: boolean;
   status: 'DRAFT' | 'SENT' | 'APPROVED';
   created_at?: string;
 }

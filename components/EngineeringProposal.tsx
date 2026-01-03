@@ -42,7 +42,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     payment_conditions: '',
     execution_schedule: '', // Default empty
     validity_days: 10,
-    cost_material_base: 0
+    cost_material_base: 0,
+    hide_services_pdf: false,
+    hide_products_pdf: false
   });
 
   // Modal State
@@ -117,9 +119,20 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       .single();
 
     if (existingProposal) {
-      setProposal({ ...existingProposal, cost_material_base: totalCost }); // Ensure cost is updated from Phase B always
+      setProposal({
+        ...existingProposal,
+        cost_material_base: totalCost,
+        hide_services_pdf: existingProposal.hide_services_pdf ?? false,
+        hide_products_pdf: existingProposal.hide_products_pdf ?? false
+      }); // Ensure cost is updated from Phase B always
     } else {
-      setProposal(prev => ({ ...prev, project_id: projectId, cost_material_base: totalCost }));
+      setProposal(prev => ({
+        ...prev,
+        project_id: projectId,
+        cost_material_base: totalCost,
+        hide_services_pdf: false,
+        hide_products_pdf: false
+      }));
     }
 
     setLoading(false);
@@ -297,12 +310,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.setFontSize(11);
       doc.text('ITENS E EQUIPAMENTOS', 20, 55);
 
-      const tableBody = budgetItems.map(item => [
-        item.name || 'Item',
-        item.quantity_final || 0,
-        `R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        `R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-      ]);
+      const tableBody = budgetItems
+        .filter(item => {
+          const isService = serviceCatalog.some(s => s.name === item.name);
+          if (isService && proposal.hide_services_pdf) return false;
+          if (!isService && proposal.hide_products_pdf) return false;
+          return true;
+        })
+        .map(item => [
+          item.name || 'Item',
+          item.quantity_final || 0,
+          `R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+          `R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+        ]);
 
       autoTable(doc, {
         startY: 60,
@@ -604,6 +624,42 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             value={proposal.discount_value}
                             onChange={e => setProposal({ ...proposal, discount_value: Number(e.target.value) })}
                           />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-slate-400 text-sm font-medium block mb-3">Opções de Exibição (PDF)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <label className="flex items-center gap-3 cursor-pointer group bg-background-dark/50 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all">
+                            <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${proposal.hide_products_pdf ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                              {proposal.hide_products_pdf && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                            </div>
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={proposal.hide_products_pdf || false}
+                              onChange={e => setProposal({ ...proposal, hide_products_pdf: e.target.checked })}
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-white">Ocultar Produtos</span>
+                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Não listar materiais</span>
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-3 cursor-pointer group bg-background-dark/50 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all">
+                            <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${proposal.hide_services_pdf ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                              {proposal.hide_services_pdf && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                            </div>
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={proposal.hide_services_pdf || false}
+                              onChange={e => setProposal({ ...proposal, hide_services_pdf: e.target.checked })}
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-white">Ocultar Serviços</span>
+                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Não listar mão de obra</span>
+                            </div>
+                          </label>
                         </div>
                       </div>
 
