@@ -3,6 +3,7 @@ import PageHeader from './PageHeader';
 import { supabase } from '../lib/supabase';
 import { Project, Proposal } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -28,6 +29,59 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [projects, setProjects] = useState<Project[]>([]);
   // selectedProjectId is now a prop
   const [loading, setLoading] = useState(false);
+  const [pdfSettings, setPdfSettings] = useState<any>({
+    carimbo: '',
+    assinatura: '',
+    crq: '',
+    credentials: '',
+    referencias: '',
+    validade: '10'
+  });
+  const [showPdfSettings, setShowPdfSettings] = useState(false);
+
+  const loadPdfSettings = async (projectId: string) => {
+    try {
+      const { data } = await supabase
+        .from('pdf_settings')
+        .select('variables')
+        .eq('project_id', projectId)
+        .eq('phase', 'ENG_C')
+        .single();
+
+      if (data) {
+        setPdfSettings(data.variables);
+      } else {
+        setPdfSettings({
+          carimbo: '',
+          assinatura: '',
+          crq: '',
+          credentials: '',
+          referencias: '',
+          validade: '10'
+        });
+      }
+    } catch (e) {
+      console.warn('PDF settings load error:', e);
+    }
+  };
+
+  const savePdfSettings = async (newSettings: any) => {
+    setPdfSettings(newSettings);
+    if (!selectedProjectId) return;
+
+    try {
+      await supabase
+        .from('pdf_settings')
+        .upsert({
+          project_id: selectedProjectId,
+          phase: 'ENG_C',
+          variables: newSettings,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'project_id, phase' });
+    } catch (e) {
+      console.error('Error saving PDF settings:', e);
+    }
+  };
   const [saving, setSaving] = useState(false);
   const [budgetItems, setBudgetItems] = useState<any[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -49,6 +103,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   // Modal State
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'product' | 'service' | 'custom'>('product');
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
@@ -71,6 +126,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   useEffect(() => {
     if (selectedProjectId) {
       loadProposalData(selectedProjectId);
+      loadPdfSettings(selectedProjectId);
     }
   }, [selectedProjectId]);
 
@@ -227,7 +283,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       };
 
       // --- PAGE 1: COVER ---
-      doc.setFillColor(30, 41, 59);
+      doc.setFillColor(0, 0, 0); // Black Cover
       doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
       // Logo Placeholder or Design Element
@@ -244,8 +300,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.setFontSize(14);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(200, 200, 200);
-      doc.text('INCÊNDIO BRASÍLIA', 20, 115);
-      doc.text('Engenharia de Segurança', 20, 122);
+      doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 115);
 
       doc.setFillColor(239, 68, 68); // Red Accent
       doc.rect(0, 140, pageWidth * 0.4, 2, 'F');
@@ -266,7 +321,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // --- PAGE 2: SCOPE & OBJECTIVE ---
       doc.addPage();
-      doc.setFillColor(30, 41, 59);
+      doc.setFillColor(0, 0, 0); // Black
       doc.rect(0, 0, pageWidth, 40, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
@@ -299,7 +354,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // --- PAGE 3: INVESTMENT DETAIL ---
       doc.addPage();
-      doc.setFillColor(30, 41, 59);
+      doc.setFillColor(0, 0, 0); // Black
       doc.rect(0, 0, pageWidth, 40, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
@@ -354,8 +409,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           ['BDI e Taxas Operacionais', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
           ['Lucro e Encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
           ['Descontos Aplicados', `- R$ ${vals.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-          [{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } },
-          { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } }]
+          [{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold', fillColor: [0, 0, 0], textColor: [255, 255, 255] } },
+          { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [0, 0, 0], textColor: [255, 255, 255] } }]
         ],
         theme: 'grid',
         styles: { fontSize: 10 },
@@ -364,7 +419,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // --- PAGE 4: COMMERCIAL TERMS & SIGNATURES ---
       doc.addPage();
-      doc.setFillColor(30, 41, 59);
+      doc.setFillColor(0, 0, 0); // Black
       doc.rect(0, 0, pageWidth, 40, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
@@ -390,15 +445,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.setDrawColor(200);
       doc.line(30, yPos, 90, yPos);
       doc.setFontSize(10);
-      doc.text('INCÊNDIO BRASÍLIA', 60, yPos + 6, { align: 'center' });
+      doc.text(pdfSettings.assinatura || 'INCÊNDIO BRASÍLIA ENGENHARIA', 60, yPos + 6, { align: 'center' });
       doc.setFontSize(8);
-      doc.text('Departamento de Engenharia', 60, yPos + 12, { align: 'center' });
+      doc.text(pdfSettings.crq || 'Responsável Técnico', 60, yPos + 12, { align: 'center' });
 
-      doc.line(pageWidth - 30, yPos, pageWidth - 90, yPos);
-      doc.setFontSize(10);
-      doc.text('ACEITE DO CLIENTE', pageWidth - 60, yPos + 6, { align: 'center' });
-      doc.setFontSize(8);
-      doc.text('Carimbo e Assinatura', pageWidth - 60, yPos + 12, { align: 'center' });
+      // Client signature area removed as requested
 
       // Add page numbers to all pages except cover? Or all.
       const totalPages = (doc as any).internal.getNumberOfPages();
@@ -484,19 +535,102 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
         <div className="max-w-6xl mx-auto flex flex-col gap-8">
 
+          {/* PDF Customization Toggle */}
+          {selectedProjectId && (
+            <div className="bg-surface-dark rounded-xl border border-white/5 overflow-hidden shadow-sm mb-8">
+              <button
+                onClick={() => setShowPdfSettings(!showPdfSettings)}
+                className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-primary">settings_applications</span>
+                  <span className="font-bold text-white">Configurações do PDF (Engenharia de Segurança)</span>
+                </div>
+                <span className="material-symbols-outlined text-slate-500">
+                  {showPdfSettings ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {showPdfSettings && (
+                <div className="p-6 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-200">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Responsável / Assinatura</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.assinatura}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, assinatura: e.target.value })}
+                      placeholder="Nome do engenhero"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">CRQ / Registro Profissional</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.crq}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, crq: e.target.value })}
+                      placeholder="Ex: 000.000-D/DF"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Credenciais da Empresa</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.credentials}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, credentials: e.target.value })}
+                      placeholder="Ex: CNPJ, CREA Jurídico"
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Referências / Observações PDF</label>
+                    <textarea
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none h-20 resize-none"
+                      value={pdfSettings.referencias}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, referencias: e.target.value })}
+                      placeholder="Citações, normas técnicas, carimbos específicos..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Carimbo Especial</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.carimbo}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, carimbo: e.target.value })}
+                      placeholder="Texto do carimbo técnico"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Project Selection */}
           <div className="bg-surface-dark p-6 rounded-xl border border-white/5 shadow-sm">
-            <label className="block text-sm font-medium text-slate-400 mb-2">Selecione o Projeto para Proposta</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => onSelectProject(e.target.value)}
-              className="w-full md:w-1/2 bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-            >
-              <option value="">Selecione...</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
-              ))}
-            </select>
+            <div className="flex flex-col md:flex-row md:items-end gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-slate-400 mb-2">Selecione o Projeto para Proposta</label>
+                <select
+                  value={selectedProjectId}
+                  onChange={(e) => onSelectProject(e.target.value)}
+                  className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                >
+                  <option value="">Selecione...</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => setIsNewProjectModalOpen(true)}
+                className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium shrink-0"
+              >
+                <span className="material-symbols-outlined text-[20px] text-primary">add</span>
+                Novo Projeto
+              </button>
+            </div>
           </div>
 
           {selectedProjectId && (
@@ -867,6 +1001,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           </div>
         </div>
       )}
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => setIsNewProjectModalOpen(false)}
+        onSuccess={(id) => {
+          fetchProjects();
+          onSelectProject(id);
+          setIsNewProjectModalOpen(false);
+        }}
+      />
     </div>
   );
 };

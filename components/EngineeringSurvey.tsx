@@ -30,6 +30,15 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const [projects, setProjects] = useState<Project[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pdfSettings, setPdfSettings] = useState<any>({
+    carimbo: '',
+    assinatura: '',
+    crq: '',
+    credentials: '',
+    referencias: '',
+    validade: '10'
+  });
+  const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
 
   // Form State
@@ -50,6 +59,50 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const [isReplicationEnabled, setIsReplicationEnabled] = useState(false);
   const [calculationType, setCalculationType] = useState('area');
   const [enabledItems, setEnabledItems] = useState<Record<string, boolean>>({});
+
+  const loadPdfSettings = async (projectId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('pdf_settings')
+        .select('variables')
+        .eq('project_id', projectId)
+        .eq('phase', 'ENG_A')
+        .single();
+
+      if (data) {
+        setPdfSettings(data.variables);
+      } else {
+        setPdfSettings({
+          carimbo: '',
+          assinatura: '',
+          crq: '',
+          credentials: '',
+          referencias: '',
+          validade: '10'
+        });
+      }
+    } catch (e) {
+      console.warn('PDF settings not found or table missing:', e);
+    }
+  };
+
+  const savePdfSettings = async (newSettings: any) => {
+    setPdfSettings(newSettings);
+    if (!selectedProjectId) return;
+
+    try {
+      await supabase
+        .from('pdf_settings')
+        .upsert({
+          project_id: selectedProjectId,
+          phase: 'ENG_A',
+          variables: newSettings,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'project_id, phase' });
+    } catch (e) {
+      console.error('Error saving PDF settings:', e);
+    }
+  };
 
   const FLOOR_TYPES = [
     'Subsolo',
@@ -92,6 +145,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   useEffect(() => {
     if (selectedProjectId) {
       fetchFloors();
+      loadPdfSettings(selectedProjectId);
     } else {
       setFloors([]);
       resetForm();
@@ -309,7 +363,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     };
 
     // --- Page 1: Header and Summary ---
-    doc.setFillColor(30, 41, 59);
+    doc.setFillColor(0, 0, 0); // Black Header
     doc.rect(0, 0, pageWidth, 50, 'F');
 
     doc.setFontSize(22);
@@ -320,7 +374,8 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(200, 200, 200);
-    doc.text(`Identificação: PRJ-${project.id.slice(0, 5).toUpperCase()}`, 20, 36);
+    doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 36);
+    doc.text(`Identificação: PRJ-${project.id.slice(0, 5).toUpperCase()}`, 20, 42);
     doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 20, 28, { align: 'right' });
 
     doc.setTextColor(40);
@@ -426,6 +481,30 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
       addFooter(doc, i, totalPages);
     }
 
+    // --- Signature / Stamp Section if provided ---
+    if (pdfSettings.assinatura || pdfSettings.carimbo || pdfSettings.crq) {
+      doc.addPage();
+      doc.setFillColor(0, 0, 0);
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.text('CREDENCIAIS E VALIDAÇÃO', 20, 25);
+
+      doc.setTextColor(40);
+      doc.setFontSize(10);
+      let sigY = 60;
+      if (pdfSettings.assinatura) { doc.text(`Responsável: ${pdfSettings.assinatura}`, 20, sigY); sigY += 8; }
+      if (pdfSettings.crq) { doc.text(`CRQ/CREA: ${pdfSettings.crq}`, 20, sigY); sigY += 8; }
+      if (pdfSettings.credentials) { doc.text(`Credenciais: ${pdfSettings.credentials}`, 20, sigY); sigY += 8; }
+      if (pdfSettings.carimbo) { doc.text(`Carimbo: ${pdfSettings.carimbo}`, 20, sigY); sigY += 15; }
+      if (pdfSettings.referencias) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Referências:', 20, sigY);
+        doc.setFont('helvetica', 'normal');
+        doc.text(doc.splitTextToSize(pdfSettings.referencias, pageWidth - 40), 20, sigY + 6);
+      }
+    }
+
     doc.save(`Levantamento_${project.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -470,6 +549,78 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
         <div className="max-w-7xl mx-auto flex flex-col gap-8 pb-12">
+
+          {/* PDF Customization Toggle */}
+          {selectedProjectId && (
+            <div className="bg-surface-dark rounded-xl border border-white/5 overflow-hidden shadow-sm mb-8">
+              <button
+                onClick={() => setShowPdfSettings(!showPdfSettings)}
+                className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-primary">settings_applications</span>
+                  <span className="font-bold text-white">Configurações do PDF (Engenharia de Segurança)</span>
+                </div>
+                <span className="material-symbols-outlined text-slate-500">
+                  {showPdfSettings ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {showPdfSettings && (
+                <div className="p-6 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-200">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Responsável / Assinatura</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.assinatura}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, assinatura: e.target.value })}
+                      placeholder="Nome do engenheiro"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">CRQ / Registro Profissional</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.crq}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, crq: e.target.value })}
+                      placeholder="Ex: 000.000-D/DF"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Credenciais da Empresa</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.credentials}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, credentials: e.target.value })}
+                      placeholder="Ex: CNPJ, CREA Jurídico"
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Referências / Observações PDF</label>
+                    <textarea
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none h-20 resize-none"
+                      value={pdfSettings.referencias}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, referencias: e.target.value })}
+                      placeholder="Citações, normas técnicas, carimbos específicos..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Carimbo Especial</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.carimbo}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, carimbo: e.target.value })}
+                      placeholder="Texto do carimbo técnico"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Project Selection */}
           <div className="bg-surface-dark p-6 rounded-xl border border-white/5 shadow-sm">
@@ -805,7 +956,10 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
       <NewProjectModal
         isOpen={isNewProjectModalOpen}
         onClose={() => setIsNewProjectModalOpen(false)}
-        onSuccess={() => fetchProjects()}
+        onSuccess={(id) => {
+          fetchProjects();
+          onSelectProject(id);
+        }}
       />
     </div>
   );

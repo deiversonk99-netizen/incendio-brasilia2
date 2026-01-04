@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 interface NewProjectModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSuccess: () => void;
+    onSuccess: (id: string) => void;
 }
 
 const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSuccess }) => {
@@ -131,7 +131,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 if (serviceError) console.error('Error saving project services:', serviceError);
             }
 
-            onSuccess();
+            onSuccess(newProject.id);
             onClose();
             setFormData({ name: '', client: '', type: 'business' });
             setSelectedFile(null);

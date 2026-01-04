@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import PageHeader from './PageHeader';
 import { supabase } from '../lib/supabase';
 import { Project } from '../types';
+import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -30,10 +31,16 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
   // Manual Add Item State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState(0);
   const [replicationSummary, setReplicationSummary] = useState<{ name: string, factor: number, type: string }[]>([]);
+
+  // Exchange Product State
+  const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
+  const [itemToExchange, setItemToExchange] = useState<BudgetItem | null>(null);
+  const [exchangeSearch, setExchangeSearch] = useState('');
 
   // Load catalog for the add modal
   useEffect(() => {
@@ -51,6 +58,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   useEffect(() => {
     if (selectedProjectId) {
       loadBudgetItems();
+      loadPdfSettings(selectedProjectId);
     } else {
       setItems([]);
     }
@@ -239,12 +247,78 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     }
   };
 
-  const handleUpdateItem = async (id: string, field: 'quantity_final' | 'unit_price', value: number) => {
+  const handleUpdateItem = async (id: string, field: keyof BudgetItem, value: string | number) => {
     // Optimistic update
-    setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+    setItems(prev => prev.map(item => {
+      if (item.id === id) {
+        let updatedItem = { ...item, [field]: value };
 
-    // DB Update (debounce could be good here, but keeping it simple for now)
+        // Auto-update price if name matches a catalog product
+        if (field === 'name') {
+          const catalogProd = catalogProducts.find(p => p.name === value);
+          if (catalogProd) {
+            updatedItem.unit_price = catalogProd.price;
+            // Also sync price to DB immediately for the item
+            supabase.from('budget_items').update({ unit_price: catalogProd.price }).eq('id', id).then(({ error }) => {
+              if (error) console.error('Error auto-updating price field:', error);
+            });
+          }
+        }
+
+        return updatedItem;
+      }
+      return item;
+    }));
+
+    // DB Update for the primary field
     await supabase.from('budget_items').update({ [field]: value }).eq('id', id);
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este item?')) return;
+
+    // Optimistic update
+    setItems(prev => prev.filter(item => item.id !== id));
+
+    // DB Update
+    const { error } = await supabase.from('budget_items').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting item:', error);
+      alert('Erro ao excluir item.');
+      loadBudgetItems(); // Re-load to sync with DB if error
+    }
+  };
+
+  const handleSwapProduct = async (catalogProduct: any) => {
+    if (!itemToExchange) return;
+
+    const updatedItem = {
+      ...itemToExchange,
+      name: catalogProduct.name,
+      unit_price: catalogProduct.price
+    };
+
+    // Optimistic update
+    setItems(prev => prev.map(item => item.id === itemToExchange.id ? updatedItem : item));
+
+    // DB Update
+    const { error } = await supabase
+      .from('budget_items')
+      .update({
+        name: catalogProduct.name,
+        unit_price: catalogProduct.price
+      })
+      .eq('id', itemToExchange.id);
+
+    if (error) {
+      console.error('Error swapping product:', error);
+      alert('Erro ao trocar produto.');
+      loadBudgetItems();
+    }
+
+    setIsExchangeModalOpen(false);
+    setItemToExchange(null);
+    setExchangeSearch('');
   };
 
   const calculateTotal = () => {
@@ -296,7 +370,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     };
 
     // --- Page 1: Header and Summary ---
-    doc.setFillColor(30, 41, 59);
+    doc.setFillColor(0, 0, 0); // Black
     doc.rect(0, 0, pageWidth, 50, 'F');
 
     doc.setFontSize(22);
@@ -307,7 +381,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(200, 200, 200);
-    doc.text(`Identificação: PRJ-${project.id.slice(0, 5).toUpperCase()}`, 20, 36);
+    doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 36);
+    doc.text(`Identificação: PRJ-${project.id.slice(0, 5).toUpperCase()}`, 20, 42);
     doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 20, 28, { align: 'right' });
 
     doc.setTextColor(40);
@@ -377,6 +452,30 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       addFooter(doc, i, totalPages);
     }
 
+    // --- Signature / Stamp Section if provided ---
+    if (pdfSettings.assinatura || pdfSettings.carimbo || pdfSettings.crq) {
+      doc.addPage();
+      doc.setFillColor(0, 0, 0);
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.text('CREDENCIAIS E VALIDAÇÃO', 20, 25);
+
+      doc.setTextColor(40);
+      doc.setFontSize(10);
+      let sigY = 60;
+      if (pdfSettings.assinatura) { doc.text(`Responsável: ${pdfSettings.assinatura}`, 20, sigY); sigY += 8; }
+      if (pdfSettings.crq) { doc.text(`CRQ/CREA: ${pdfSettings.crq}`, 20, sigY); sigY += 8; }
+      if (pdfSettings.credentials) { doc.text(`Credenciais: ${pdfSettings.credentials}`, 20, sigY); sigY += 8; }
+      if (pdfSettings.carimbo) { doc.text(`Carimbo: ${pdfSettings.carimbo}`, 20, sigY); sigY += 15; }
+      if (pdfSettings.referencias) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Referências:', 20, sigY);
+        doc.setFont('helvetica', 'normal');
+        doc.text(doc.splitTextToSize(pdfSettings.referencias, pageWidth - 40), 20, sigY + 6);
+      }
+    }
+
     doc.save(`Composicao_${project.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -433,19 +532,102 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         {/* Added relative for modal positioning context if needed, though fixed is better */}
         <div className="max-w-7xl mx-auto flex flex-col gap-8 pb-12">
 
+          {/* PDF Customization Toggle */}
+          {selectedProjectId && (
+            <div className="bg-surface-dark rounded-xl border border-white/5 overflow-hidden shadow-sm">
+              <button
+                onClick={() => setShowPdfSettings(!showPdfSettings)}
+                className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-primary">settings_applications</span>
+                  <span className="font-bold text-white">Configurações do PDF (Engenharia de Segurança)</span>
+                </div>
+                <span className="material-symbols-outlined text-slate-500">
+                  {showPdfSettings ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {showPdfSettings && (
+                <div className="p-6 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-200">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Responsável / Assinatura</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.assinatura}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, assinatura: e.target.value })}
+                      placeholder="Nome do engenhero"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">CRQ / Registro Profissional</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.crq}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, crq: e.target.value })}
+                      placeholder="Ex: 000.000-D/DF"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Credenciais da Empresa</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.credentials}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, credentials: e.target.value })}
+                      placeholder="Ex: CNPJ, CREA Jurídico"
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Referências / Observações PDF</label>
+                    <textarea
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none h-20 resize-none"
+                      value={pdfSettings.referencias}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, referencias: e.target.value })}
+                      placeholder="Citações, normas técnicas, carimbos específicos..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Carimbo Especial</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      value={pdfSettings.carimbo}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, carimbo: e.target.value })}
+                      placeholder="Texto do carimbo técnico"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Project Selection */}
           <div className="bg-surface-dark p-6 rounded-xl border border-white/5 shadow-sm">
-            <label className="block text-sm font-medium text-slate-400 mb-2">Selecione o Projeto</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => onSelectProject(e.target.value)}
-              className="w-full md:w-1/2 bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-            >
-              <option value="">Selecione...</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
-              ))}
-            </select>
+            <div className="flex flex-col md:flex-row md:items-end gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-slate-400 mb-2">Selecione o Projeto</label>
+                <select
+                  value={selectedProjectId}
+                  onChange={(e) => onSelectProject(e.target.value)}
+                  className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                >
+                  <option value="">Selecione...</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => setIsNewProjectModalOpen(true)}
+                className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium shrink-0"
+              >
+                <span className="material-symbols-outlined text-[20px] text-primary">add</span>
+                Novo Projeto
+              </button>
+            </div>
           </div>
 
           {selectedProjectId && (
@@ -495,19 +677,43 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                         <th className="px-6 py-4 text-center">Qtd. Final</th>
                         <th className="px-6 py-4 text-right">Custo Unit.</th>
                         <th className="px-6 py-4 text-right">Total</th>
+                        <th className="px-6 py-4 text-center">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
                       {loading || calculating ? (
-                        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">Calculando materiais...</td></tr>
+                        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">Calculando materiais...</td></tr>
                       ) : items.length === 0 ? (
-                        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">Nenhum item encontrado. Adicione manualmente ou verifique a Fase A.</td></tr>
+                        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">Nenhum item encontrado. Adicione manualmente ou verifique a Fase A.</td></tr>
                       ) : (
                         items.map(item => (
                           <tr key={item.id} className="hover:bg-white/5 transition-colors group">
-                            <td className="px-6 py-4 font-medium text-white">
-                              {item.name}
-                              <div className="text-xs text-slate-500 font-normal">{item.origin === 'CALCULATED' ? 'Sugerido pelo sistema' : 'Adicionado Manualmente'}</div>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  list="catalog-products"
+                                  className="flex-1 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium"
+                                  value={item.name}
+                                  onChange={(e) => handleUpdateItem(item.id, 'name', e.target.value)}
+                                />
+                                <button
+                                  onClick={() => {
+                                    setItemToExchange(item);
+                                    setIsExchangeModalOpen(true);
+                                  }}
+                                  className="p-1 text-slate-500 hover:text-primary hover:bg-primary/10 rounded transition-all"
+                                  title="Trocar por produto do catálogo"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                                </button>
+                              </div>
+                              <datalist id="catalog-products">
+                                {catalogProducts.map((p, idx) => (
+                                  <option key={idx} value={p.name} />
+                                ))}
+                              </datalist>
+                              <div className="text-[10px] text-slate-500 px-2 mt-1">{item.origin === 'CALCULATED' ? 'Sugerido pelo sistema' : 'Adicionado Manualmente'}</div>
                             </td>
                             <td className="px-6 py-4">
                               <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${item.origin === 'CALCULATED'
@@ -539,6 +745,15 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                             </td>
                             <td className="px-6 py-4 text-right font-bold text-white">
                               R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <button
+                                onClick={() => handleDeleteItem(item.id)}
+                                className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                title="Excluir Item"
+                              >
+                                <span className="material-symbols-outlined text-[20px]">delete</span>
+                              </button>
                             </td>
                           </tr>
                         ))
@@ -603,6 +818,70 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                   className="px-6 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors disabled:opacity-50"
                 >
                   Adicionar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => setIsNewProjectModalOpen(false)}
+        onSuccess={(id) => {
+          fetchProjects();
+          onSelectProject(id);
+          setIsNewProjectModalOpen(false);
+        }}
+      />
+
+      {/* Product Exchange Modal */}
+      {isExchangeModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-xl p-6 w-full max-w-lg shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">Trocar Produto</h3>
+            <p className="text-slate-400 text-sm mb-6">
+              Substituir <strong>{itemToExchange?.name}</strong> por um novo item do catálogo. O preço será atualizado.
+            </p>
+
+            <div className="flex flex-col gap-4">
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Buscar no catálogo..."
+                  className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 pl-10 pr-4 text-white focus:border-primary outline-none"
+                  value={exchangeSearch}
+                  onChange={(e) => setExchangeSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="max-h-64 overflow-y-auto divide-y divide-white/5 border border-white/5 rounded-lg bg-black/20">
+                {catalogProducts
+                  .filter(p => !exchangeSearch || p.name.toLowerCase().includes(exchangeSearch.toLowerCase()))
+                  .map((p, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSwapProduct(p)}
+                      className="w-full flex items-center justify-between p-3 hover:bg-primary/10 transition-colors text-left group"
+                    >
+                      <span className="text-white group-hover:text-primary transition-colors">{p.name}</span>
+                      <span className="text-emerald-500 font-bold text-xs uppercase">R$ {p.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </button>
+                  ))
+                }
+                {catalogProducts.filter(p => !exchangeSearch || p.name.toLowerCase().includes(exchangeSearch.toLowerCase())).length === 0 && (
+                  <div className="p-4 text-center text-slate-500 italic text-sm">Nenhum produto encontrado.</div>
+                )}
+              </div>
+
+              <div className="flex justify-end mt-4">
+                <button
+                  onClick={() => setIsExchangeModalOpen(false)}
+                  className="px-4 py-2 rounded-lg hover:bg-white/5 text-slate-400 font-bold text-sm transition-colors"
+                >
+                  Cancelar
                 </button>
               </div>
             </div>
