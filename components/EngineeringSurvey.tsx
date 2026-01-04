@@ -47,6 +47,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
 
   // Form State
   const [editingFloorId, setEditingFloorId] = useState<string | null>(null);
@@ -139,6 +140,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     'Térreo',
     'Pilotis',
     'Pavimento Tipo',
+    'Residencial',
     'Cobertura',
     'Casa de Máquinas',
     'Outros'
@@ -196,6 +198,22 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     const { data } = await supabase.from('floors').select('*').eq('project_id', selectedProjectId).order('created_at', { ascending: true });
     if (data) setFloors(data);
     setLoading(false);
+  };
+
+  const handleDeleteProject = async () => {
+    if (!selectedProjectId) return;
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!confirm(`Deseja realmente excluir o projeto "${project?.name}"? Esta ação removerá todos os pavimentos e dados vinculados.`)) return;
+
+    try {
+      const { error } = await supabase.from('projects').delete().eq('id', selectedProjectId);
+      if (error) throw error;
+      onSelectProject('');
+      fetchProjects();
+    } catch (e) {
+      console.error('Error deleting project:', e);
+      alert('Erro ao excluir projeto');
+    }
   };
 
 
@@ -770,13 +788,42 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                   ))}
                 </select>
               </div>
-              <button
-                onClick={() => setIsNewProjectModalOpen(true)}
-                className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium shrink-0"
-              >
-                <span className="material-symbols-outlined text-[20px] text-primary">add</span>
-                Novo Projeto
-              </button>
+              <div className="flex items-center gap-2 h-11 shrink-0">
+                {selectedProjectId && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const project = projects.find(p => p.id === selectedProjectId);
+                        if (project) {
+                          setProjectToEdit(project);
+                          setIsNewProjectModalOpen(true);
+                        }
+                      }}
+                      className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                      title="Editar Projeto"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">edit</span>
+                    </button>
+                    <button
+                      onClick={handleDeleteProject}
+                      className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all"
+                      title="Excluir Projeto"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">delete</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => {
+                    setProjectToEdit(null);
+                    setIsNewProjectModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium"
+                >
+                  <span className="material-symbols-outlined text-[20px] text-primary">add</span>
+                  Novo Projeto
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1087,7 +1134,11 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
 
       <NewProjectModal
         isOpen={isNewProjectModalOpen}
-        onClose={() => setIsNewProjectModalOpen(false)}
+        onClose={() => {
+          setIsNewProjectModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        projectToEdit={projectToEdit}
         onSuccess={(id) => {
           fetchProjects();
           onSelectProject(id);

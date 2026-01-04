@@ -42,7 +42,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     show_carimbo: true,
     carimbo: '',
     carimbo_img: '',
-    validade: '10'
+    validade: '10',
+    show_cost: true
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
 
@@ -62,6 +63,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_credentials: true,
           show_referencias: true,
           show_carimbo: true,
+          show_cost: true,
           ...data.variables
         });
       } else {
@@ -78,7 +80,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_carimbo: true,
           carimbo: '',
           carimbo_img: '',
-          validade: '10'
+          validade: '10',
+          show_cost: true
         });
       }
     } catch (e) {
@@ -133,6 +136,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   // Modal State
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [modalTab, setModalTab] = useState<'product' | 'service' | 'custom'>('product');
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
@@ -162,6 +166,22 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const fetchProjects = async () => {
     const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
     if (data) setProjects(data);
+  };
+
+  const handleDeleteProject = async () => {
+    if (!selectedProjectId) return;
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!confirm(`Deseja realmente excluir o projeto "${project?.name}"? Esta ação removerá todos os dados vinculados.`)) return;
+
+    try {
+      const { error } = await supabase.from('projects').delete().eq('id', selectedProjectId);
+      if (error) throw error;
+      onSelectProject('');
+      fetchProjects();
+    } catch (e) {
+      console.error('Error deleting project:', e);
+      alert('Erro ao excluir projeto');
+    }
   };
 
   const fetchPaymentMethods = async () => {
@@ -401,25 +421,35 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           if (!isService && proposal.hide_products_pdf) return false;
           return true;
         })
-        .map(item => [
-          item.name || 'Item',
-          item.quantity_final || 0,
-          `R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-          `R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-        ]);
+        .map(item => {
+          const row = [item.name || 'Item', item.quantity_final || 0];
+          if (pdfSettings.show_cost) {
+            row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+            row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+          }
+          return row;
+        });
+
+      const tableHead = ['Descrição', 'Qtd'];
+      if (pdfSettings.show_cost) {
+        tableHead.push('Unit. (R$)', 'Total (R$)');
+      }
 
       autoTable(doc, {
         startY: 60,
-        head: [['Descrição', 'Qtd', 'Unit. (R$)', 'Total (R$)']],
+        head: [tableHead],
         body: tableBody,
         theme: 'striped',
         headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
         styles: { fontSize: 9 },
-        columnStyles: {
+        columnStyles: pdfSettings.show_cost ? {
           0: { cellWidth: 100 },
           1: { halign: 'center' },
           2: { halign: 'right' },
           3: { halign: 'right' }
+        } : {
+          0: { cellWidth: 140 },
+          1: { halign: 'center' }
         }
       });
 
@@ -431,16 +461,21 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text('RESUMO FINANCEIRO', 20, yPos);
       doc.line(20, yPos + 2, 80, yPos + 2);
 
+      const financeBody = pdfSettings.show_cost ? [
+        ['Subtotal de Itens', `R$ ${vals.base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['BDI e Taxas Operacionais', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Lucro e Encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Descontos Aplicados', `- R$ ${vals.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        [{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } },
+        { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } }]
+      ] : [
+        [{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } },
+        { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } }]
+      ];
+
       autoTable(doc, {
         startY: yPos + 6,
-        body: [
-          ['Subtotal de Itens', `R$ ${vals.base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-          ['BDI e Taxas Operacionais', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-          ['Lucro e Encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-          ['Descontos Aplicados', `- R$ ${vals.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-          [{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold', fillColor: [0, 0, 0], textColor: [255, 255, 255] } },
-          { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [0, 0, 0], textColor: [255, 255, 255] } }]
-        ],
+        body: financeBody,
         theme: 'grid',
         styles: { fontSize: 10 },
         columnStyles: { 1: { halign: 'right', cellWidth: 60 } }
@@ -734,6 +769,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         onChange={(e) => savePdfSettings({ ...pdfSettings, validade: e.target.value })}
                       />
                     </div>
+
+                    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 mt-auto">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-white uppercase">Preços de Custo</span>
+                        <span className="text-[10px] text-slate-400">Exibir valores e detalhamento financeiro no PDF</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        className="w-5 h-5 rounded border-white/10 bg-background-dark text-primary focus:ring-primary"
+                        checked={pdfSettings.show_cost}
+                        onChange={(e) => savePdfSettings({ ...pdfSettings, show_cost: e.target.checked })}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -756,13 +804,42 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                   ))}
                 </select>
               </div>
-              <button
-                onClick={() => setIsNewProjectModalOpen(true)}
-                className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium shrink-0"
-              >
-                <span className="material-symbols-outlined text-[20px] text-primary">add</span>
-                Novo Projeto
-              </button>
+              <div className="flex items-center gap-2 h-11 shrink-0">
+                {selectedProjectId && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const project = projects.find(p => p.id === selectedProjectId);
+                        if (project) {
+                          setProjectToEdit(project);
+                          setIsNewProjectModalOpen(true);
+                        }
+                      }}
+                      className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                      title="Editar Projeto"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">edit</span>
+                    </button>
+                    <button
+                      onClick={handleDeleteProject}
+                      className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all"
+                      title="Excluir Projeto"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">delete</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => {
+                    setProjectToEdit(null);
+                    setIsNewProjectModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium"
+                >
+                  <span className="material-symbols-outlined text-[20px] text-primary">add</span>
+                  Novo Projeto
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1136,11 +1213,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       )}
       <NewProjectModal
         isOpen={isNewProjectModalOpen}
-        onClose={() => setIsNewProjectModalOpen(false)}
+        onClose={() => {
+          setIsNewProjectModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        projectToEdit={projectToEdit}
         onSuccess={(id) => {
           fetchProjects();
           onSelectProject(id);
-          setIsNewProjectModalOpen(false);
         }}
       />
     </div>

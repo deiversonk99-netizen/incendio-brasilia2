@@ -6,9 +6,10 @@ interface NewProjectModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: (id: string) => void;
+    projectToEdit?: any;
 }
 
-const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSuccess, projectToEdit }) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [clients, setClients] = useState<string[]>([]);
@@ -27,10 +28,33 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
 
     useEffect(() => {
         if (isOpen) {
+            if (projectToEdit) {
+                setFormData({
+                    name: projectToEdit.name,
+                    client: projectToEdit.client,
+                    type: projectToEdit.type || 'business'
+                });
+                setClientSearch(projectToEdit.client);
+                fetchProjectServices(projectToEdit.id);
+            } else {
+                setFormData({ name: '', client: '', type: 'business' });
+                setClientSearch('');
+                setSelectedServices([]);
+            }
             fetchClients();
             fetchServices();
         }
-    }, [isOpen]);
+    }, [isOpen, projectToEdit]);
+
+    const fetchProjectServices = async (projectId: string) => {
+        const { data } = await supabase
+            .from('project_services')
+            .select('service_id')
+            .eq('project_id', projectId);
+        if (data) {
+            setSelectedServices(data.map(s => s.service_id));
+        }
+    };
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -86,7 +110,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 });
             }
 
-            let blueprint_url = '';
+            let blueprint_url = projectToEdit?.blueprint_url || '';
 
             if (selectedFile) {
                 const fileExt = selectedFile.name.split('.').pop();
@@ -107,39 +131,68 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 }
             }
 
-            const { data: newProject, error } = await supabase.from('projects').insert({
-                name: formData.name,
-                client: formData.client,
-                value: 0,
-                deadline: null,
-                type: formData.type,
-                status: 'ANALYSIS',
-                user_id: user.id,
-                blueprint_url: blueprint_url || null,
-            }).select().single();
+            if (projectToEdit) {
+                // Update
+                const { error } = await supabase
+                    .from('projects')
+                    .update({
+                        name: formData.name,
+                        client: formData.client,
+                        type: formData.type,
+                        blueprint_url: blueprint_url || null,
+                    })
+                    .eq('id', projectToEdit.id);
 
-            if (error) throw error;
+                if (error) throw error;
 
-            if (newProject && selectedServices.length > 0) {
-                const serviceAssociations = selectedServices.map(serviceId => ({
-                    project_id: newProject.id,
-                    service_id: serviceId
-                }));
-                const { error: serviceError } = await supabase
-                    .from('project_services')
-                    .insert(serviceAssociations);
-                if (serviceError) console.error('Error saving project services:', serviceError);
+                // Update services
+                await supabase.from('project_services').delete().eq('project_id', projectToEdit.id);
+                if (selectedServices.length > 0) {
+                    const serviceAssociations = selectedServices.map(serviceId => ({
+                        project_id: projectToEdit.id,
+                        service_id: serviceId
+                    }));
+                    await supabase.from('project_services').insert(serviceAssociations);
+                }
+
+                onSuccess(projectToEdit.id);
+            } else {
+                // Create
+                const { data: newProject, error } = await supabase.from('projects').insert({
+                    name: formData.name,
+                    client: formData.client,
+                    value: 0,
+                    deadline: null,
+                    type: formData.type,
+                    status: 'ANALYSIS',
+                    user_id: user.id,
+                    blueprint_url: blueprint_url || null,
+                }).select().single();
+
+                if (error) throw error;
+
+                if (newProject && selectedServices.length > 0) {
+                    const serviceAssociations = selectedServices.map(serviceId => ({
+                        project_id: newProject.id,
+                        service_id: serviceId
+                    }));
+                    const { error: serviceError } = await supabase
+                        .from('project_services')
+                        .insert(serviceAssociations);
+                    if (serviceError) console.error('Error saving project services:', serviceError);
+                }
+
+                onSuccess(newProject.id);
             }
 
-            onSuccess(newProject.id);
             onClose();
             setFormData({ name: '', client: '', type: 'business' });
             setSelectedFile(null);
             setClientSearch('');
             setSelectedServices([]);
         } catch (error) {
-            console.error('Error creating project:', error);
-            alert('Erro ao criar projeto');
+            console.error('Error saving project:', error);
+            alert('Erro ao salvar projeto');
         } finally {
             setLoading(false);
         }
@@ -155,7 +208,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="w-full max-w-lg rounded-2xl bg-surface-dark border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
                 <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 shrink-0">
-                    <h2 className="text-xl font-bold text-white">Novo Projeto</h2>
+                    <h2 className="text-xl font-bold text-white">{projectToEdit ? 'Editar Projeto' : 'Novo Projeto'}</h2>
                     <button onClick={onClose} className="text-slate-400 hover:text-white">
                         <span className="material-symbols-outlined">close</span>
                     </button>
@@ -313,7 +366,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                             disabled={loading}
                             className="flex-1 rounded-lg bg-primary py-3 font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary-dark disabled:opacity-50 transition-all"
                         >
-                            {loading ? 'Criando...' : 'Criar Projeto'}
+                            {loading ? (projectToEdit ? 'Salvando...' : 'Criando...') : (projectToEdit ? 'Salvar Alterações' : 'Criar Projeto')}
                         </button>
                     </div>
                 </form>

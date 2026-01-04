@@ -32,6 +32,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   // Manual Add Item State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState(0);
@@ -97,6 +98,14 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     }
   };
 
+  const handleImageUpload = (field: string, file: File) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      savePdfSettings({ ...pdfSettings, [field]: reader.result as string });
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Load catalog for the add modal
   useEffect(() => {
     const loadCatalog = async () => {
@@ -122,6 +131,22 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const fetchProjects = async () => {
     const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
     if (data) setProjects(data);
+  };
+
+  const handleDeleteProject = async () => {
+    if (!selectedProjectId) return;
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!confirm(`Deseja realmente excluir o projeto "${project?.name}"? Esta ação removerá todos os dados vinculados.`)) return;
+
+    try {
+      const { error } = await supabase.from('projects').delete().eq('id', selectedProjectId);
+      if (error) throw error;
+      onSelectProject('');
+      fetchProjects();
+    } catch (e) {
+      console.error('Error deleting project:', e);
+      alert('Erro ao excluir projeto');
+    }
   };
 
   useEffect(() => {
@@ -778,13 +803,42 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                   ))}
                 </select>
               </div>
-              <button
-                onClick={() => setIsNewProjectModalOpen(true)}
-                className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium shrink-0"
-              >
-                <span className="material-symbols-outlined text-[20px] text-primary">add</span>
-                Novo Projeto
-              </button>
+              <div className="flex items-center gap-2 h-11 shrink-0">
+                {selectedProjectId && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const project = projects.find(p => p.id === selectedProjectId);
+                        if (project) {
+                          setProjectToEdit(project);
+                          setIsNewProjectModalOpen(true);
+                        }
+                      }}
+                      className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                      title="Editar Projeto"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">edit</span>
+                    </button>
+                    <button
+                      onClick={handleDeleteProject}
+                      className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all"
+                      title="Excluir Projeto"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">delete</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => {
+                    setProjectToEdit(null);
+                    setIsNewProjectModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium"
+                >
+                  <span className="material-symbols-outlined text-[20px] text-primary">add</span>
+                  Novo Projeto
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1046,6 +1100,18 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           </div>
         </div>
       )}
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => {
+          setIsNewProjectModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        projectToEdit={projectToEdit}
+        onSuccess={(id) => {
+          fetchProjects();
+          onSelectProject(id);
+        }}
+      />
     </div>
   );
 };
