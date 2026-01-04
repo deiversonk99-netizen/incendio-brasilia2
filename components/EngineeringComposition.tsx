@@ -42,6 +42,61 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const [itemToExchange, setItemToExchange] = useState<BudgetItem | null>(null);
   const [exchangeSearch, setExchangeSearch] = useState('');
 
+  // PDF Settings State
+  const [pdfSettings, setPdfSettings] = useState<any>({
+    carimbo: '',
+    assinatura: '',
+    crq: '',
+    credentials: '',
+    referencias: '',
+    validade: '10'
+  });
+  const [showPdfSettings, setShowPdfSettings] = useState(false);
+
+  const loadPdfSettings = async (projectId: string) => {
+    try {
+      const { data } = await supabase
+        .from('pdf_settings')
+        .select('variables')
+        .eq('project_id', projectId)
+        .eq('phase', 'ENG_B')
+        .single();
+
+      if (data) {
+        setPdfSettings(data.variables);
+      } else {
+        setPdfSettings({
+          carimbo: '',
+          assinatura: '',
+          crq: '',
+          credentials: '',
+          referencias: '',
+          validade: '10'
+        });
+      }
+    } catch (e) {
+      console.warn('PDF settings load error:', e);
+    }
+  };
+
+  const savePdfSettings = async (newSettings: any) => {
+    setPdfSettings(newSettings);
+    if (!selectedProjectId) return;
+
+    try {
+      await supabase
+        .from('pdf_settings')
+        .upsert({
+          project_id: selectedProjectId,
+          phase: 'ENG_B',
+          variables: newSettings,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'project_id, phase' });
+    } catch (e) {
+      console.error('Error saving PDF settings:', e);
+    }
+  };
+
   // Load catalog for the add modal
   useEffect(() => {
     const loadCatalog = async () => {
