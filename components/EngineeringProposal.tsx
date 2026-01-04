@@ -30,11 +30,18 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   // selectedProjectId is now a prop
   const [loading, setLoading] = useState(false);
   const [pdfSettings, setPdfSettings] = useState<any>({
-    carimbo: '',
+    show_assinatura: true,
     assinatura: '',
+    show_crq: true,
     crq: '',
+    show_credentials: true,
     credentials: '',
+    credentials_img: '',
+    show_referencias: true,
     referencias: '',
+    show_carimbo: true,
+    carimbo: '',
+    carimbo_img: '',
     validade: '10'
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
@@ -49,20 +56,42 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         .single();
 
       if (data) {
-        setPdfSettings(data.variables);
+        setPdfSettings({
+          show_assinatura: true,
+          show_crq: true,
+          show_credentials: true,
+          show_referencias: true,
+          show_carimbo: true,
+          ...data.variables
+        });
       } else {
         setPdfSettings({
-          carimbo: '',
+          show_assinatura: true,
           assinatura: '',
+          show_crq: true,
           crq: '',
+          show_credentials: true,
           credentials: '',
+          credentials_img: '',
+          show_referencias: true,
           referencias: '',
+          show_carimbo: true,
+          carimbo: '',
+          carimbo_img: '',
           validade: '10'
         });
       }
     } catch (e) {
       console.warn('PDF settings load error:', e);
     }
+  };
+
+  const handleImageUpload = (field: string, file: File) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      savePdfSettings({ ...pdfSettings, [field]: reader.result as string });
+    };
+    reader.readAsDataURL(file);
   };
 
   const savePdfSettings = async (newSettings: any) => {
@@ -443,11 +472,47 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // Signatures
       doc.setDrawColor(200);
-      doc.line(30, yPos, 90, yPos);
-      doc.setFontSize(10);
-      doc.text(pdfSettings.assinatura || 'INCÊNDIO BRASÍLIA ENGENHARIA', 60, yPos + 6, { align: 'center' });
-      doc.setFontSize(8);
-      doc.text(pdfSettings.crq || 'Responsável Técnico', 60, yPos + 12, { align: 'center' });
+      let sigYPos = yPos;
+
+      if (pdfSettings.show_assinatura) {
+        doc.line(30, sigYPos, 90, sigYPos);
+        doc.setFontSize(10);
+        doc.text(pdfSettings.assinatura || 'INCÊNDIO BRASÍLIA ENGENHARIA', 60, sigYPos + 6, { align: 'center' });
+        if (pdfSettings.show_crq) {
+          doc.setFontSize(8);
+          doc.text(pdfSettings.crq || 'Responsável Técnico', 60, sigYPos + 12, { align: 'center' });
+        }
+      }
+
+      // Other stamps/credentials as images or text if toggled
+      let otherY = sigYPos + 25;
+      if (pdfSettings.show_credentials) {
+        if (pdfSettings.credentials_img) {
+          doc.addImage(pdfSettings.credentials_img, 'PNG', 30, otherY, 40, 20);
+          otherY += 25;
+        } else if (pdfSettings.credentials) {
+          doc.setFontSize(8);
+          doc.text(pdfSettings.credentials, 30, otherY);
+          otherY += 10;
+        }
+      }
+
+      if (pdfSettings.show_carimbo) {
+        if (pdfSettings.carimbo_img) {
+          doc.addImage(pdfSettings.carimbo_img, 'PNG', 30, otherY, 40, 20);
+          otherY += 25;
+        } else if (pdfSettings.carimbo) {
+          doc.setFontSize(8);
+          doc.text(pdfSettings.carimbo, 30, otherY);
+          otherY += 10;
+        }
+      }
+
+      if (pdfSettings.validade) {
+        doc.setFontSize(9);
+        doc.setTextColor(150);
+        doc.text(`Proposta válida por: ${pdfSettings.validade} dias`, 20, pageHeight - 20);
+      }
 
       // Client signature area removed as requested
 
@@ -553,54 +618,122 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
               {showPdfSettings && (
                 <div className="p-6 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-200">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Responsável / Assinatura</label>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-400 uppercase">Responsável / Assinatura</label>
+                      <input
+                        type="checkbox"
+                        checked={pdfSettings.show_assinatura}
+                        onChange={(e) => savePdfSettings({ ...pdfSettings, show_assinatura: e.target.checked })}
+                      />
+                    </div>
                     <input
                       type="text"
-                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      disabled={!pdfSettings.show_assinatura}
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none disabled:opacity-50"
                       value={pdfSettings.assinatura}
                       onChange={(e) => savePdfSettings({ ...pdfSettings, assinatura: e.target.value })}
-                      placeholder="Nome do engenhero"
+                      placeholder="Nome do engenheiro"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">CRQ / Registro Profissional</label>
+
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-400 uppercase">CRQ / Registro Profissional</label>
+                      <input
+                        type="checkbox"
+                        checked={pdfSettings.show_crq}
+                        onChange={(e) => savePdfSettings({ ...pdfSettings, show_crq: e.target.checked })}
+                      />
+                    </div>
                     <input
                       type="text"
-                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                      disabled={!pdfSettings.show_crq}
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none disabled:opacity-50"
                       value={pdfSettings.crq}
                       onChange={(e) => savePdfSettings({ ...pdfSettings, crq: e.target.value })}
                       placeholder="Ex: 000.000-D/DF"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Credenciais da Empresa</label>
-                    <input
-                      type="text"
-                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
-                      value={pdfSettings.credentials}
-                      onChange={(e) => savePdfSettings({ ...pdfSettings, credentials: e.target.value })}
-                      placeholder="Ex: CNPJ, CREA Jurídico"
-                    />
+
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-400 uppercase">Credenciais da Empresa</label>
+                      <input
+                        type="checkbox"
+                        checked={pdfSettings.show_credentials}
+                        onChange={(e) => savePdfSettings({ ...pdfSettings, show_credentials: e.target.checked })}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        disabled={!pdfSettings.show_credentials}
+                        className="flex-1 bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none disabled:opacity-50"
+                        value={pdfSettings.credentials}
+                        onChange={(e) => savePdfSettings({ ...pdfSettings, credentials: e.target.value })}
+                        placeholder="Ex: CNPJ..."
+                      />
+                      <label className={`p-2 rounded-lg border border-white/10 hover:bg-white/5 cursor-pointer flex items-center justify-center ${!pdfSettings.show_credentials ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <span className="material-symbols-outlined text-[18px]">image</span>
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload('credentials_img', e.target.files[0])} />
+                      </label>
+                    </div>
                   </div>
-                  <div className="lg:col-span-2">
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Referências / Observações PDF</label>
+
+                  <div className="lg:col-span-2 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-400 uppercase">Referências / Observações PDF</label>
+                      <input
+                        type="checkbox"
+                        checked={pdfSettings.show_referencias}
+                        onChange={(e) => savePdfSettings({ ...pdfSettings, show_referencias: e.target.checked })}
+                      />
+                    </div>
                     <textarea
-                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none h-20 resize-none"
+                      disabled={!pdfSettings.show_referencias}
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none h-20 resize-none disabled:opacity-50"
                       value={pdfSettings.referencias}
                       onChange={(e) => savePdfSettings({ ...pdfSettings, referencias: e.target.value })}
-                      placeholder="Citações, normas técnicas, carimbos específicos..."
+                      placeholder="Citações, normas técnicas..."
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Carimbo Especial</label>
-                    <input
-                      type="text"
-                      className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
-                      value={pdfSettings.carimbo}
-                      onChange={(e) => savePdfSettings({ ...pdfSettings, carimbo: e.target.value })}
-                      placeholder="Texto do carimbo técnico"
-                    />
+
+                  <div className="flex flex-col gap-8">
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-400 uppercase">Carimbo Especial</label>
+                        <input
+                          type="checkbox"
+                          checked={pdfSettings.show_carimbo}
+                          onChange={(e) => savePdfSettings({ ...pdfSettings, show_carimbo: e.target.checked })}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          disabled={!pdfSettings.show_carimbo}
+                          className="flex-1 bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none disabled:opacity-50"
+                          value={pdfSettings.carimbo}
+                          onChange={(e) => savePdfSettings({ ...pdfSettings, carimbo: e.target.value })}
+                          placeholder="Texto..."
+                        />
+                        <label className={`p-2 rounded-lg border border-white/10 hover:bg-white/5 cursor-pointer flex items-center justify-center ${!pdfSettings.show_carimbo ? 'opacity-50 pointer-events-none' : ''}`}>
+                          <span className="material-symbols-outlined text-[18px]">image</span>
+                          <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload('carimbo_img', e.target.files[0])} />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <label className="text-xs font-bold text-slate-400 uppercase">Validade (dias)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
+                        value={pdfSettings.validade}
+                        onChange={(e) => savePdfSettings({ ...pdfSettings, validade: e.target.value })}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
