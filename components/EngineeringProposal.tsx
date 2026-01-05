@@ -414,21 +414,57 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.setFontSize(11);
       doc.text('ITENS E EQUIPAMENTOS', 20, 55);
 
-      const tableBody = budgetItems
-        .filter(item => {
-          const isService = serviceCatalog.some(s => s.name === item.name);
-          if (isService && proposal.hide_services_pdf) return false;
-          if (!isService && proposal.hide_products_pdf) return false;
-          return true;
-        })
-        .map(item => {
+      const centralItems = budgetItems.filter(item => {
+        const isService = serviceCatalog.some(s => s.name === item.name);
+        if (isService && proposal.hide_services_pdf) return false;
+        if (!isService && proposal.hide_products_pdf) return false;
+        return !item.name.includes('(');
+      });
+
+      const infraItems = budgetItems.filter(item => {
+        const isService = serviceCatalog.some(s => s.name === item.name);
+        if (isService && proposal.hide_services_pdf) return false;
+        if (!isService && proposal.hide_products_pdf) return false;
+        return item.name.includes('(');
+      });
+
+      const tableBody: any[] = [];
+
+      // Add Central Items
+      if (centralItems.length > 0) {
+        tableBody.push([{ content: 'ITENS DE COTAÇÃO CENTRAL', colSpan: pdfSettings.show_cost ? 4 : 2, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+        centralItems.forEach(item => {
           const row = [item.name || 'Item', item.quantity_final || 0];
           if (pdfSettings.show_cost) {
             row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
             row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
           }
-          return row;
+          tableBody.push(row);
         });
+      }
+
+      // Add Infra Items grouped by kit
+      if (infraItems.length > 0) {
+        const grouped = infraItems.reduce((acc, item) => {
+          const kitName = item.name.match(/\(([^)]+)\)/)?.[1] || 'Outros';
+          if (!acc[kitName]) acc[kitName] = [];
+          acc[kitName].push(item);
+          return acc;
+        }, {} as Record<string, any[]>);
+
+        (Object.entries(grouped) as [string, any[]][]).forEach(([kitName, kitItems]) => {
+          tableBody.push([{ content: `INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: pdfSettings.show_cost ? 4 : 2, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
+          kitItems.forEach(item => {
+            const cleanName = item.name.split('(')[0].trim();
+            const row = [cleanName, item.quantity_final || 0];
+            if (pdfSettings.show_cost) {
+              row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+              row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+            }
+            tableBody.push(row);
+          });
+        });
+      }
 
       const tableHead = ['Descrição', 'Qtd'];
       if (pdfSettings.show_cost) {
@@ -439,7 +475,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         startY: 60,
         head: [tableHead],
         body: tableBody,
-        theme: 'striped',
+        theme: 'grid',
         headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
         styles: { fontSize: 9 },
         columnStyles: pdfSettings.show_cost ? {

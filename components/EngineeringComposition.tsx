@@ -262,6 +262,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         const kitDef = kitMap[kitUsage.kit_id];
         if (kitDef) {
           const meters = Number(kitUsage.meters);
+          if (meters <= 0) return;
+
           // Apply replication to meters (more floors = more pipes)
           const totalMeters = meters * replication;
 
@@ -271,7 +273,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
             // Round up to avoid fractional units for things that are integers
             const roundedQty = Math.ceil(withLoss);
 
-            aggregation[comp.product_name] = (aggregation[comp.product_name] || 0) + roundedQty;
+            // Group by Product Name + Infra Name to identify the source
+            const displayName = `${comp.product_name} (${kitUsage.name})`;
+            aggregation[displayName] = (aggregation[displayName] || 0) + roundedQty;
           });
         }
       });
@@ -290,8 +294,10 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
     // 4. Prepare inserts
     const newItems = Object.entries(aggregation).map(([name, qty]) => {
-      // Try exact match first, then lowercase match
-      const unitPrice = priceMap[name.trim().toLowerCase()] || 0;
+      // Fix: strip the (Infra Name) part before checking price catalog
+      // Example: "TUBO 1/2 (Infra Alarme)" -> "TUBO 1/2"
+      const cleanName = name.includes('(') ? name.split('(')[0].trim() : name.trim();
+      const unitPrice = priceMap[cleanName.toLowerCase()] || 0;
 
       return {
         project_id: selectedProjectId,
@@ -502,19 +508,56 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     doc.line(20, yPos + 2, pageWidth - 20, yPos + 2);
     yPos += 10;
 
-    const tableData = items.map(item => [
-      item.name,
-      item.origin === 'CALCULATED' ? 'Sistema' : 'Manual',
-      item.quantity_final,
-      `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-    ]);
+    // Group items for PDF
+    const centralItems = items.filter(i => !i.name.includes('('));
+    const infraItems = items.filter(i => i.name.includes('('));
+
+    const tableData: any[] = [];
+
+    // Add Central Items
+    if (centralItems.length > 0) {
+      tableData.push([{ content: 'ITENS DE COTAÇÃO CENTRAL', colSpan: 5, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+      centralItems.forEach(item => {
+        tableData.push([
+          item.name,
+          'Sistema',
+          item.quantity_final,
+          `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+          `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+        ]);
+      });
+    }
+
+    // Add Infra Items grouped by kit
+    if (infraItems.length > 0) {
+      const grouped = infraItems.reduce((acc, item) => {
+        const kitName = item.name.match(/\(([^)]+)\)/)?.[1] || 'Outros';
+        if (!acc[kitName]) acc[kitName] = [];
+        acc[kitName].push(item);
+        return acc;
+      }, {} as Record<string, BudgetItem[]>);
+
+      (Object.entries(grouped) as [string, BudgetItem[]][]).forEach(([kitName, kitItems]) => {
+        tableData.push([{ content: `INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: 5, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
+        kitItems.forEach(item => {
+          // Clean product name for PDF display
+          const cleanName = item.name.split('(')[0].trim();
+          tableData.push([
+            cleanName,
+            'Infra',
+            item.quantity_final,
+            `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+            `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+          ]);
+        });
+      });
+    }
 
     autoTable(doc, {
       startY: yPos,
       head: [['Produto', 'Origem', 'Qtd Final', 'Custo Unit.', 'Total']],
       body: tableData,
-      theme: 'striped',
+      theme: 'grid',
       headStyles: { fillColor: [30, 41, 59], fontSize: 9 },
       styles: { fontSize: 9 },
       columnStyles: {
@@ -898,77 +941,189 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                       ) : items.length === 0 ? (
                         <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">Nenhum item encontrado. Adicione manualmente ou verifique a Fase A.</td></tr>
                       ) : (
-                        items.map(item => (
-                          <tr key={item.id} className="hover:bg-white/5 transition-colors group">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  list="catalog-products"
-                                  className="flex-1 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium"
-                                  value={item.name}
-                                  onChange={(e) => handleUpdateItem(item.id, 'name', e.target.value)}
-                                />
-                                <button
-                                  onClick={() => {
-                                    setItemToExchange(item);
-                                    setIsExchangeModalOpen(true);
-                                  }}
-                                  className="p-1 text-slate-500 hover:text-primary hover:bg-primary/10 rounded transition-all"
-                                  title="Trocar por produto do catálogo"
-                                >
-                                  <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
-                                </button>
-                              </div>
-                              <datalist id="catalog-products">
-                                {catalogProducts.map((p, idx) => (
-                                  <option key={idx} value={p.name} />
-                                ))}
-                              </datalist>
-                              <div className="text-[10px] text-slate-500 px-2 mt-1">{item.origin === 'CALCULATED' ? 'Sugerido pelo sistema' : 'Adicionado Manualmente'}</div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${item.origin === 'CALCULATED'
-                                ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                }`}>
-                                {item.origin === 'CALCULATED' ? 'Calculado' : 'Manual'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center text-slate-400">{item.quantity_calculated}</td>
-                            <td className="px-6 py-4 text-center">
-                              <input
-                                type="number"
-                                className="w-20 bg-background-dark border border-white/10 rounded px-2 py-1 text-center text-white focus:border-primary outline-none font-bold"
-                                value={item.quantity_final}
-                                onChange={(e) => handleUpdateItem(item.id, 'quantity_final', Number(e.target.value))}
-                              />
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <span className="text-slate-500 text-xs">R$</span>
-                                <input
-                                  type="number"
-                                  className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
-                                  value={item.unit_price}
-                                  onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
-                                />
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-right font-bold text-white">
-                              R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <button
-                                onClick={() => handleDeleteItem(item.id)}
-                                className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
-                                title="Excluir Item"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">delete</span>
-                              </button>
-                            </td>
-                          </tr>
-                        ))
+                        <>
+                          {/* 1. Itens de Cotação (Central Items) */}
+                          {items.filter(i => !i.name.includes('(')).length > 0 && (
+                            <>
+                              <tr className="bg-white/5">
+                                <td colSpan={7} className="px-6 py-2">
+                                  <div className="flex items-center gap-2 text-primary font-bold text-[10px] uppercase tracking-widest">
+                                    <span className="material-symbols-outlined text-[14px]">inventory_2</span>
+                                    Itens de Cotação Central
+                                  </div>
+                                </td>
+                              </tr>
+                              {items.filter(i => !i.name.includes('(')).map(item => (
+                                <tr key={item.id} className="hover:bg-white/5 transition-colors group">
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="text"
+                                        list="catalog-products"
+                                        className="flex-1 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium"
+                                        value={item.name}
+                                        onChange={(e) => handleUpdateItem(item.id, 'name', e.target.value)}
+                                      />
+                                      <button
+                                        onClick={() => {
+                                          setItemToExchange(item);
+                                          setIsExchangeModalOpen(true);
+                                        }}
+                                        className="p-1 text-slate-500 hover:text-primary hover:bg-primary/10 rounded transition-all"
+                                        title="Trocar por produto do catálogo"
+                                      >
+                                        <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                                      </button>
+                                    </div>
+                                    <datalist id="catalog-products">
+                                      {catalogProducts.map((p, idx) => (
+                                        <option key={idx} value={p.name} />
+                                      ))}
+                                    </datalist>
+                                    <div className="text-[10px] text-slate-500 px-2 mt-1">{item.origin === 'CALCULATED' ? 'Sugerido pelo sistema' : 'Adicionado Manualmente'}</div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${item.origin === 'CALCULATED'
+                                      ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                      }`}>
+                                      {item.origin === 'CALCULATED' ? 'Calculado' : 'Manual'}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 text-center text-slate-400">{item.quantity_calculated}</td>
+                                  <td className="px-6 py-4 text-center">
+                                    <input
+                                      type="number"
+                                      className="w-20 bg-background-dark border border-white/10 rounded px-2 py-1 text-center text-white focus:border-primary outline-none font-bold"
+                                      value={item.quantity_final}
+                                      onChange={(e) => handleUpdateItem(item.id, 'quantity_final', Number(e.target.value))}
+                                    />
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <span className="text-slate-500 text-xs">R$</span>
+                                      <input
+                                        type="number"
+                                        className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
+                                        value={item.unit_price}
+                                        onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 text-right font-bold text-white">
+                                    R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="px-6 py-4 text-center">
+                                    <button
+                                      onClick={() => handleDeleteItem(item.id)}
+                                      className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                      title="Excluir Item"
+                                    >
+                                      <span className="material-symbols-outlined text-[20px]">delete</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </>
+                          )}
+
+                          {/* 2. Produtos de Infraestrutura Agrupados por Kit */}
+                          {(Object.entries(items.reduce((acc, item) => {
+                            if (item.name.includes('(')) {
+                              const kitName = item.name.match(/\(([^)]+)\)/)?.[1] || 'Outros';
+                              if (!acc[kitName]) acc[kitName] = [];
+                              acc[kitName].push(item);
+                            }
+                            return acc;
+                          }, {} as Record<string, BudgetItem[]>)) as [string, BudgetItem[]][]).map(([kitName, kitItems]) => (
+                            <React.Fragment key={kitName}>
+                              <tr className="bg-white/5 border-t border-white/10">
+                                <td colSpan={7} className="px-6 py-2">
+                                  <div className="flex items-center gap-2 text-orange-400 font-bold text-[11px] uppercase tracking-widest">
+                                    <span className="material-symbols-outlined text-[16px]">construction</span>
+                                    Infraestrutura: <span className="text-white bg-orange-500/20 px-2 py-0.5 rounded border border-orange-500/30">{kitName}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              {kitItems.map(item => {
+                                // Extract clean product name from "Product (Infra)"
+                                const cleanName = item.name.includes('(') ? item.name.split('(')[0].trim() : item.name;
+
+                                return (
+                                  <tr key={item.id} className="hover:bg-white/5 transition-colors group">
+                                    <td className="px-6 py-4">
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="text"
+                                          list="catalog-products"
+                                          className="flex-1 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium"
+                                          value={cleanName}
+                                          onChange={(e) => {
+                                            const newName = `${e.target.value} (${kitName})`;
+                                            handleUpdateItem(item.id, 'name', newName);
+                                          }}
+                                        />
+                                        <button
+                                          onClick={() => {
+                                            setItemToExchange(item);
+                                            setIsExchangeModalOpen(true);
+                                          }}
+                                          className="p-1 text-slate-500 hover:text-primary hover:bg-primary/10 rounded transition-all"
+                                          title="Trocar por produto do catálogo"
+                                        >
+                                          <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                                        </button>
+                                      </div>
+                                      <datalist id="catalog-products">
+                                        {catalogProducts.map((p, idx) => (
+                                          <option key={idx} value={p.name} />
+                                        ))}
+                                      </datalist>
+                                      <div className="text-[10px] text-slate-500 px-2 mt-1">Sugerido para {kitName}</div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border bg-blue-500/10 text-blue-400 border-blue-500/20">
+                                        Infra
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-center text-slate-400">{item.quantity_calculated}</td>
+                                    <td className="px-6 py-4 text-center">
+                                      <input
+                                        type="number"
+                                        className="w-20 bg-background-dark border border-white/10 rounded px-2 py-1 text-center text-white focus:border-primary outline-none font-bold"
+                                        value={item.quantity_final}
+                                        onChange={(e) => handleUpdateItem(item.id, 'quantity_final', Number(e.target.value))}
+                                      />
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                      <div className="flex items-center justify-end gap-1">
+                                        <span className="text-slate-500 text-xs">R$</span>
+                                        <input
+                                          type="number"
+                                          className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
+                                          value={item.unit_price}
+                                          onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
+                                        />
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-right font-bold text-white">
+                                      R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                      <button
+                                        onClick={() => handleDeleteItem(item.id)}
+                                        className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                        title="Excluir Item"
+                                      >
+                                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </React.Fragment>
+                          ))}
+                        </>
                       )}
                     </tbody>
                   </table>

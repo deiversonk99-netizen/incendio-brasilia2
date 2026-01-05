@@ -161,6 +161,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
 
   // Fetch Kits
   const [availableKits, setAvailableKits] = useState<{ id: string, name: string }[]>([]);
+  const [kitComponents, setKitComponents] = useState<Record<string, any[]>>({});
   const [floorKits, setFloorKits] = useState<{ kit_id: string, name: string, meters: number }[]>([]);
 
   useEffect(() => {
@@ -189,8 +190,18 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   };
 
   const fetchKits = async () => {
-    const { data } = await supabase.from('composition_kits').select('id, name').order('name');
-    if (data) setAvailableKits(data);
+    const { data: kits } = await supabase.from('composition_kits').select('id, name').order('name');
+    if (kits) setAvailableKits(kits);
+
+    const { data: components } = await supabase.from('kit_components').select('*');
+    if (components) {
+      const mapping: Record<string, any[]> = {};
+      components.forEach((c: any) => {
+        if (!mapping[c.kit_id]) mapping[c.kit_id] = [];
+        mapping[c.kit_id].push(c);
+      });
+      setKitComponents(mapping);
+    }
   };
 
   const fetchFloors = async () => {
@@ -1079,26 +1090,43 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                           Nenhuma infraestrutura selecionada. Selecione um kit acima.
                         </div>
                       ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                           {floorKits.map((kit, idx) => (
-                            <div key={idx} className="flex items-center gap-4 bg-background-dark/30 p-3 rounded-lg border border-white/5">
-                              <div className="flex-1">
-                                <div className="text-white font-bold text-sm">{kit.name}</div>
-                                <div className="text-slate-500 text-xs text-primary">Kit de Infraestrutura</div>
+                            <div key={idx} className="flex flex-col gap-3 bg-background-dark/30 p-4 rounded-lg border border-white/5">
+                              <div className="flex items-center gap-4">
+                                <div className="flex-1">
+                                  <div className="text-white font-bold text-sm">{kit.name}</div>
+                                  <div className="text-slate-500 text-xs text-primary uppercase font-bold tracking-wider">Kit de Infraestrutura</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs text-slate-400">Metros:</label>
+                                  <input
+                                    type="number"
+                                    className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
+                                    value={kit.meters}
+                                    onChange={(e) => updateKitMeters(idx, Number(e.target.value))}
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <button onClick={() => removeKit(idx)} className="text-slate-500 hover:text-red-500 transition-colors p-2">
+                                  <span className="material-symbols-outlined text-[20px]">delete</span>
+                                </button>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <label className="text-xs text-slate-400">Metros:</label>
-                                <input
-                                  type="number"
-                                  className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
-                                  value={kit.meters}
-                                  onChange={(e) => updateKitMeters(idx, Number(e.target.value))}
-                                  placeholder="0"
-                                />
-                              </div>
-                              <button onClick={() => removeKit(idx)} className="text-slate-500 hover:text-red-500 transition-colors p-2">
-                                <span className="material-symbols-outlined text-[20px]">delete</span>
-                              </button>
+
+                              {/* Visualization of products in the kit */}
+                              {kitComponents[kit.kit_id] && kitComponents[kit.kit_id].length > 0 && (
+                                <div className="mt-2 pl-4 border-l-2 border-primary/20 flex flex-col gap-1">
+                                  <div className="text-[10px] font-bold text-slate-500 uppercase mb-1">Produtos Vinculados:</div>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+                                    {kitComponents[kit.kit_id].map((comp, ci) => (
+                                      <div key={ci} className="text-[11px] text-slate-400 flex justify-between items-center group/item hover:text-slate-200 transition-colors">
+                                        <span className="truncate pr-2">• {comp.product_name}</span>
+                                        <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap bg-white/5 px-1 rounded">x {comp.conversion_factor}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
