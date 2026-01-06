@@ -274,7 +274,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
             const roundedQty = Math.ceil(withLoss);
 
             // Group by Product Name + Infra Name to identify the source
-            const displayName = `${comp.product_name} (${kitUsage.name})`;
+            const displayName = `${comp.product_name} [INFRA:${kitUsage.name}]`;
             aggregation[displayName] = (aggregation[displayName] || 0) + roundedQty;
           });
         }
@@ -294,9 +294,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
     // 4. Prepare inserts
     const newItems = Object.entries(aggregation).map(([name, qty]) => {
-      // Fix: strip the (Infra Name) part before checking price catalog
-      // Example: "TUBO 1/2 (Infra Alarme)" -> "TUBO 1/2"
-      const cleanName = name.includes('(') ? name.split('(')[0].trim() : name.trim();
+      // Fix: strip the [INFRA:...] part before checking price catalog
+      // Example: "TUBO 1/2 [INFRA:Infra Alarme]" -> "TUBO 1/2"
+      const cleanName = name.includes('[INFRA:') ? name.split('[INFRA:')[0].trim() : name.trim();
       const unitPrice = priceMap[cleanName.toLowerCase()] || 0;
 
       return {
@@ -509,8 +509,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     yPos += 10;
 
     // Group items for PDF
-    const centralItems = items.filter(i => !i.name.includes('('));
-    const infraItems = items.filter(i => i.name.includes('('));
+    const centralItems = items.filter(i => !i.name.includes('[INFRA:'));
+    const infraItems = items.filter(i => i.name.includes('[INFRA:'));
 
     const tableData: any[] = [];
 
@@ -531,7 +531,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     // Add Infra Items grouped by kit
     if (infraItems.length > 0) {
       const grouped = infraItems.reduce((acc, item) => {
-        const kitName = item.name.match(/\(([^)]+)\)/)?.[1] || 'Outros';
+        const kitName = item.name.match(/\[INFRA:(.+?)\]/)?.[1] || 'Outros';
         if (!acc[kitName]) acc[kitName] = [];
         acc[kitName].push(item);
         return acc;
@@ -541,7 +541,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         tableData.push([{ content: `INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: 5, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
         kitItems.forEach(item => {
           // Clean product name for PDF display
-          const cleanName = item.name.split('(')[0].trim();
+          const cleanName = item.name.split('[INFRA:')[0].trim();
           tableData.push([
             cleanName,
             'Infra',
@@ -943,7 +943,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                       ) : (
                         <>
                           {/* 1. Itens de Cotação (Central Items) */}
-                          {items.filter(i => !i.name.includes('(')).length > 0 && (
+                          {items.filter(i => !i.name.includes('[INFRA:')).length > 0 && (
                             <>
                               <tr className="bg-white/5">
                                 <td colSpan={7} className="px-6 py-2">
@@ -953,7 +953,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                   </div>
                                 </td>
                               </tr>
-                              {items.filter(i => !i.name.includes('(')).map(item => (
+                              {items.filter(i => !i.name.includes('[INFRA:')).map(item => (
                                 <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-2">
@@ -1029,8 +1029,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
                           {/* 2. Produtos de Infraestrutura Agrupados por Kit */}
                           {(Object.entries(items.reduce((acc, item) => {
-                            if (item.name.includes('(')) {
-                              const kitName = item.name.match(/\(([^)]+)\)/)?.[1] || 'Outros';
+                            if (item.name.includes('[INFRA:')) {
+                              const kitName = item.name.match(/\[INFRA:(.+?)\]/)?.[1] || 'Outros';
                               if (!acc[kitName]) acc[kitName] = [];
                               acc[kitName].push(item);
                             }
@@ -1046,8 +1046,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                 </td>
                               </tr>
                               {kitItems.map(item => {
-                                // Extract clean product name from "Product (Infra)"
-                                const cleanName = item.name.includes('(') ? item.name.split('(')[0].trim() : item.name;
+                                // Extract clean product name from "Product [INFRA:Infra]"
+                                const cleanName = item.name.includes('[INFRA:') ? item.name.split('[INFRA:')[0].trim() : item.name;
 
                                 return (
                                   <tr key={item.id} className="hover:bg-white/5 transition-colors group">
@@ -1059,7 +1059,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                           className="flex-1 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium"
                                           value={cleanName}
                                           onChange={(e) => {
-                                            const newName = `${e.target.value} (${kitName})`;
+                                            const newName = `${e.target.value} [INFRA:${kitName}]`;
                                             handleUpdateItem(item.id, 'name', newName);
                                           }}
                                         />
