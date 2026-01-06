@@ -9,7 +9,7 @@ interface ServiceModel {
     name: string;
     description: string;
     labor_price: number;
-    user_id: string;
+    user_id?: string;
     items?: ServiceModelItem[];
     // Calculated frontend fields
     total_products_price?: number;

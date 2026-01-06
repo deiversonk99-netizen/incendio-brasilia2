@@ -104,3 +104,24 @@ export interface Proposal {
   status: 'DRAFT' | 'SENT' | 'APPROVED';
   created_at?: string;
 }
+
+export interface ServiceModelItem {
+  id: string;
+  service_model_id: string;
+  product_id: string;
+  quantity: number;
+  // Joins
+  product?: Product;
+}
+
+export interface ServiceModel {
+  id: string;
+  name: string;
+  description: string;
+  labor_price: number;
+  user_id?: string;
+  items?: ServiceModelItem[];
+  // Calculated
+  total_products_price?: number;
+  total_price?: number;
+}

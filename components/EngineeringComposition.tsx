@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import PageHeader from './PageHeader';
 import { supabase } from '../lib/supabase';
-import { Project } from '../types';
+import { Project, ServiceModel, ServiceModelItem } from '../types';
 import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -37,6 +37,12 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState(0);
   const [replicationSummary, setReplicationSummary] = useState<{ name: string, factor: number, type: string }[]>([]);
+
+  // Service Models State
+  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+  const [availableModels, setAvailableModels] = useState<ServiceModel[]>([]);
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   // Exchange Product State
   const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
@@ -113,7 +119,44 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       if (data) setCatalogProducts(data);
     };
     loadCatalog();
+    loadCatalog();
   }, []);
+
+  // Fetch Service Models with Items for Pricing
+  useEffect(() => {
+    const fetchModels = async () => {
+      setLoadingModels(true);
+      const { data } = await supabase
+        .from('service_models')
+        .select(`
+          *,
+          items:service_model_items(
+            quantity,
+            product:product_catalog(price)
+          )
+        `)
+        .order('name');
+
+      if (data) {
+        // Calculate totals
+        const modelsWithTotals = data.map((m: any) => {
+          const productsTotal = m.items?.reduce((acc: number, item: any) => {
+            return acc + (item.quantity * (item.product?.price || 0));
+          }, 0) || 0;
+          return {
+            ...m,
+            total_products_price: productsTotal,
+            total_price: (m.labor_price || 0) + productsTotal
+          };
+        });
+        setAvailableModels(modelsWithTotals);
+      }
+      setLoadingModels(false);
+    };
+    if (isModelModalOpen) {
+      fetchModels();
+    }
+  }, [isModelModalOpen]);
 
   useEffect(() => {
     fetchProjects();
@@ -436,6 +479,106 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     }
   };
 
+  const handleAddModels = async () => {
+    if (!selectedProjectId || selectedModelIds.length === 0) return;
+
+    try {
+      setLoading(true);
+      const newBudgetItems: any[] = [];
+
+      for (const modelId of selectedModelIds) {
+        const model = availableModels.find(m => m.id === modelId);
+        if (!model) continue;
+
+        // 1. Add Labor Item (The editable total regulator)
+        newBudgetItems.push({
+          project_id: selectedProjectId,
+          name: `[MODELO: ${model.name}] Mão de Obra / Serviço`,
+          quantity_calculated: 0,
+          quantity_final: 1,
+          unit_price: model.labor_price || 0,
+          origin: 'MANUAL'
+        });
+
+        // 2. Fetch Model Items with Products
+        const { data: modelItems } = await supabase
+          .from('service_model_items')
+          .select('*, product:product_catalog(*)')
+          .eq('service_model_id', modelId);
+
+        if (modelItems) {
+          modelItems.forEach((item: any) => {
+            if (item.product) {
+              newBudgetItems.push({
+                project_id: selectedProjectId,
+                name: `[MODELO: ${model.name}] ${item.product.name}`,
+                quantity_calculated: 0,
+                quantity_final: item.quantity,
+                unit_price: item.product.price,
+                origin: 'MANUAL'
+              });
+            }
+          });
+        }
+      }
+
+      const { data, error } = await supabase.from('budget_items').insert(newBudgetItems).select();
+
+      if (error) throw error;
+
+      if (data) {
+        setItems(prev => [...prev, ...data as any]);
+        setIsModelModalOpen(false);
+        setSelectedModelIds([]);
+      }
+
+    } catch (e) {
+      console.error('Error adding models:', e);
+      alert('Erro ao adicionar modelos.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteModel = async (modelName: string) => {
+    if (!confirm(`Deseja excluir todo o modelo "${modelName}" e seus itens?`)) return;
+
+    // Filter out items that belong to this model
+    const itemsToDelete = items.filter(i => i.name.includes(`[MODELO: ${modelName}]`));
+
+    // Optimistic update
+    setItems(prev => prev.filter(i => !i.name.includes(`[MODELO: ${modelName}]`)));
+
+    // DB Update
+    const ids = itemsToDelete.map(i => i.id);
+    const { error } = await supabase.from('budget_items').delete().in('id', ids);
+
+    if (error) {
+      console.error('Error deleting model items:', error);
+      alert('Erro ao excluir itens do modelo.');
+      loadBudgetItems();
+    }
+  };
+
+  const handleUpdateModelTotal = async (modelName: string, newTotal: number, modelItems: BudgetItem[]) => {
+    // 1. Calculate sum of products
+    const laborItem = modelItems.find(i => i.name.includes('Mão de Obra / Serviço'));
+    if (!laborItem) return;
+
+    const productsTotal = modelItems
+      .filter(i => !i.name.includes('Mão de Obra / Serviço'))
+      .reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+
+    // 2. Calculate new labor price
+    // NewTotal = ProductsTotal + (LaborPrice * 1)
+    // LaborPrice = NewTotal - ProductsTotal
+    const newLaborPrice = newTotal - productsTotal;
+
+    // 3. Update
+    await handleUpdateItem(laborItem.id, 'unit_price', newLaborPrice);
+  };
+
+
   const generateCompositionPDF = () => {
     const project = projects.find(p => p.id === selectedProjectId);
     if (!project || items.length === 0) {
@@ -509,8 +652,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     yPos += 10;
 
     // Group items for PDF
-    const centralItems = items.filter(i => !i.name.includes('[INFRA:'));
+    const centralItems = items.filter(i => !i.name.includes('[INFRA:') && !i.name.includes('[MODELO:'));
     const infraItems = items.filter(i => i.name.includes('[INFRA:'));
+    const modelItems = items.filter(i => i.name.includes('[MODELO:'));
 
     const tableData: any[] = [];
 
@@ -525,6 +669,39 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
           `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
         ]);
+      });
+    }
+
+    // Add Model Items grouped by Model
+    if (modelItems.length > 0) {
+      const grouped = modelItems.reduce((acc, item) => {
+        const modelName = item.name.match(/\[MODELO:(.+?)\]/)?.[1]?.trim() || 'Outros';
+        if (!acc[modelName]) acc[modelName] = [];
+        acc[modelName].push(item);
+        return acc;
+      }, {} as Record<string, BudgetItem[]>);
+
+      (Object.entries(grouped) as [string, BudgetItem[]][]).forEach(([modelName, mItems]) => {
+        const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+
+        tableData.push([{
+          content: `MODELO DE SERVIÇO: ${modelName.toUpperCase()}  (Total: R$ ${modelTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`,
+          colSpan: 5,
+          styles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold' } // Indigo color
+        }]);
+
+        mItems.forEach(item => {
+          const isLabor = item.name.includes('Mão de Obra / Serviço');
+          const cleanName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
+
+          tableData.push([
+            cleanName + (isLabor ? ' (Serviço)' : ''),
+            'Modelo',
+            item.quantity_final,
+            `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+            `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+          ]);
+        });
       });
     }
 
@@ -667,8 +844,15 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
               disabled={!selectedProjectId}
               className="flex items-center gap-2 h-10 px-4 rounded-lg bg-emerald-600/10 border border-emerald-500/20 hover:bg-emerald-600/20 text-emerald-500 transition-all font-bold text-sm disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-[18px]">add</span>
               Adicionar Item
+            </button>
+            <button
+              onClick={() => setIsModelModalOpen(true)}
+              disabled={!selectedProjectId}
+              className="flex items-center gap-2 h-10 px-4 rounded-lg bg-indigo-600/10 border border-indigo-500/20 hover:bg-indigo-600/20 text-indigo-500 transition-all font-bold text-sm disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">post_add</span>
+              Adicionar Modelo
             </button>
             <button
               onClick={generateCompositionPDF}
@@ -1123,6 +1307,115 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                               })}
                             </React.Fragment>
                           ))}
+
+
+                          {/* 3. Service Models Grouping */}
+                          {(Object.entries(items.reduce((acc, item) => {
+                            if (item.name.includes('[MODELO:')) {
+                              const modelName = item.name.match(/\[MODELO:(.+?)\]/)?.[1]?.trim() || 'Outros';
+                              if (!acc[modelName]) acc[modelName] = [];
+                              acc[modelName].push(item);
+                            }
+                            return acc;
+                          }, {} as Record<string, BudgetItem[]>)) as [string, BudgetItem[]][]).map(([modelName, modelItems]) => {
+                            // Calculate Model Total
+                            const modelTotal = modelItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+
+                            return (
+                              <React.Fragment key={modelName}>
+                                <tr className="bg-white/5 border-t border-white/10 group/header">
+                                  <td colSpan={7} className="px-6 py-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-2 text-indigo-400 font-bold text-[12px] uppercase tracking-widest">
+                                          <span className="material-symbols-outlined text-[18px]">layers</span>
+                                          Modelo: <span className="text-white bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">{modelName}</span>
+                                        </div>
+                                        <button
+                                          onClick={() => handleDeleteModel(modelName)}
+                                          className="opacity-0 group-hover/header:opacity-100 transition-opacity p-1 text-slate-500 hover:text-red-500 flex items-center"
+                                          title="Excluir Modelo Inteiro"
+                                        >
+                                          <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
+                                        </button>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[11px] font-bold text-indigo-300 uppercase">Valor Total do Modelo:</span>
+                                        <div className="flex items-center bg-background-dark border border-indigo-500/30 rounded-lg px-2 py-1">
+                                          <span className="text-indigo-400 text-xs mr-1">R$</span>
+                                          <input
+                                            type="number"
+                                            className="w-28 bg-transparent text-white font-bold outline-none text-right"
+                                            value={modelTotal.toFixed(2)}
+                                            onChange={(e) => handleUpdateModelTotal(modelName, Number(e.target.value), modelItems)}
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                                {modelItems.map(item => {
+                                  const isLabor = item.name.includes('Mão de Obra / Serviço');
+                                  const cleanName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
+
+                                  if (isLabor) return null; // Hide Labor item row as it's managed via Header Total
+
+                                  return (
+                                    <tr key={item.id} className="hover:bg-white/5 transition-colors group">
+                                      <td className="px-6 py-4">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium text-white">
+                                            {cleanName}
+                                          </span>
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 px-2 mt-1">
+                                          Item do Modelo {modelName}
+                                        </div>
+                                      </td>
+                                      <td className="px-6 py-4">
+                                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border bg-indigo-500/10 text-indigo-400 border-indigo-500/20">
+                                          Modelo
+                                        </span>
+                                      </td>
+                                      <td className="px-6 py-4 text-center text-slate-400">-</td>
+                                      <td className="px-6 py-4 text-center">
+                                        <input
+                                          type="number"
+                                          className="w-20 bg-background-dark border border-white/10 rounded px-2 py-1 text-center text-white focus:border-primary outline-none font-bold"
+                                          value={item.quantity_final}
+                                          onChange={(e) => handleUpdateItem(item.id, 'quantity_final', Number(e.target.value))}
+                                        />
+                                      </td>
+                                      <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-1">
+                                          <span className="text-slate-500 text-xs">R$</span>
+                                          <input
+                                            type="number"
+                                            className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
+                                            value={item.unit_price}
+                                            onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="px-6 py-4 text-right font-bold text-white">
+                                        R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-6 py-4 text-center">
+                                        <button
+                                          onClick={() => handleDeleteItem(item.id)}
+                                          className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                          title="Excluir Item"
+                                        >
+                                          <span className="material-symbols-outlined text-[20px]">delete</span>
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </React.Fragment>
+                            );
+                          })}
                         </>
                       )}
                     </tbody>
@@ -1187,6 +1480,88 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                   Adicionar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Service Model Selection Modal */}
+      {isModelModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-xl p-6 w-full max-w-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            <h3 className="text-xl font-bold text-white mb-2">Adicionar Modelos de Serviço</h3>
+            <p className="text-slate-400 text-sm mb-6">Selecione os modelos que deseja incluir nesta composição.</p>
+
+            <div className="flex-1 overflow-y-auto mb-6 pr-2">
+              {loadingModels ? (
+                <div className="text-center p-8 text-slate-500">Carregando modelos...</div>
+              ) : availableModels.length === 0 ? (
+                <div className="text-center p-8 text-slate-500">Nenhum modelo disponível. Crie modelos na aba "Modelos de Serviços".</div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {availableModels.map(model => {
+                    const isAlreadyAdded = items.some(i => i.name.includes(`[MODELO: ${model.name}]`));
+
+                    return (
+                      <label key={model.id} className={`flex items-start gap-4 p-4 rounded-lg border transition-all ${isAlreadyAdded
+                        ? 'bg-red-500/5 border-red-500/10 opacity-60 cursor-not-allowed'
+                        : selectedModelIds.includes(model.id)
+                          ? 'bg-indigo-600/10 border-indigo-500/50 cursor-pointer'
+                          : 'bg-black/20 border-white/5 hover:bg-white/5 cursor-pointer'
+                        }`}>
+                        <input
+                          type="checkbox"
+                          className="mt-1 w-5 h-5 rounded border-white/20 bg-black/20 text-indigo-500 focus:ring-offset-0 focus:ring-0"
+                          checked={selectedModelIds.includes(model.id)}
+                          disabled={isAlreadyAdded}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedModelIds([...selectedModelIds, model.id]);
+                            } else {
+                              setSelectedModelIds(selectedModelIds.filter(id => id !== model.id));
+                            }
+                          }}
+                        />
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start">
+                            <span className="font-bold text-white text-base">
+                              {model.name}
+                              {isAlreadyAdded && <span className="ml-2 text-red-400 text-xs uppercase font-bold">(Já adicionado)</span>}
+                            </span>
+                            <span className="text-emerald-400 font-bold">R$ {model.total_price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between text-xs mt-1">
+                            <span className="text-slate-400">{model.description || 'Sem descrição'}</span>
+                            <span className="text-slate-500">
+                              (M.O.: R$ {model.labor_price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                            </span>
+                          </div>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-white/5 mt-auto">
+              <button
+                onClick={() => {
+                  setIsModelModalOpen(false);
+                  setSelectedModelIds([]);
+                }}
+                className="px-4 py-2 rounded-lg hover:bg-white/5 text-slate-400 font-bold text-sm transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAddModels}
+                disabled={selectedModelIds.length === 0 || loading}
+                className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {loading ? <span className="material-symbols-outlined animate-spin text-[18px]">refresh</span> : <span className="material-symbols-outlined text-[18px]">check</span>}
+                Confirmar ({selectedModelIds.length})
+              </button>
             </div>
           </div>
         </div>

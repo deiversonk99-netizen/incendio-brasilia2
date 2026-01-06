@@ -415,17 +415,26 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text('ITENS E EQUIPAMENTOS', 20, 55);
 
       const centralItems = budgetItems.filter(item => {
+        const isModel = item.name.includes('[MODELO:');
+        const isInfra = item.name.includes('[INFRA:');
+        if (isModel || isInfra) return false;
+
         const isService = serviceCatalog.some(s => s.name === item.name);
         if (isService && proposal.hide_services_pdf) return false;
         if (!isService && proposal.hide_products_pdf) return false;
-        return !item.name.includes('(');
+        return true;
+      });
+
+      const modelItems = budgetItems.filter(item => {
+        if (!item.name.includes('[MODELO:')) return false;
+        if (proposal.hide_products_pdf) return false; // Models are considered products/services mix
+        return true;
       });
 
       const infraItems = budgetItems.filter(item => {
-        const isService = serviceCatalog.some(s => s.name === item.name);
-        if (isService && proposal.hide_services_pdf) return false;
-        if (!isService && proposal.hide_products_pdf) return false;
-        return item.name.includes('(');
+        if (!item.name.includes('[INFRA:')) return false;
+        if (proposal.hide_products_pdf) return false;
+        return true;
       });
 
       const tableBody: any[] = [];
@@ -443,10 +452,46 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         });
       }
 
+      // Add Model Items grouped by Model
+      if (modelItems.length > 0) {
+        const grouped = modelItems.reduce((acc, item) => {
+          const modelName = item.name.match(/\[MODELO:(.+?)\]/)?.[1]?.trim() || 'Outros';
+          if (!acc[modelName]) acc[modelName] = [];
+          acc[modelName].push(item);
+          return acc;
+        }, {} as Record<string, any[]>);
+
+        (Object.entries(grouped) as [string, any[]][]).forEach(([modelName, mItems]) => {
+          const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+
+          // Header for Model
+          tableBody.push([{
+            content: `MODELO DE SERVIÇO: ${modelName.toUpperCase()} ${pdfSettings.show_cost ? `(Total: R$ ${modelTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}`,
+            colSpan: pdfSettings.show_cost ? 4 : 2,
+            styles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold' }
+          }]);
+
+          mItems.forEach(item => {
+            const isLabor = item.name.includes('Mão de Obra / Serviço');
+            // Allow hiding individual service items depending on requirement? User said "Identify by model name".
+            // Typically we show the breakdown.
+
+            const cleanName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
+            const row = [cleanName + (isLabor ? ' (Serviço)' : ''), item.quantity_final || 0];
+
+            if (pdfSettings.show_cost) {
+              row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+              row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+            }
+            tableBody.push(row);
+          });
+        });
+      }
+
       // Add Infra Items grouped by kit
       if (infraItems.length > 0) {
         const grouped = infraItems.reduce((acc, item) => {
-          const kitName = item.name.match(/\(([^)]+)\)/)?.[1] || 'Outros';
+          const kitName = item.name.match(/\[INFRA:(.+?)\]/)?.[1] || 'Outros';
           if (!acc[kitName]) acc[kitName] = [];
           acc[kitName].push(item);
           return acc;
@@ -455,7 +500,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         (Object.entries(grouped) as [string, any[]][]).forEach(([kitName, kitItems]) => {
           tableBody.push([{ content: `INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: pdfSettings.show_cost ? 4 : 2, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
           kitItems.forEach(item => {
-            const cleanName = item.name.split('(')[0].trim();
+            const cleanName = item.name.includes('[INFRA:') ? item.name.split('[INFRA:')[0].trim() : item.name;
             const row = [cleanName, item.quantity_final || 0];
             if (pdfSettings.show_cost) {
               row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
