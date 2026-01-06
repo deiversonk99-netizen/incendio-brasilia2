@@ -15,6 +15,7 @@ import ProductsView from './components/ProductsView';
 import ClientsView from './components/ClientsView';
 import SuppliersView from './components/SuppliersView';
 import ServicesView from './components/ServicesView';
+import ServiceModelsView from './components/ServiceModelsView';
 import InventoryView from './components/InventoryView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -60,6 +61,8 @@ const AppContent: React.FC = () => {
         return <SuppliersView />;
       case AppView.SERVICES:
         return <ServicesView />;
+      case AppView.SERVICE_MODELS:
+        return <ServiceModelsView />;
       case AppView.PLACAS:
         return <InventoryView />;
       default:

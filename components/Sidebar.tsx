@@ -19,6 +19,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     { id: AppView.SUPPLIERS, label: 'Fornecedores', icon: 'local_shipping' },
     { id: AppView.PLACAS, label: 'Gestão de Placas', icon: 'warning' },
     { id: AppView.SERVICES, label: 'Catálogo Serviços', icon: 'settings_suggest' },
+    { id: AppView.SERVICE_MODELS, label: 'Modelos de Serviços', icon: 'design_services' },
     { id: AppView.ENGINEERING_PHASE_A, label: 'Fase A - Levantamento', icon: 'architecture' },
     { id: AppView.ENGINEERING_PHASE_B, label: 'Fase B - Composição', icon: 'dataset_linked' },
     { id: AppView.ENGINEERING_PHASE_C, label: 'Fase C - Proposta', icon: 'description' },
