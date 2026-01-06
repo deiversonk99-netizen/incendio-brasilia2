@@ -43,9 +43,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     carimbo: '',
     carimbo_img: '',
     validade: '10',
-    show_cost: true
+    show_cost: true,
+    show_subtotal: true, // New
+    show_bdi: true, // New
+    show_profit: true, // New
+    show_discount: true, // New
+
+    show_total: true, // New
+    visible_manual_items: [] // New: Array of item names to keep visible
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
+  const [showVisibilityModal, setShowVisibilityModal] = useState(false);
+  const [candidateItems, setCandidateItems] = useState<any[]>([]);
+  const [tempVisibleItems, setTempVisibleItems] = useState<string[]>([]);
 
   const loadPdfSettings = async (projectId: string) => {
     try {
@@ -64,6 +74,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_referencias: true,
           show_carimbo: true,
           show_cost: true,
+          show_subtotal: true, // New default
+          show_bdi: true,      // New default
+          show_profit: true,   // New default
+          show_discount: true, // New default
+
+          show_total: true,    // New default
+          visible_manual_items: [], // New default
           ...data.variables
         });
       } else {
@@ -81,7 +98,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           carimbo: '',
           carimbo_img: '',
           validade: '10',
-          show_cost: true
+          show_cost: true,
+          show_subtotal: true,
+          show_bdi: true,
+          show_profit: true,
+          show_discount: true,
+
+          show_total: true,
+          visible_manual_items: []
         });
       }
     } catch (e) {
@@ -114,6 +138,50 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       console.error('Error saving PDF settings:', e);
     }
   };
+
+  const handleHideProductsToggle = (checked: boolean) => {
+    if (!checked) {
+      setProposal({ ...proposal, hide_products_pdf: false });
+      return;
+    }
+
+    // Logic to find candidates: Standard Products are HIDDEN. We want to find "Gray Area" items (Manual or Service)
+    // that the user might want to KEEP.
+    const potentialCandidates = budgetItems.filter(item => {
+      const isModel = item.name.includes('[MODELO:');
+      const isInfra = item.name.includes('[INFRA:');
+      if (isModel || isInfra) return false;
+
+      // It's a candidate if it's NOT a standard catalog product (or if it's a Service)
+      const isStandardProduct = catalogItems.some(p => p.name === item.name);
+
+      // If it's a standard product, it will be hidden by "Hide Products". We don't ask about it.
+      if (isStandardProduct) return false;
+
+      // If it's NOT a standard product, it might be a Custom Item or a Service.
+      // We offer the user the choice to keep it visible.
+      return true;
+    });
+
+    if (potentialCandidates.length > 0) {
+      setCandidateItems(potentialCandidates);
+      // Default: Select all candidates to be visible initially (User unchecks what they don't want?)
+      // User request: "choose which ... that appear". implying opt-in.
+      // Let's pre-select all, as he usually wants them to appear.
+      setTempVisibleItems(potentialCandidates.map(i => i.name));
+      setShowVisibilityModal(true);
+    } else {
+      // No custom items found, just hide products
+      setProposal({ ...proposal, hide_products_pdf: true });
+    }
+  };
+
+  const confirmVisibilitySelection = () => {
+    savePdfSettings({ ...pdfSettings, visible_manual_items: tempVisibleItems });
+    setProposal({ ...proposal, hide_products_pdf: true });
+    setShowVisibilityModal(false);
+  };
+
   const [saving, setSaving] = useState(false);
   const [budgetItems, setBudgetItems] = useState<any[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -419,21 +487,49 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         const isInfra = item.name.includes('[INFRA:');
         if (isModel || isInfra) return false;
 
-        const isService = serviceCatalog.some(s => s.name === item.name);
-        if (isService && proposal.hide_services_pdf) return false;
-        if (!isService && proposal.hide_products_pdf) return false;
+        // 1. Identify Service
+        const nameLower = item.name.toLowerCase();
+        let isService = serviceCatalog.some(s => s.name === item.name);
+        if (!isService) {
+          // Keyword fallback for manual services
+          if (nameLower.includes('mão de obra') || nameLower.includes('serviço') || nameLower.includes('instalação')) {
+            isService = true;
+          }
+        }
+
+        // 2. Identify Standard Product
+        const isStandardProduct = catalogItems.some(p => p.name === item.name);
+
+        // 3. Apply Filters
+        if (isService) {
+          if (proposal.hide_services_pdf) return false;
+        }
+
+        if (proposal.hide_products_pdf) {
+          // A. If it's a standard product -> ALWAYS HIDE
+          if (isStandardProduct) return false;
+
+          // B. If it's NOT a standard product (Manual Item OR Service) -> CHECK WHITELIST
+          // We only apply this check if we are in "Hide Products" mode.
+          if (pdfSettings.visible_manual_items) {
+            return pdfSettings.visible_manual_items.includes(item.name);
+          }
+        }
+
+        return true;
+
+
         return true;
       });
 
       const modelItems = budgetItems.filter(item => {
         if (!item.name.includes('[MODELO:')) return false;
-        if (proposal.hide_products_pdf) return false; // Models are considered products/services mix
         return true;
       });
 
       const infraItems = budgetItems.filter(item => {
         if (!item.name.includes('[INFRA:')) return false;
-        if (proposal.hide_products_pdf) return false;
+        if (proposal.hide_products_pdf) return false; // Infra is considered product-heavy
         return true;
       });
 
@@ -462,6 +558,18 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         }, {} as Record<string, any[]>);
 
         (Object.entries(grouped) as [string, any[]][]).forEach(([modelName, mItems]) => {
+          // Filter items to display based on settings
+          const visibleItems = mItems.filter(item => {
+            const nameLower = item.name.toLowerCase();
+            const isLabor = item.name.includes('Mão de Obra / Serviço') || nameLower.includes('serviço') || nameLower.includes('mão de obra');
+
+            if (isLabor) return !proposal.hide_services_pdf;
+            // It's a product in the model
+            return !proposal.hide_products_pdf;
+          });
+
+          if (visibleItems.length === 0) return;
+
           const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
 
           // Header for Model
@@ -471,13 +579,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             styles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold' }
           }]);
 
-          mItems.forEach(item => {
-            const isLabor = item.name.includes('Mão de Obra / Serviço');
-            // Allow hiding individual service items depending on requirement? User said "Identify by model name".
-            // Typically we show the breakdown.
-
-            const cleanName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
-            const row = [cleanName + (isLabor ? ' (Serviço)' : ''), item.quantity_final || 0];
+          visibleItems.forEach(item => {
+            const row = [item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name, item.quantity_final || 0];
 
             if (pdfSettings.show_cost) {
               row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -542,17 +645,28 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text('RESUMO FINANCEIRO', 20, yPos);
       doc.line(20, yPos + 2, 80, yPos + 2);
 
-      const financeBody = pdfSettings.show_cost ? [
-        ['Subtotal de Itens', `R$ ${vals.base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-        ['BDI e Taxas Operacionais', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-        ['Lucro e Encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-        ['Descontos Aplicados', `- R$ ${vals.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-        [{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } },
-        { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } }]
-      ] : [
-        [{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } },
-        { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } }]
-      ];
+      const financeBody = [];
+
+      if (pdfSettings.show_subtotal !== false) {
+        financeBody.push(['Subtotal de Itens', `R$ ${vals.base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+      }
+
+      if (pdfSettings.show_bdi !== false) {
+        financeBody.push(['BDI e Taxas Operacionais', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+      }
+
+      if (pdfSettings.show_profit !== false) {
+        financeBody.push(['Lucro e Encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+      }
+
+      if (pdfSettings.show_discount !== false && vals.discountVal > 0) {
+        financeBody.push(['Descontos Aplicados', `- R$ ${vals.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+      }
+
+      if (pdfSettings.show_total !== false) {
+        financeBody.push([{ content: 'VALOR GLOBAL DO INVESTIMENTO', styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } },
+        { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } }]);
+      }
 
       autoTable(doc, {
         startY: yPos + 6,
@@ -863,6 +977,57 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         onChange={(e) => savePdfSettings({ ...pdfSettings, show_cost: e.target.checked })}
                       />
                     </div>
+
+                    {pdfSettings.show_cost && (
+                      <div className="flex flex-col gap-2 p-3 bg-white/5 rounded-lg border border-white/10 animate-in slide-in-from-top-1">
+                        <span className="text-xs font-bold text-slate-400 uppercase mb-1">Detalhamento Financeiro</span>
+
+                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                          <span>Exibir Subtotal</span>
+                          <input
+                            type="checkbox"
+                            checked={pdfSettings.show_subtotal !== false}
+                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_subtotal: e.target.checked })}
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                          <span>Exibir BDI</span>
+                          <input
+                            type="checkbox"
+                            checked={pdfSettings.show_bdi !== false}
+                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_bdi: e.target.checked })}
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                          <span>Exibir Lucro</span>
+                          <input
+                            type="checkbox"
+                            checked={pdfSettings.show_profit !== false}
+                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_profit: e.target.checked })}
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                          <span>Exibir Descontos</span>
+                          <input
+                            type="checkbox"
+                            checked={pdfSettings.show_discount !== false}
+                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_discount: e.target.checked })}
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                          <span>Exibir Total Global</span>
+                          <input
+                            type="checkbox"
+                            checked={pdfSettings.show_total !== false}
+                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_total: e.target.checked })}
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1063,7 +1228,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                               type="checkbox"
                               className="hidden"
                               checked={proposal.hide_products_pdf || false}
-                              onChange={e => setProposal({ ...proposal, hide_products_pdf: e.target.checked })}
+                              onChange={e => handleHideProductsToggle(e.target.checked)}
                             />
                             <div className="flex flex-col">
                               <span className="text-sm font-bold text-white">Ocultar Produtos</span>
@@ -1181,6 +1346,66 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           )}
         </div>
       </main>
+
+      {/* Modal for Selecting Visibility of Custom Items */}
+      {showVisibilityModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-white/10">
+              <h3 className="text-xl font-bold text-white mb-2">Exibição de Itens Personalizados</h3>
+              <p className="text-sm text-slate-400">
+                Você optou por <strong>Ocultar Produtos</strong>. Selecione quais destes itens manuais ou serviços você gostaria de <strong>MANTER VISÍVEIS</strong> no PDF.
+              </p>
+            </div>
+
+            <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2">
+              {candidateItems.map((item, idx) => {
+                const isSelected = tempVisibleItems.includes(item.name);
+                return (
+                  <label key={idx} className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${isSelected ? 'bg-primary/20 border-primary' : 'bg-background-dark border-white/10 hover:border-white/20'}`}>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-white">{item.name}</span>
+                      <span className="text-xs text-slate-400">
+                        {item.origin === 'MANUAL' ? 'Item Manual' : 'Serviço Calculado'}
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 rounded border-white/20 bg-background-dark checked:bg-primary"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setTempVisibleItems(prev => [...prev, item.name]);
+                        } else {
+                          setTempVisibleItems(prev => prev.filter(n => n !== item.name));
+                        }
+                      }}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="p-6 border-t border-white/10 bg-background-dark/50 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowVisibilityModal(false);
+                  setProposal({ ...proposal, hide_products_pdf: false });
+                }}
+                className="px-4 py-2 text-slate-300 hover:text-white font-bold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmVisibilitySelection}
+                className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold shadow-lg shadow-primary/20"
+              >
+                Confirmar Exibição
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Item Modal */}
       {isAddItemModalOpen && (

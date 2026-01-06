@@ -131,8 +131,21 @@ const KitsConfigurationView: React.FC = () => {
 
     const handleDeleteKit = async (id: string) => {
         if (!confirm('Tem certeza? Isso pode afetar projetos passados.')) return;
-        await supabase.from('composition_kits').delete().eq('id', id);
-        fetchKits();
+
+        try {
+            // Delete related components first (manual cascade)
+            const { error: compError } = await supabase.from('kit_components').delete().eq('kit_id', id);
+            if (compError) throw compError;
+
+            // Delete the kit
+            const { error } = await supabase.from('composition_kits').delete().eq('id', id);
+            if (error) throw error;
+
+            fetchKits();
+        } catch (error) {
+            console.error('Error deleting kit:', error);
+            alert('Erro ao excluir kit. Tente novamente.');
+        }
     };
 
     return (
