@@ -11,6 +11,26 @@ const FinanceView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialType, setModalInitialType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
+  // Forecasting State
+  const [selectedMonthOffset, setSelectedMonthOffset] = useState(0); // 0=Current, 1=Next...
+
+  const monthsList = useMemo(() => {
+    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const now = new Date();
+    return Array.from({ length: 4 }).map((_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      return {
+        label: months[d.getMonth()],
+        year: d.getFullYear(),
+        monthIdx: d.getMonth(),
+        offset: i
+      };
+    });
+  }, []);
+
+  const activeMonth = monthsList[selectedMonthOffset];
 
   const fetchData = async () => {
     setLoading(true);
@@ -57,13 +77,20 @@ const FinanceView: React.FC = () => {
     fetchData();
   }, []);
 
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      const tDate = new Date(t.date + 'T12:00:00');
+      return tDate.getMonth() === activeMonth.monthIdx && tDate.getFullYear() === activeMonth.year;
+    });
+  }, [transactions, activeMonth]);
+
   const stats = useMemo(() => {
-    const income = transactions.filter(t => t.type === 'INCOME');
-    const expense = transactions.filter(t => t.type === 'EXPENSE');
+    const income = filteredTransactions.filter(t => t.type === 'INCOME');
+    const expense = filteredTransactions.filter(t => t.type === 'EXPENSE');
 
     const totalIncome = income.reduce((acc, t) => acc + t.value, 0);
     const totalExpense = expense.reduce((acc, t) => acc + t.value, 0);
-    const pendingCount = transactions.filter(t => t.status === 'PENDING').length;
+    const pendingCount = filteredTransactions.filter(t => t.status === 'PENDING').length;
 
     return {
       totalIncome,
@@ -71,7 +98,7 @@ const FinanceView: React.FC = () => {
       netProfit: totalIncome - totalExpense,
       pendingCount
     };
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const chartData = useMemo(() => {
     const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -132,8 +159,9 @@ const FinanceView: React.FC = () => {
     return Object.values(suppliersMap).sort((a, b) => b.count - a.count).slice(0, 3);
   }, [transactions]);
 
-  const openModal = (type: 'INCOME' | 'EXPENSE') => {
+  const openModal = (type: 'INCOME' | 'EXPENSE', transaction: Transaction | null = null) => {
     setModalInitialType(type);
+    setEditingTransaction(transaction);
     setIsModalOpen(true);
   };
 
@@ -261,10 +289,25 @@ const FinanceView: React.FC = () => {
         </div>
 
         <div className="bg-surface-dark border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
-          <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between">
-            <h3 className="text-xl font-black text-white italic">Transações Recentes</h3>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-background-dark rounded-lg border border-white/5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Mostrando {transactions.length} registros
+          <div className="px-8 py-6 border-b border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-xl font-black text-white italic">Fluxo de Caixa</h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Detalhamento de lançamentos para {activeMonth.label} / {activeMonth.year}</p>
+            </div>
+
+            <div className="flex bg-background-dark p-1 rounded-xl border border-white/5">
+              {monthsList.map(m => (
+                <button
+                  key={m.offset}
+                  onClick={() => setSelectedMonthOffset(m.offset)}
+                  className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${selectedMonthOffset === m.offset
+                    ? 'bg-primary text-white shadow-lg'
+                    : 'text-slate-500 hover:text-white'
+                    }`}
+                >
+                  {m.label}
+                </button>
+              ))}
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -283,15 +326,15 @@ const FinanceView: React.FC = () => {
                 {loading ? (
                   Array(3).fill(0).map((_, i) => (
                     <tr key={i} className="animate-pulse">
-                      <td colSpan={5} className="px-8 py-4 h-16 bg-white/5"></td>
+                      <td colSpan={6} className="px-8 py-4 h-16 bg-white/5"></td>
                     </tr>
                   ))
-                ) : transactions.length === 0 ? (
+                ) : filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-8 py-20 text-center text-slate-600 italic">Nenhum lançamento encontrado</td>
+                    <td colSpan={6} className="px-8 py-20 text-center text-slate-600 italic">Nenhum lançamento encontrado para este período</td>
                   </tr>
                 ) : (
-                  transactions.map((t, idx) => (
+                  filteredTransactions.map((t: any, idx) => (
                     <tr key={idx} className="group hover:bg-white/5 transition-all">
                       <td className="px-8 py-5 whitespace-nowrap text-sm text-slate-400 font-medium">
                         {new Date(t.date).toLocaleDateString('pt-BR')}
@@ -311,11 +354,27 @@ const FinanceView: React.FC = () => {
                           {t.status === 'PAID' ? 'Pago' : 'Pendente'}
                         </span>
                       </td>
-                      <td className={`px-8 py-5 whitespace-nowrap text-right font-black text-base ${t.type === 'INCOME' ? 'text-emerald-400' : 'text-primary'}`}>
-                        {t.type === 'INCOME' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      <td className="px-8 py-5 whitespace-nowrap text-right font-black text-base">
+                        <div className="flex flex-col items-end">
+                          <span className={t.type === 'INCOME' ? 'text-emerald-400' : 'text-primary'}>
+                            {t.type === 'INCOME' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                          {t.installment_number && (
+                            <span className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">
+                              Parcela {t.installment_number} de {t.total_installments}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-8 py-5 whitespace-nowrap text-right">
                         <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => openModal(t.type, t)}
+                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-slate-500 hover:text-white flex items-center justify-center transition-all border border-white/5"
+                            title="Editar Transação"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                          </button>
                           {t.status === 'PENDING' && (
                             <button
                               onClick={() => handleStatusUpdate(t.id, 'PAID')}
@@ -345,9 +404,13 @@ const FinanceView: React.FC = () => {
 
       <NewTransactionModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTransaction(null);
+        }}
         onSuccess={() => fetchData()}
         initialType={modalInitialType}
+        editingTransaction={editingTransaction}
       />
     </div>
   );
