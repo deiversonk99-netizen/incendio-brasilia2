@@ -5,34 +5,21 @@ import { useAuth } from '../contexts/AuthContext';
 import PageHeader from './PageHeader';
 
 interface UserProfile {
-    id: string;
+    id: string | null;
     email: string;
     role: 'ADMIN' | 'MANAGER' | 'USER';
     permissions: any;
 }
 
-interface AppSetting {
-    key: string;
-    value: any;
-}
-
-interface NotificationRule {
-    id: string;
-    event_name: string;
-    recipients: string[];
-    is_active: boolean;
-}
-
 const SettingsView: React.FC = () => {
     const { user } = useAuth();
-    const [activeTab, setActiveTab] = useState<'users' | 'pdf' | 'notifications'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'pdf'>('users');
     const [profiles, setProfiles] = useState<UserProfile[]>([]);
     const [pdfSettings, setPdfSettings] = useState<any>({
         validity_days: 10,
         footer_text: 'Incêndio Brasília - Gestão de Tecnologias de Segurança',
         show_logo: true
     });
-    const [notificationRules, setNotificationRules] = useState<NotificationRule[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -42,40 +29,27 @@ const SettingsView: React.FC = () => {
     const fetchSettings = async () => {
         setLoading(true);
 
-        // 1. Fetch User Profiles
-        const { data: profileData } = await supabase.from('user_profiles').select('*');
+        // 1. Fetch User Profiles - Order by email
+        const { data: profileData } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .order('email');
 
-        // Auto-create profile for current user if it doesn't exist and they are an admin
-        if (user && !profileData?.find(p => p.id === user.id)) {
-            const { data: newProfile } = await supabase.from('user_profiles').upsert({
-                id: user.id,
-                email: user.email,
-                role: 'ADMIN' // Default for first access if they can reach here
-            }).select().single();
-            if (newProfile) {
-                setProfiles(prev => [...(profileData || []), newProfile]);
-            } else {
-                if (profileData) setProfiles(profileData);
-            }
-        } else if (profileData) {
-            setProfiles(profileData);
-        }
+        if (profileData) setProfiles(profileData);
 
         // 2. Fetch PDF Settings
         const { data: appData } = await supabase.from('app_settings').select('*').eq('key', 'pdf_global_config').single();
         if (appData) setPdfSettings(appData.value);
 
-        // 3. Fetch Notification Rules
-        const { data: rulesData } = await supabase.from('notification_rules').select('*');
-        if (rulesData) setNotificationRules(rulesData);
-
         setLoading(false);
     };
 
-    const handleUpdateRole = async (userId: string, newRole: string) => {
-        const { error } = await supabase.from('user_profiles').update({ role: newRole }).eq('id', userId);
+    const handleUpdateRole = async (email: string, newRole: string) => {
+        const { error } = await supabase.from('user_profiles').update({ role: newRole }).eq('email', email);
         if (!error) {
-            setProfiles(prev => prev.map(p => p.id === userId ? { ...p, role: newRole as any } : p));
+            setProfiles(prev => prev.map(p => p.email === email ? { ...p, role: newRole as any } : p));
+        } else {
+            alert('Erro ao atualizar papel: ' + error.message);
         }
     };
 
@@ -86,13 +60,6 @@ const SettingsView: React.FC = () => {
         }, { onConflict: 'key' });
 
         if (!error) alert('Configurações de PDF salvas com sucesso!');
-    };
-
-    const toggleNotification = async (ruleId: string, currentStatus: boolean) => {
-        const { error } = await supabase.from('notification_rules').update({ is_active: !currentStatus }).eq('id', ruleId);
-        if (!error) {
-            setNotificationRules(prev => prev.map(r => r.id === ruleId ? { ...r, is_active: !currentStatus } : r));
-        }
     };
 
     return (
@@ -108,7 +75,6 @@ const SettingsView: React.FC = () => {
                     {[
                         { id: 'users', label: 'Usuários e Acessos', icon: 'group' },
                         { id: 'pdf', label: 'Configurações de PDF', icon: 'picture_as_pdf' },
-                        { id: 'notifications', label: 'Notificações & E-mails', icon: 'mail' },
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -148,12 +114,12 @@ const SettingsView: React.FC = () => {
                                                 </tr>
                                             )}
                                             {profiles.map(profile => (
-                                                <tr key={profile.id} className="hover:bg-white/2 transition-colors">
+                                                <tr key={profile.email} className="hover:bg-white/2 transition-colors">
                                                     <td className="px-6 py-4 font-medium">{profile.email}</td>
                                                     <td className="px-6 py-4">
                                                         <select
                                                             value={profile.role}
-                                                            onChange={(e) => handleUpdateRole(profile.id, e.target.value)}
+                                                            onChange={(e) => handleUpdateRole(profile.email, e.target.value)}
                                                             className="bg-background-dark border border-white/10 rounded px-2 py-1 text-xs outline-none focus:border-primary"
                                                         >
                                                             <option value="USER">Usuário Comum</option>
@@ -240,54 +206,6 @@ const SettingsView: React.FC = () => {
                                         <span className="material-symbols-outlined text-[40px] text-slate-600 mb-2">cloud_upload</span>
                                         <p className="text-xs text-slate-500">Alterar imagem padrão do logotipo</p>
                                         <button className="mt-4 text-xs font-bold text-primary hover:underline">Selecionar Arquivo</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Notifications Tab */}
-                        {activeTab === 'notifications' && (
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {[
-                                        { id: '1', title: 'Aprovação de Orçamento', event: 'project_approved', desc: 'Notificar financeiro quando um orçamento for marcado como Aprovado.' },
-                                        { id: '2', title: 'Tarefa de Renovação Vencida', event: 'task_expired', desc: 'Avisar gerência quando um contrato recorrente atingir a data de validade.' },
-                                        { id: '3', title: 'Novo Cliente Cadastrado', event: 'new_client', desc: 'Enviar boas-vindas automático ou alerta para o comercial.' },
-                                        { id: '4', title: 'Pauta de Reunião Gerada', event: 'meeting_agenda', desc: 'Distribuir pauta automaticamente para os envolvidos.' },
-                                    ].map((rule) => {
-                                        const isActive = notificationRules.find(r => r.event_name === rule.event)?.is_active ?? false;
-                                        return (
-                                            <div key={rule.id} className={`p-6 rounded-xl border transition-all ${isActive ? 'bg-primary/5 border-primary/20' : 'bg-surface-dark border-white/5'}`}>
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div className="flex flex-col">
-                                                        <h4 className="font-bold text-white">{rule.title}</h4>
-                                                        <p className="text-xs text-slate-400 mt-1">{rule.desc}</p>
-                                                    </div>
-                                                    <div
-                                                        onClick={() => toggleNotification(rule.id, isActive)}
-                                                        className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${isActive ? 'bg-primary' : 'bg-slate-700'}`}
-                                                    >
-                                                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${isActive ? 'right-1' : 'left-1'}`}></div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 pt-4 border-t border-white/5">
-                                                    <span className="text-[10px] font-bold text-slate-500 uppercase">Destinatários:</span>
-                                                    <span className="text-[10px] text-primary truncate">financeiro@incendiobrasilia.com.br, deiverson...</span>
-                                                    <button className="material-symbols-outlined text-slate-500 text-[14px] hover:text-white">edit</button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-
-                                <div className="bg-orange-900/10 border border-orange-500/20 p-6 rounded-xl flex items-center gap-6 shadow-xl">
-                                    <div className="h-16 w-16 rounded-full bg-orange-500/20 flex items-center justify-center shrink-0">
-                                        <span className="material-symbols-outlined text-orange-500 text-[32px]">warning</span>
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-bold text-white mb-1">Configuração de SMTP Necessária</h4>
-                                        <p className="text-xs text-slate-400 leading-relaxed">Para habilitar o disparo real de e-mails, as credenciais do servidor SMTP (SendGrid, Resend, etc) devem ser configuradas nas variáveis de ambiente do servidor.</p>
-                                        <button className="mt-3 text-xs font-bold text-orange-500 hover:underline">Ver documentação de integração</button>
                                     </div>
                                 </div>
                             </div>
