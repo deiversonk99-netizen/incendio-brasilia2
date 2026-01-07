@@ -7,30 +7,49 @@ interface NewTaskModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
+    defaultGroupId?: string;
+    boardId?: string;
 }
 
-const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess }) => {
+interface TaskGroup {
+    id: string;
+    name: string;
+}
+
+const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess, defaultGroupId, boardId }) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [projects, setProjects] = useState<Project[]>([]);
+    const [groups, setGroups] = useState<TaskGroup[]>([]);
 
     // Form State
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
-    const [status, setStatus] = useState('PENDING');
+    const [groupId, setGroupId] = useState(defaultGroupId || '');
+    const [labelColor, setLabelColor] = useState('transparent');
     const [category, setCategory] = useState('Engenharia');
     const [projectId, setProjectId] = useState('');
     const [file, setFile] = useState<File | null>(null);
 
     useEffect(() => {
         if (isOpen) {
-            fetchProjects();
+            fetchInitialData();
+            if (defaultGroupId) setGroupId(defaultGroupId);
         }
-    }, [isOpen]);
+    }, [isOpen, defaultGroupId, boardId]);
 
-    const fetchProjects = async () => {
-        const { data } = await supabase.from('projects').select('*').order('name');
-        if (data) setProjects(data);
+    const fetchInitialData = async () => {
+        let groupsQuery = supabase.from('task_groups').select('id, name').order('order_index');
+        if (boardId) {
+            groupsQuery = groupsQuery.eq('board_id', boardId);
+        }
+
+        const [{ data: pData }, { data: gData }] = await Promise.all([
+            supabase.from('projects').select('*').order('name'),
+            groupsQuery
+        ]);
+        if (pData) setProjects(pData);
+        if (gData) setGroups(gData);
     };
 
     const handleUpload = async (file: File) => {
@@ -69,7 +88,8 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess 
             const { error } = await supabase.from('tasks').insert({
                 title,
                 description,
-                status,
+                group_id: groupId || null,
+                label_color: labelColor,
                 category,
                 project_id: projectId || null,
                 file_url: fileUrl,
@@ -128,29 +148,29 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess 
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-slate-400 mb-1">Status</label>
+                            <label className="block text-sm font-medium text-slate-400 mb-1">Grupo (Coluna)</label>
                             <select
                                 className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none"
-                                value={status}
-                                onChange={e => setStatus(e.target.value)}
+                                value={groupId}
+                                onChange={e => setGroupId(e.target.value)}
+                                required
                             >
-                                <option value="PENDING">Pendente</option>
-                                <option value="BUYING">Em Compra</option>
-                                <option value="INSTALLATION">Instalação</option>
-                                <option value="DONE">Concluído</option>
+                                <option value="" disabled>Selecione...</option>
+                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-400 mb-1">Categoria</label>
+                            <label className="block text-sm font-medium text-slate-400 mb-1">Cor de Sinalização</label>
                             <select
                                 className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none"
-                                value={category}
-                                onChange={e => setCategory(e.target.value)}
+                                value={labelColor}
+                                onChange={e => setLabelColor(e.target.value)}
                             >
-                                <option value="Engenharia">Engenharia</option>
-                                <option value="Compras">Compras</option>
-                                <option value="Instalação">Instalação</option>
-                                <option value="Administrativo">Administrativo</option>
+                                <option value="transparent">Nenhuma</option>
+                                <option value="bg-red-500">Urgente (Vermelho)</option>
+                                <option value="bg-yellow-500">Atenção (Amarelo)</option>
+                                <option value="bg-blue-500">Informativo (Azul)</option>
+                                <option value="bg-green-500">OK (Verde)</option>
                             </select>
                         </div>
                     </div>

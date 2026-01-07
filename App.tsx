@@ -18,13 +18,29 @@ import ServicesView from './components/ServicesView';
 import ServiceModelsView from './components/ServiceModelsView';
 import InventoryView from './components/InventoryView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { isSuperAdmin, isStockAdmin } from './lib/permissions';
 
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [engineeringProjectId, setEngineeringProjectId] = useState<string>('');
-  const { session, loading } = useAuth();
+  const { session, user, loading } = useAuth(); // Added user
 
   const renderContent = useCallback(() => {
+    const userRoleCheck = (view: AppView) => {
+      const email = user?.email;
+      if (view === AppView.FINANCE || view === AppView.SETTINGS) {
+        return isSuperAdmin(email);
+      }
+      if (view === AppView.PLACAS) {
+        return isStockAdmin(email);
+      }
+      return true;
+    };
+
+    if (!userRoleCheck(currentView)) {
+      return <DashboardView />; // Redirect silent
+    }
+
     switch (currentView) {
       case AppView.DASHBOARD:
         return <DashboardView />;
@@ -68,7 +84,7 @@ const AppContent: React.FC = () => {
       default:
         return <DashboardView />;
     }
-  }, [currentView, engineeringProjectId]);
+  }, [currentView, engineeringProjectId, user]);
 
   if (loading) {
     return (

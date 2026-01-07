@@ -2,6 +2,7 @@
 import React from 'react';
 import { AppView } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { isSuperAdmin, isStockAdmin } from '../lib/permissions';
 
 interface SidebarProps {
   currentView: AppView;
@@ -10,7 +11,8 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
   const { signOut, user } = useAuth();
-  const navItems = [
+
+  const allNavItems = [
     { id: AppView.DASHBOARD, label: 'Dashboard', icon: 'dashboard' },
     { id: AppView.CLIENTS, label: 'Clientes', icon: 'person_outline' },
     { id: AppView.TASKS, label: 'Tarefas', icon: 'check_circle' },
@@ -26,6 +28,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     { id: AppView.FINANCE, label: 'Financeiro', icon: 'account_balance_wallet' },
     { id: AppView.SETTINGS, label: 'Configurações', icon: 'settings' },
   ];
+
+  // RBAC Filtering logic
+  const navItems = allNavItems.filter(item => {
+    const email = user?.email;
+    if (item.id === AppView.FINANCE || item.id === AppView.SETTINGS) {
+      return isSuperAdmin(email);
+    }
+    if (item.id === AppView.PLACAS) {
+      return isStockAdmin(email);
+    }
+    return true; // Other items are public for logged-in users
+  });
 
   const isEngActive = currentView.startsWith('ENG_');
 
