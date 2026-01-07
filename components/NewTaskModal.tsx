@@ -30,6 +30,8 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
     const [category, setCategory] = useState('Engenharia');
     const [projectId, setProjectId] = useState('');
     const [file, setFile] = useState<File | null>(null);
+    const [isAnnual, setIsAnnual] = useState(false);
+    const [expirationDate, setExpirationDate] = useState('');
 
     useEffect(() => {
         if (isOpen) {
@@ -93,7 +95,9 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 category,
                 project_id: projectId || null,
                 file_url: fileUrl,
-                user_id: user?.id
+                user_id: user?.id,
+                is_annual: isAnnual,
+                expiration_date: expirationDate || null
             });
 
             if (error) throw error;
@@ -189,8 +193,38 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                         </select>
                     </div>
 
+                    <div className="bg-primary/5 p-4 rounded-xl border border-primary/20 space-y-4 shadow-sm">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                            <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${isAnnual ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                                {isAnnual && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                            </div>
+                            <input
+                                type="checkbox"
+                                className="hidden"
+                                checked={isAnnual}
+                                onChange={e => setIsAnnual(e.target.checked)}
+                            />
+                            <div className="flex flex-col">
+                                <span className="text-sm font-bold text-white">Aditivo de Renovação Anual</span>
+                                <span className="text-[10px] text-slate-500 uppercase font-black">Tarefa recorrente para controle de contratos</span>
+                            </div>
+                        </label>
+
+                        {isAnnual && (
+                            <div className="animate-in slide-in-from-top-2 duration-200">
+                                <label className="block text-[10px] font-black text-primary uppercase mb-1">Vencimento do Contrato / Renovação</label>
+                                <input
+                                    type="date"
+                                    className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none text-sm"
+                                    value={expirationDate}
+                                    onChange={e => setExpirationDate(e.target.value)}
+                                />
+                            </div>
+                        )}
+                    </div>
+
                     <div>
-                        <label className="block text-sm font-medium text-slate-400 mb-1">Anexo (Arquivo)</label>
+                        <label className="block text-sm font-medium text-slate-400 mb-1">Anexo (Arquivo / Aditivo)</label>
                         <input
                             type="file"
                             className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"

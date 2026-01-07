@@ -19,6 +19,7 @@ interface BudgetItem {
   quantity_final: number;
   unit_price: number;
   origin: 'CALCULATED' | 'MANUAL';
+  item_type: 'PRODUCT' | 'SERVICE';
   project_id: string;
 }
 
@@ -348,7 +349,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         quantity_calculated: qty,
         quantity_final: qty,
         unit_price: unitPrice,
-        origin: 'CALCULATED' as const
+        origin: 'CALCULATED' as const,
+        item_type: 'PRODUCT' as const
       };
     });
 
@@ -463,7 +465,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       quantity_calculated: 0,
       quantity_final: 1, // Default to 1
       unit_price: newItemPrice,
-      origin: 'MANUAL'
+      origin: 'MANUAL',
+      item_type: 'PRODUCT' as const
     };
 
     const { data, error } = await supabase.from('budget_items').insert(newItem).select();
@@ -497,7 +500,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           quantity_calculated: 0,
           quantity_final: 1,
           unit_price: model.labor_price || 0,
-          origin: 'MANUAL'
+          origin: 'MANUAL',
+          item_type: 'SERVICE' as const
         });
 
         // 2. Fetch Model Items with Products
@@ -515,7 +519,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                 quantity_calculated: 0,
                 quantity_final: item.quantity,
                 unit_price: item.product.price,
-                origin: 'MANUAL'
+                origin: 'MANUAL',
+                item_type: 'PRODUCT' as const
               });
             }
           });

@@ -19,11 +19,32 @@ const DashboardView: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('ALL');
+  const [filterClient, setFilterClient] = useState('ALL');
 
   // Real Data States
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [chartData, setChartData] = useState<{ name: string, real: number }[]>([]);
+
+  const highlightText = (text: string, highlight: string) => {
+    if (!highlight.trim()) return <span>{text}</span>;
+    const words = highlight.split(/\s+/).filter(w => w.length > 0);
+    const regex = new RegExp(`(${words.join('|')})`, 'gi');
+    const parts = text.split(regex);
+    return (
+      <span>
+        {parts.map((part, i) =>
+          regex.test(part) ? (
+            <mark key={i} className="bg-primary/30 text-white rounded px-0.5 border-b border-primary/50 font-bold">{part}</mark>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        )}
+      </span>
+    );
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -108,6 +129,8 @@ const DashboardView: React.FC = () => {
     { id: 'EXECUTION', label: 'Execução', color: 'bg-primary', shadow: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]' },
     { id: 'DONE', label: 'Concluído', color: 'bg-emerald-400', shadow: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]' },
   ];
+
+  const uniqueClients = Array.from(new Set(projects.map(p => p.client))).sort();
 
   return (
     <>
@@ -230,7 +253,60 @@ const DashboardView: React.FC = () => {
 
           {/* Kanban Board */}
           <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-            <h3 className="text-lg font-bold text-white mb-4 px-1">Gestão de Projetos</h3>
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 px-1 gap-4">
+              <h3 className="text-lg font-bold text-white">Gestão de Projetos</h3>
+
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                <div className="relative flex-1 min-w-[200px] md:max-w-[300px]">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
+                  <input
+                    type="text"
+                    placeholder="Procurar projeto ou cliente..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-surface-dark border border-white/10 rounded-xl py-2 pl-10 pr-10 text-sm text-white placeholder:text-slate-600 focus:border-primary outline-none transition-all shadow-sm"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <select
+                      value={filterType}
+                      onChange={(e) => setFilterType(e.target.value)}
+                      className="appearance-none bg-surface-dark border border-white/10 rounded-xl py-2 pl-4 pr-10 text-sm text-white focus:border-primary outline-none transition-all cursor-pointer min-w-[140px]"
+                    >
+                      <option value="ALL">Todos os Tipos</option>
+                      <option value="business">Comercial</option>
+                      <option value="factory">Industrial</option>
+                      <option value="residential">Residencial</option>
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-[18px]">expand_more</span>
+                  </div>
+
+                  <div className="relative">
+                    <select
+                      value={filterClient}
+                      onChange={(e) => setFilterClient(e.target.value)}
+                      className="appearance-none bg-surface-dark border border-white/10 rounded-xl py-2 pl-4 pr-10 text-sm text-white focus:border-primary outline-none transition-all cursor-pointer max-w-[200px]"
+                    >
+                      <option value="ALL">Todos os Clientes</option>
+                      {uniqueClients.map(client => (
+                        <option key={client} value={client}>{client}</option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-[18px]">expand_more</span>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="flex h-[500px] gap-6 min-w-[1200px]">
               {columns.map(col => (
                 <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
@@ -248,33 +324,74 @@ const DashboardView: React.FC = () => {
                     {loading ? (
                       <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
                     ) : (
-                      projects.filter(p => p.status === col.id).map(proj => (
-                        <div
-                          key={proj.id}
-                          onClick={() => handleProjectClick(proj)}
-                          className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98]"
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
-                              {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
-                            </span>
-                          </div>
-                          <h4 className="text-white font-bold text-base mb-1 truncate">{proj.name}</h4>
-                          <div className="flex items-center gap-1.5 mb-3">
-                            <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
-                            <p className="text-text-muted text-xs font-medium truncate">{proj.client}</p>
-                          </div>
-                          <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
-                          <div className="flex justify-between items-center">
-                            <div className="text-right w-full">
-                              <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
-                              <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                              <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
+                      projects
+                        .filter(p => p.status === col.id)
+                        .filter(p => {
+                          // Filter by Type
+                          if (filterType !== 'ALL' && p.type !== filterType) return false;
+
+                          // Filter by Client
+                          if (filterClient !== 'ALL' && p.client !== filterClient) return false;
+
+                          // Search filter
+                          const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+                          if (searchWords.length === 0) return true;
+                          const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
+                          return searchWords.every(word =>
+                            p.name.toLowerCase().includes(word) ||
+                            p.client.toLowerCase().includes(word) ||
+                            projectTypeLabel.includes(word)
+                          );
+                        })
+                        .map(proj => (
+                          <div
+                            key={proj.id}
+                            onClick={() => handleProjectClick(proj)}
+                            className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98]"
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
+                                {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
+                              </span>
+                            </div>
+                            <h4 className="text-white font-bold text-base mb-1 truncate">
+                              {highlightText(proj.name, searchTerm)}
+                            </h4>
+                            <div className="flex items-center gap-1.5 mb-3">
+                              <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
+                              <p className="text-text-muted text-xs font-medium truncate">
+                                {highlightText(proj.client, searchTerm)}
+                              </p>
+                            </div>
+                            <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
+                            <div className="flex justify-between items-center">
+                              <div className="text-right w-full">
+                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
+                                <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        ))
                     )}
+                    {!loading && projects.filter(p => p.status === col.id).length > 0 &&
+                      projects.filter(p => p.status === col.id).filter(p => {
+                        if (filterType !== 'ALL' && p.type !== filterType) return false;
+                        if (filterClient !== 'ALL' && p.client !== filterClient) return false;
+
+                        const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+                        return searchWords.every(word =>
+                          p.name.toLowerCase().includes(word) ||
+                          p.client.toLowerCase().includes(word) ||
+                          (p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial').includes(word)
+                        );
+                      }).length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                          <span className="material-symbols-outlined text-slate-600 text-[32px] mb-2">search_off</span>
+                          <p className="text-slate-500 text-xs italic">Nenhum projeto corresponde aos filtros nesta coluna.</p>
+                        </div>
+                      )
+                    }
                   </div>
                 </div>
               ))}

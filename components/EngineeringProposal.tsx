@@ -278,7 +278,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     // 1. Fetch Items Cost from Phase B
     const { data: budgetItemsData } = await supabase
       .from('budget_items')
-      .select('id, name, quantity_final, unit_price, origin')
+      .select('id, name, quantity_final, unit_price, origin, item_type')
       .eq('project_id', projectId);
 
     if (budgetItemsData) setBudgetItems(budgetItemsData);
@@ -356,7 +356,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       quantity_calculated: 0,
       quantity_final: newItem.quantity,
       unit_price: newItem.price,
-      origin: 'MANUAL' as const
+      origin: 'MANUAL' as const,
+      item_type: modalTab === 'service' ? 'SERVICE' : 'PRODUCT'
     };
 
     const { data, error } = await supabase.from('budget_items').insert(newItemData).select();
@@ -487,17 +488,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         const isInfra = item.name.includes('[INFRA:');
         if (isModel || isInfra) return false;
 
-        // 1. Identify Service
-        const nameLower = item.name.toLowerCase();
-        let isService = serviceCatalog.some(s => s.name === item.name);
-        if (!isService) {
-          // Keyword fallback for manual services
-          if (nameLower.includes('mão de obra') || nameLower.includes('serviço') || nameLower.includes('instalação')) {
-            isService = true;
-          }
-        }
-
-        // 2. Identify Standard Product
+        const isService = item.item_type === 'SERVICE';
         const isStandardProduct = catalogItems.some(p => p.name === item.name);
 
         // 3. Apply Filters
@@ -560,8 +551,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         (Object.entries(grouped) as [string, any[]][]).forEach(([modelName, mItems]) => {
           // Filter items to display based on settings
           const visibleItems = mItems.filter(item => {
-            const nameLower = item.name.toLowerCase();
-            const isLabor = item.name.includes('Mão de Obra / Serviço') || nameLower.includes('serviço') || nameLower.includes('mão de obra');
+            const isLabor = item.item_type === 'SERVICE';
 
             if (isLabor) return !proposal.hide_services_pdf;
             // It's a product in the model
@@ -648,15 +638,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const financeBody = [];
 
       if (pdfSettings.show_subtotal !== false) {
-        financeBody.push(['Subtotal de Itens', `R$ ${vals.base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        financeBody.push(['Subtotal de Materiais', `R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
       }
 
       if (pdfSettings.show_bdi !== false) {
-        financeBody.push(['BDI e Taxas Operacionais', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        financeBody.push(['BDI (Bonificação e Despesas Indiretas)', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
       }
 
       if (pdfSettings.show_profit !== false) {
-        financeBody.push(['Lucro e Encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        financeBody.push(['Margem de Lucro', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+      }
+
+      if (vals.servicesTotal > 0 && !proposal.hide_services_pdf) {
+        financeBody.push(['Total de Mão de Obra / Serviços', `R$ ${vals.servicesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
       }
 
       if (pdfSettings.show_discount !== false && vals.discountVal > 0) {
@@ -768,28 +762,38 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   };
 
   const calculateValues = () => {
-    const base = Number(proposal.cost_material_base) || 0;
+    // Separate Items
+    const products = budgetItems.filter(i => i.item_type !== 'SERVICE');
+    const services = budgetItems.filter(i => i.item_type === 'SERVICE');
+
+    const productsBase = products.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+    const servicesTotal = services.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+
     const bdiPct = Number(proposal.bdi_percent) || 0;
     const profitPct = Number(proposal.profit_percent) || 0;
 
-    // Formula: Base * (1+BDI) * (1+Profit) - Discount ??
-    // Or additive? Usually BDI is on Cost, Profit is on (Cost+BDI).
-    const subtotal = base * (1 + (bdiPct / 100));
-    const withProfit = subtotal * (1 + (profitPct / 100));
+    // Apply BDI/Profit ONLY to productsBase
+    const subtotal = productsBase * (1 + (bdiPct / 100));
+    const productsWithMarkup = subtotal * (1 + (profitPct / 100));
+
+    // Calculate Discount based on the WHOLE value (Products with Markup + Services) or just Products?
+    // Usually discount is on the final price.
+    const preDiscountTotal = productsWithMarkup + servicesTotal;
 
     let discountVal = 0;
     if (proposal.discount_type === 'FIXED') {
       discountVal = Number(proposal.discount_value) || 0;
     } else {
-      discountVal = withProfit * ((Number(proposal.discount_value) || 0) / 100);
+      discountVal = preDiscountTotal * ((Number(proposal.discount_value) || 0) / 100);
     }
 
-    const final = withProfit - discountVal;
+    const final = preDiscountTotal - discountVal;
 
     return {
-      base,
-      bdiVal: subtotal - base,
-      profitVal: withProfit - subtotal,
+      productsBase,
+      servicesTotal,
+      bdiVal: subtotal - productsBase,
+      profitVal: productsWithMarkup - subtotal,
       discountVal,
       final
     };
@@ -1092,42 +1096,51 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           {selectedProjectId && (
             <>
               {/* Calculation Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-surface-dark p-5 rounded-xl border border-white/5">
-                  <p className="text-slate-400 text-sm font-medium">Custo Material Base</p>
-                  <p className="text-white text-2xl font-bold">R$ {values.base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                  <p className="text-xs text-slate-600 mt-1">Carregado da Fase B</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="bg-surface-dark p-5 rounded-xl border border-white/5 font-inter">
+                  <p className="text-slate-400 text-[11px] font-bold uppercase tracking-wider mb-1">Base Produtos</p>
+                  <p className="text-white text-xl font-bold">R$ {values.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-[10px] text-slate-600 mt-1">Soma de materiais</p>
                 </div>
-                <div className="bg-surface-dark p-5 rounded-xl border border-white/5 group relative">
-                  <p className="text-blue-400 text-sm font-medium mb-1">BDI (%)</p>
+
+                <div className="bg-surface-dark p-5 rounded-xl border border-white/5 group relative border-l-4 border-l-blue-500/50">
+                  <p className="text-blue-400 text-[11px] font-bold uppercase tracking-wider mb-1">BDI (%)</p>
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
-                      className="w-20 bg-background-dark border border-white/10 rounded px-2 py-1 text-white text-lg font-bold outline-none focus:border-blue-500"
+                      className="w-16 bg-background-dark border border-white/10 rounded px-2 py-1 text-white text-lg font-bold outline-none focus:border-blue-500"
                       value={proposal.bdi_percent}
                       onChange={e => setProposal({ ...proposal, bdi_percent: Number(e.target.value) })}
                     />
-                    <span className="text-slate-500 font-bold">+ R$ {values.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-slate-500 text-xs font-bold">+R${values.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
                 </div>
-                <div className="bg-surface-dark p-5 rounded-xl border border-white/5">
-                  <p className="text-green-400 text-sm font-medium mb-1">Lucro (%)</p>
+
+                <div className="bg-surface-dark p-5 rounded-xl border border-white/5 border-l-4 border-l-emerald-500/50">
+                  <p className="text-emerald-400 text-[11px] font-bold uppercase tracking-wider mb-1">Lucro (%)</p>
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
-                      className="w-20 bg-background-dark border border-white/10 rounded px-2 py-1 text-white text-lg font-bold outline-none focus:border-green-500"
+                      className="w-16 bg-background-dark border border-white/10 rounded px-2 py-1 text-white text-lg font-bold outline-none focus:border-emerald-500"
                       value={proposal.profit_percent}
                       onChange={e => setProposal({ ...proposal, profit_percent: Number(e.target.value) })}
                     />
-                    <span className="text-slate-500 font-bold">+ R$ {values.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-slate-500 text-xs font-bold">+R${values.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
                 </div>
+
+                <div className="bg-surface-dark p-5 rounded-xl border border-white/5 border-l-4 border-l-indigo-500/50">
+                  <p className="text-indigo-400 text-[11px] font-bold uppercase tracking-wider mb-1">Total Serviços</p>
+                  <p className="text-white text-xl font-bold">R$ {values.servicesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-[10px] text-slate-600 mt-1 underline decoration-indigo-500/30">Líquido de markup</p>
+                </div>
+
                 <div className="bg-primary/10 p-5 rounded-xl border border-primary/50 shadow-lg shadow-primary/5">
-                  <p className="text-primary text-sm font-bold uppercase">Preço Global</p>
-                  <p className="text-white text-3xl font-black">R$ {values.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-primary text-[11px] font-black uppercase tracking-widest mb-1">Investimento Total</p>
+                  <p className="text-white text-2xl font-black">R$ {values.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
 
                   {(values.discountVal > 0) && (
-                    <p className="text-xs text-red-400 mt-1 font-bold">Desconto: - R$ {values.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] text-red-400 mt-1 font-bold">Desconto: - R$ {values.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                   )}
                 </div>
               </div>
@@ -1156,8 +1169,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       {budgetItems.map(item => (
                         <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                           <td className="px-6 py-4">
-                            <div className="text-white font-medium text-sm">{item.name}</div>
-                            <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">
+                            <div className="flex items-center gap-2">
+                              {item.item_type === 'SERVICE' && (
+                                <span className="p-1 rounded bg-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase">Serviço</span>
+                              )}
+                              <div className="text-white font-medium text-sm">{item.name}</div>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
                               {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
                             </div>
                           </td>

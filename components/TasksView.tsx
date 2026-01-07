@@ -28,6 +28,8 @@ interface Task {
   file_url: string;
   label_color?: string;
   project_id: string;
+  is_annual?: boolean;
+  expiration_date?: string;
   projects?: { name: string };
 }
 
@@ -217,72 +219,95 @@ const TasksView: React.FC = () => {
                 ) : filteredTasks.filter(t => t.group_id === group.id).length === 0 ? (
                   <div className="text-center text-slate-600 py-10 text-xs italic">Sem tarefas</div>
                 ) : (
-                  filteredTasks.filter(t => t.group_id === group.id).map(task => (
-                    <div
-                      key={task.id}
-                      className={`bg-card-dark p-4 rounded-xl border border-[#46252c] group shadow-sm hover:border-primary/40 transition-all relative overflow-hidden`}
-                    >
-                      {/* Color Tag Indicator */}
-                      {task.label_color && task.label_color !== 'transparent' && (
-                        <div className={`absolute top-0 right-0 w-2 h-full ${task.label_color}`}></div>
-                      )}
+                  filteredTasks.filter(t => t.group_id === group.id).map(task => {
+                    const isExpired = task.expiration_date && new Date(task.expiration_date) < new Date();
+                    return (
+                      <div
+                        key={task.id}
+                        className={`bg-card-dark p-4 rounded-xl border group shadow-sm transition-all relative overflow-hidden ${isExpired ? 'border-red-500/50 bg-red-500/5 shadow-red-900/10' : 'border-[#46252c] hover:border-primary/40'}`}
+                      >
+                        {/* Color Tag Indicator */}
+                        {task.label_color && task.label_color !== 'transparent' && (
+                          <div className={`absolute top-0 right-0 w-1.5 h-full ${task.label_color}`}></div>
+                        )}
 
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded truncate max-w-[120px]">
-                          {task.projects?.name || 'Projeto Avulso'}
-                        </span>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleDelete(task.id)} className="text-slate-500 hover:text-red-400">
-                            <span className="material-symbols-outlined text-[16px]">delete</span>
-                          </button>
+                        {isExpired && (
+                          <div className="absolute top-0 left-0 w-full h-1 bg-red-500 animate-pulse"></div>
+                        )}
+
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded truncate max-w-[120px]">
+                            {task.projects?.name || 'Projeto Avulso'}
+                          </span>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => handleDelete(task.id)} className="text-slate-500 hover:text-red-400">
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <h4 className="text-white text-sm font-semibold mb-2 leading-snug">{task.title}</h4>
-                      <p className="text-xs text-slate-400 line-clamp-2 mb-3">{task.description}</p>
+                        <h4 className="text-white text-sm font-semibold mb-1 leading-snug">{task.title}</h4>
 
-                      <div className="flex flex-col gap-3 mt-2 pt-3 border-t border-white/5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="bg-[#211115] text-[#c7949f] text-[10px] px-2 py-0.5 rounded border border-[#46252c]">
-                              {task.category}
+                        {task.is_annual && (
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <span className="material-symbols-outlined text-[14px] text-primary">sync</span>
+                            <span className="text-[10px] font-black text-primary uppercase tracking-widest">Renovação Anual</span>
+                          </div>
+                        )}
+
+                        {task.expiration_date && (
+                          <div className={`flex items-center gap-1.5 mb-3 px-2 py-1 rounded bg-black/20 w-fit ${isExpired ? 'text-red-400' : 'text-slate-400'}`}>
+                            <span className="material-symbols-outlined text-[14px]">{isExpired ? 'warning' : 'event'}</span>
+                            <span className="text-[10px] font-bold">
+                              Vencimento: {new Date(task.expiration_date).toLocaleDateString('pt-BR')}
                             </span>
-                            {task.file_url && (
-                              <a href={task.file_url} target="_blank" rel="noreferrer" className="text-primary hover:underline text-[10px] flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[14px]">attach_file</span>
-                                Anexo
-                              </a>
-                            )}
                           </div>
+                        )}
 
-                          {/* Color Selector Mini */}
-                          <div className="flex gap-1">
-                            {['bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'].map(c => (
+                        <p className="text-xs text-slate-400 line-clamp-2 mb-3">{task.description}</p>
+
+                        <div className="flex flex-col gap-3 mt-2 pt-3 border-t border-white/5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="bg-[#211115] text-[#c7949f] text-[10px] px-2 py-0.5 rounded border border-[#46252c]">
+                                {task.category}
+                              </span>
+                              {task.file_url && (
+                                <a href={task.file_url} target="_blank" rel="noreferrer" className="text-primary hover:underline text-[10px] flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[14px]">attach_file</span>
+                                  Anexo
+                                </a>
+                              )}
+                            </div>
+
+                            {/* Color Selector Mini */}
+                            <div className="flex gap-1">
+                              {['bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'].map(c => (
+                                <button
+                                  key={c}
+                                  onClick={() => handleUpdateTaskColor(task.id, c)}
+                                  className={`w-2 h-2 rounded-full ${c} ${task.label_color === c ? 'ring-1 ring-white' : 'opacity-40 hover:opacity-100'}`}
+                                />
+                              ))}
                               <button
-                                key={c}
-                                onClick={() => handleUpdateTaskColor(task.id, c)}
-                                className={`w-2 h-2 rounded-full ${c} ${task.label_color === c ? 'ring-1 ring-white' : 'opacity-40 hover:opacity-100'}`}
+                                onClick={() => handleUpdateTaskColor(task.id, 'transparent')}
+                                className={`w-2 h-2 rounded-full border border-white/20 ${!task.label_color || task.label_color === 'transparent' ? 'bg-white/40' : 'opacity-40'}`}
                               />
-                            ))}
-                            <button
-                              onClick={() => handleUpdateTaskColor(task.id, 'transparent')}
-                              className={`w-2 h-2 rounded-full border border-white/20 ${!task.label_color || task.label_color === 'transparent' ? 'bg-white/40' : 'opacity-40'}`}
-                            />
+                            </div>
                           </div>
+
+                          <select
+                            className="bg-surface-dark border border-white/5 text-[10px] text-slate-300 rounded px-2 py-1 outline-none cursor-pointer hover:border-primary transition-all"
+                            value={task.group_id || ''}
+                            onChange={(e) => handleUpdateTaskGroup(task.id, e.target.value)}
+                          >
+                            <option value="" disabled>Mover para...</option>
+                            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                          </select>
                         </div>
-
-                        <select
-                          className="bg-surface-dark border border-white/5 text-[10px] text-slate-300 rounded px-2 py-1 outline-none cursor-pointer hover:border-primary transition-all"
-                          value={task.group_id || ''}
-                          onChange={(e) => handleUpdateTaskGroup(task.id, e.target.value)}
-                        >
-                          <option value="" disabled>Mover para...</option>
-                          {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                        </select>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
-
                 <button
                   onClick={() => setIsModalOpen(true)}
                   className="w-full py-3 flex items-center justify-center gap-2 text-[#c7949f] hover:text-white hover:bg-[#211115] rounded-xl text-sm font-medium border border-dashed border-[#46252c] transition-all"
@@ -314,7 +339,7 @@ const TasksView: React.FC = () => {
         defaultGroupId={groups[0]?.id}
         boardId={selectedBoardId}
       />
-    </div>
+    </div >
   );
 };
 

@@ -2,7 +2,7 @@
 import React from 'react';
 import { AppView } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { isSuperAdmin, isStockAdmin } from '../lib/permissions';
+import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin } from '../lib/permissions';
 
 interface SidebarProps {
   currentView: AppView;
@@ -32,11 +32,19 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
   // RBAC Filtering logic
   const navItems = allNavItems.filter(item => {
     const email = user?.email;
-    if (item.id === AppView.FINANCE || item.id === AppView.SETTINGS) {
+    if (item.id === AppView.SETTINGS) {
       return isSuperAdmin(email);
+    }
+    if (item.id === AppView.FINANCE) {
+      return isFinanceAdmin(email);
     }
     if (item.id === AppView.PLACAS) {
       return isStockAdmin(email);
+    }
+    if (item.id === AppView.ENGINEERING_PHASE_A ||
+      item.id === AppView.ENGINEERING_PHASE_B ||
+      item.id === AppView.ENGINEERING_PHASE_C) {
+      return isProposalAdmin(email);
     }
     return true; // Other items are public for logged-in users
   });

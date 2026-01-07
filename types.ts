@@ -32,12 +32,19 @@ export interface Project {
 export interface Task {
   id: string;
   title: string;
-  deadline: string;
-  priority: 'HIGH' | 'MEDIUM' | 'LOW';
-  completed: boolean;
+  deadline?: string;
+  priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+  completed?: boolean;
   project?: string;
   assignee?: string;
-  status: 'PENDING' | 'BUYING' | 'INSTALLATION' | 'DONE';
+  status?: string;
+  expiration_date?: string;
+  is_annual?: boolean;
+  description?: string;
+  group_id?: string;
+  file_url?: string;
+  label_color?: string;
+  project_id?: string;
 }
 
 export interface Transaction {
@@ -102,6 +109,18 @@ export interface Proposal {
   hide_services_pdf?: boolean;
   hide_products_pdf?: boolean;
   status: 'DRAFT' | 'SENT' | 'APPROVED';
+  created_at?: string;
+}
+
+export interface BudgetItem {
+  id: string;
+  project_id: string;
+  name: string;
+  quantity_calculated: number;
+  quantity_final: number;
+  unit_price: number;
+  origin: 'CALCULATED' | 'MANUAL';
+  item_type: 'PRODUCT' | 'SERVICE';
   created_at?: string;
 }
 

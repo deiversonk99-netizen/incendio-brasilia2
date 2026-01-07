@@ -17,8 +17,9 @@ import SuppliersView from './components/SuppliersView';
 import ServicesView from './components/ServicesView';
 import ServiceModelsView from './components/ServiceModelsView';
 import InventoryView from './components/InventoryView';
+import SettingsView from './components/SettingsView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { isSuperAdmin, isStockAdmin } from './lib/permissions';
+import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin } from './lib/permissions';
 
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
@@ -28,11 +29,19 @@ const AppContent: React.FC = () => {
   const renderContent = useCallback(() => {
     const userRoleCheck = (view: AppView) => {
       const email = user?.email;
-      if (view === AppView.FINANCE || view === AppView.SETTINGS) {
+      if (view === AppView.SETTINGS) {
         return isSuperAdmin(email);
+      }
+      if (view === AppView.FINANCE) {
+        return isFinanceAdmin(email);
       }
       if (view === AppView.PLACAS) {
         return isStockAdmin(email);
+      }
+      if (view === AppView.ENGINEERING_PHASE_A ||
+        view === AppView.ENGINEERING_PHASE_B ||
+        view === AppView.ENGINEERING_PHASE_C) {
+        return isProposalAdmin(email);
       }
       return true;
     };
@@ -81,6 +90,8 @@ const AppContent: React.FC = () => {
         return <ServiceModelsView />;
       case AppView.PLACAS:
         return <InventoryView />;
+      case AppView.SETTINGS:
+        return <SettingsView />;
       default:
         return <DashboardView />;
     }
