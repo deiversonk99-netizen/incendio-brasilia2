@@ -70,6 +70,7 @@ export interface Product {
   is_signage?: boolean;
   cost_price?: number;
   observation?: string;
+  registration_date?: string;
 }
 
 export interface Supplier {

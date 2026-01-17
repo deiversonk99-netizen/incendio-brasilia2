@@ -21,7 +21,8 @@ const ProductsView: React.FC = () => {
         supplier_id: '',
         is_signage: false,
         cost_price: 0,
-        observation: ''
+        observation: '',
+        registration_date: new Date().toISOString().split('T')[0]
     });
 
     const [suppliers, setSuppliers] = useState<{ id: string, name: string }[]>([]);
@@ -61,7 +62,8 @@ const ProductsView: React.FC = () => {
                 supplier_id: product.supplier_id || '',
                 is_signage: !!product.is_signage,
                 cost_price: product.cost_price || 0,
-                observation: product.observation || ''
+                observation: product.observation || '',
+                registration_date: product.registration_date || new Date().toISOString().split('T')[0]
             });
         } else {
             setEditingProduct(null);
@@ -73,7 +75,8 @@ const ProductsView: React.FC = () => {
                 supplier_id: '',
                 is_signage: false,
                 cost_price: 0,
-                observation: ''
+                observation: '',
+                registration_date: new Date().toISOString().split('T')[0]
             });
         }
         setIsModalOpen(true);
@@ -833,6 +836,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                         <th className="px-6 py-4 text-center">Unidade</th>
                                         <th className="px-6 py-4 text-right">Preço Unit.</th>
                                         <th className="px-6 py-4 text-right">Preço Custo</th>
+                                        <th className="px-6 py-4">Cadastro</th>
                                         <th className="px-6 py-4">Observação</th>
                                         <th className="px-6 py-4 text-right">Ações</th>
                                     </tr>
@@ -879,6 +883,9 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                 </td>
                                                 <td className="px-6 py-4 text-right font-medium text-slate-400">
                                                     R$ {Number(product.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-400 text-sm">
+                                                    {product.registration_date ? new Date(product.registration_date).toLocaleDateString('pt-BR') : '-'}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-text-muted truncate max-w-[150px]" title={product.observation}>
                                                     {product.observation || '-'}
@@ -1016,6 +1023,16 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 <label htmlFor="is_signage" className="text-sm font-medium text-white cursor-pointer select-none">
                                     Este produto é uma Placa/Sinalização
                                 </label>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-400 mb-1">Data de Cadastro</label>
+                                <input
+                                    type="date"
+                                    className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none"
+                                    value={formData.registration_date}
+                                    onChange={e => setFormData({ ...formData, registration_date: e.target.value })}
+                                />
                             </div>
 
                             <div>

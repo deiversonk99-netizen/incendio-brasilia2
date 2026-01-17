@@ -16,7 +16,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     { id: AppView.DASHBOARD, label: 'Dashboard', icon: 'dashboard' },
     { id: AppView.CLIENTS, label: 'Clientes', icon: 'person_outline' },
     { id: AppView.TASKS, label: 'Tarefas', icon: 'check_circle' },
-    { id: AppView.KITS, label: 'Modelos de Serviços', icon: 'dataset' },
+    { id: AppView.KITS, label: 'Infraestruturas', icon: 'dataset' },
     { id: AppView.CATALOG, label: 'Catálogo Produtos', icon: 'inventory_2' },
     { id: AppView.SUPPLIERS, label: 'Fornecedores', icon: 'local_shipping' },
     { id: AppView.PLACAS, label: 'Gestão de Placas', icon: 'warning' },
@@ -81,28 +81,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
           );
         })}
 
-        {isEngActive && (
-          <div className="ml-9 flex flex-col gap-1 border-l border-white/10 pl-3 mt-2">
-            <button
-              onClick={() => onViewChange(AppView.ENGINEERING_PHASE_A)}
-              className={`text-xs py-1 text-left ${currentView === AppView.ENGINEERING_PHASE_A ? 'text-primary font-bold' : 'text-slate-400 hover:text-white'}`}
-            >
-              Fase A - Levantamento
-            </button>
-            <button
-              onClick={() => onViewChange(AppView.ENGINEERING_PHASE_B)}
-              className={`text-xs py-1 text-left ${currentView === AppView.ENGINEERING_PHASE_B ? 'text-primary font-bold' : 'text-slate-400 hover:text-white'}`}
-            >
-              Fase B - Composição
-            </button>
-            <button
-              onClick={() => onViewChange(AppView.ENGINEERING_PHASE_C)}
-              className={`text-xs py-1 text-left ${currentView === AppView.ENGINEERING_PHASE_C ? 'text-primary font-bold' : 'text-slate-400 hover:text-white'}`}
-            >
-              Fase C - Proposta
-            </button>
-          </div>
-        )}
       </nav>
 
       <div className="p-4 border-t border-white/5">

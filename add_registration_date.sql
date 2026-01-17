@@ -1,0 +1,1 @@
+ALTER TABLE product_catalog ADD COLUMN IF NOT EXISTS registration_date DATE DEFAULT CURRENT_DATE;
