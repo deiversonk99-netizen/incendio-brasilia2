@@ -14,6 +14,7 @@ export enum AppView {
   SERVICES = 'SERVICES',
   SERVICE_MODELS = 'SERVICE_MODELS',
   PLACAS = 'PLACAS',
+  STOCK = 'STOCK',
   SETTINGS = 'SETTINGS'
 }
 
@@ -71,6 +72,8 @@ export interface Product {
   cost_price?: number;
   observation?: string;
   registration_date?: string;
+  image?: string;
+  storage_location?: string;
 }
 
 export interface Supplier {

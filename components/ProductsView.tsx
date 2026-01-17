@@ -11,6 +11,7 @@ const ProductsView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [selectedProductForDetails, setSelectedProductForDetails] = useState<Product | null>(null);
 
     // Form state
     const [formData, setFormData] = useState<Partial<Product>>({
@@ -22,7 +23,9 @@ const ProductsView: React.FC = () => {
         is_signage: false,
         cost_price: 0,
         observation: '',
-        registration_date: new Date().toISOString().split('T')[0]
+        registration_date: new Date().toISOString().split('T')[0],
+        image: '',
+        storage_location: ''
     });
 
     const [suppliers, setSuppliers] = useState<{ id: string, name: string }[]>([]);
@@ -63,7 +66,9 @@ const ProductsView: React.FC = () => {
                 is_signage: !!product.is_signage,
                 cost_price: product.cost_price || 0,
                 observation: product.observation || '',
-                registration_date: product.registration_date || new Date().toISOString().split('T')[0]
+                registration_date: product.registration_date || new Date().toISOString().split('T')[0],
+                image: product.image || '',
+                storage_location: product.storage_location || ''
             });
         } else {
             setEditingProduct(null);
@@ -76,7 +81,9 @@ const ProductsView: React.FC = () => {
                 is_signage: false,
                 cost_price: 0,
                 observation: '',
-                registration_date: new Date().toISOString().split('T')[0]
+                registration_date: new Date().toISOString().split('T')[0],
+                image: '',
+                storage_location: ''
             });
         }
         setIsModalOpen(true);
@@ -85,6 +92,15 @@ const ProductsView: React.FC = () => {
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setEditingProduct(null);
+    };
+
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => setFormData({ ...formData, image: reader.result as string });
+            reader.readAsDataURL(file);
+        }
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -779,9 +795,10 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
     };
 
     const filteredProducts = products.filter(p =>
-
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.category.toLowerCase().includes(searchTerm.toLowerCase())
+        (p.category || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.storage_location || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.observation || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
@@ -829,6 +846,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                             <table className="w-full text-left text-sm">
                                 <thead className="bg-white/5 text-slate-400 font-medium uppercase text-xs tracking-wider">
                                     <tr>
+                                        <th className="px-6 py-4">Ações</th>
                                         <th className="px-6 py-4">Nome do Produto</th>
                                         <th className="px-6 py-4 text-center">Placa?</th>
                                         <th className="px-6 py-4">Categoria</th>
@@ -837,16 +855,16 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                         <th className="px-6 py-4 text-right">Preço Unit.</th>
                                         <th className="px-6 py-4 text-right">Preço Custo</th>
                                         <th className="px-6 py-4">Cadastro</th>
+                                        <th className="px-6 py-4">Localização (Depósito)</th>
                                         <th className="px-6 py-4">Observação</th>
-                                        <th className="px-6 py-4 text-right">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
                                     {loading ? (
-                                        <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">Carregando catálogo...</td></tr>
+                                        <tr><td colSpan={11} className="px-6 py-8 text-center text-slate-500">Carregando catálogo...</td></tr>
                                     ) : filteredProducts.length === 0 ? (
                                         <tr>
-                                            <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                                            <td colSpan={11} className="px-6 py-12 text-center text-slate-500">
                                                 <div className="flex flex-col items-center gap-4">
                                                     <p>Nenhum produto encontrado.</p>
                                                     <button
@@ -861,6 +879,31 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                     ) : (
                                         filteredProducts.map(product => (
                                             <tr key={product.id} className="hover:bg-white/5 transition-colors group">
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() => setSelectedProductForDetails(product)}
+                                                            className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                                            title="Ver Detalhes"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[18px]">visibility</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleOpenModal(product)}
+                                                            className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                                            title="Editar"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(product.id)}
+                                                            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                                                            title="Excluir"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                        </button>
+                                                    </div>
+                                                </td>
                                                 <td className="px-6 py-4 font-medium text-white">{product.name}</td>
                                                 <td className="px-6 py-4 text-center">
                                                     {product.is_signage ? (
@@ -887,26 +930,15 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                 <td className="px-6 py-4 text-slate-400 text-sm">
                                                     {product.registration_date ? new Date(product.registration_date).toLocaleDateString('pt-BR') : '-'}
                                                 </td>
+                                                <td className="px-6 py-4">
+                                                    {product.storage_location ? (
+                                                        <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded font-bold uppercase tracking-wider">{product.storage_location}</span>
+                                                    ) : (
+                                                        <span className="text-slate-600">-</span>
+                                                    )}
+                                                </td>
                                                 <td className="px-6 py-4 text-sm text-text-muted truncate max-w-[150px]" title={product.observation}>
                                                     {product.observation || '-'}
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button
-                                                            onClick={() => handleOpenModal(product)}
-                                                            className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                                                            title="Editar"
-                                                        >
-                                                            <span className="material-symbols-outlined text-[18px]">edit</span>
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDelete(product.id)}
-                                                            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-                                                            title="Excluir"
-                                                        >
-                                                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                                                        </button>
-                                                    </div>
                                                 </td>
                                             </tr>
                                         ))
@@ -920,8 +952,8 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
 
             {/* Modal */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <div className="w-full max-w-md bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-6">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+                    <div className="w-full max-w-md bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-6 my-auto max-h-[95vh] overflow-y-auto custom-scrollbar">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-xl font-bold text-white">
                                 {editingProduct ? 'Editar Produto' : 'Novo Produto'}
@@ -935,6 +967,25 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                         </div>
 
                         <form onSubmit={handleSave} className="flex flex-col gap-4">
+                            <div className="flex flex-col items-center gap-2 p-4 bg-white/5 rounded-xl border border-white/10 mb-2">
+                                <label className="block text-xs font-bold text-slate-500 uppercase">Imagem do Produto</label>
+                                <div className="relative group cursor-pointer w-24 h-24 bg-black/40 rounded-xl border-2 border-dashed border-white/10 flex items-center justify-center overflow-hidden hover:border-primary/50 transition-all">
+                                    {formData.image ? (
+                                        <>
+                                            <img src={formData.image} className="w-full h-full object-contain" />
+                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <span className="material-symbols-outlined text-white">edit</span>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <span className="material-symbols-outlined text-slate-700 text-3xl">add_a_photo</span>
+                                    )}
+                                    <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageUpload} />
+                                </div>
+                                {formData.image && (
+                                    <button type="button" onClick={() => setFormData({ ...formData, image: '' })} className="text-[10px] text-rose-500 font-bold hover:underline">Remover foto</button>
+                                )}
+                            </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-400 mb-1">Nome</label>
                                 <input
@@ -943,6 +994,17 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                     className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none"
                                     value={formData.name}
                                     onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-400 mb-1">Localização no Depósito</label>
+                                <input
+                                    type="text"
+                                    placeholder="Ex: Prateleira A-12, Corredor 3"
+                                    className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none"
+                                    value={formData.storage_location}
+                                    onChange={e => setFormData({ ...formData, storage_location: e.target.value })}
                                 />
                             </div>
 
@@ -1062,6 +1124,104 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                         </form>
                     </div>
                 </div >
+            )}
+
+            {/* Modal de Detalhes */}
+            {selectedProductForDetails && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4 overflow-y-auto">
+                    <div className="bg-surface-dark border border-white/10 rounded-2xl p-0 w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200 my-auto max-h-[95vh] overflow-y-auto custom-scrollbar">
+                        <div className="relative h-48 bg-white/5 flex items-center justify-center p-8 border-b border-white/10">
+                            {selectedProductForDetails.image ? (
+                                <img src={selectedProductForDetails.image} alt={selectedProductForDetails.name} className="h-full object-contain" />
+                            ) : (
+                                <span className="material-symbols-outlined text-7xl text-slate-700">inventory_2</span>
+                            )}
+                            <button
+                                onClick={() => setSelectedProductForDetails(null)}
+                                className="absolute top-4 right-4 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition-all"
+                            >
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+
+                        <div className="p-8">
+                            <div className="flex items-start justify-between mb-6">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-white mb-1">{selectedProductForDetails.name}</h2>
+                                    <div className="flex gap-2 items-center">
+                                        <span className="bg-white/5 border border-white/10 text-slate-400 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">{selectedProductForDetails.category || 'Material'}</span>
+                                        {selectedProductForDetails.is_signage && (
+                                            <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded text-[10px] font-black uppercase">Sinalização</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] text-slate-500 uppercase font-black mb-1">Preço Sugerido</p>
+                                    <p className="text-2xl font-black text-emerald-400">R$ {selectedProductForDetails.price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-6 mb-8">
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Localização no Depósito</p>
+                                    <p className="text-white font-medium flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px] text-primary">location_on</span>
+                                        {selectedProductForDetails.storage_location || <span className="text-slate-600 font-normal italic">Não informada</span>}
+                                    </p>
+                                </div>
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Unidade de Medida</p>
+                                    <p className="text-white font-medium flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px] text-emerald-500">straighten</span>
+                                        {selectedProductForDetails.unit || 'un'}
+                                    </p>
+                                </div>
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Fornecedor Preferencial</p>
+                                    <p className="text-white font-medium flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px] text-amber-500">local_shipping</span>
+                                        {suppliers.find(s => s.id === selectedProductForDetails.supplier_id)?.name || <span className="text-slate-600 font-normal italic">Nenhum</span>}
+                                    </p>
+                                </div>
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Data de Cadastro</p>
+                                    <p className="text-white font-medium flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px] text-slate-400">calendar_today</span>
+                                        {selectedProductForDetails.registration_date ? new Date(selectedProductForDetails.registration_date).toLocaleDateString('pt-BR') : '-'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="mb-8">
+                                <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Observações Adicionais</p>
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5 min-h-[80px]">
+                                    <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-wrap">
+                                        {selectedProductForDetails.observation || <span className="italic opacity-50 text-xs">Sem observações.</span>}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={() => {
+                                        setSelectedProductForDetails(null);
+                                        handleOpenModal(selectedProductForDetails);
+                                    }}
+                                    className="flex-1 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20"
+                                >
+                                    <span className="material-symbols-outlined">edit</span>
+                                    Editar Informações
+                                </button>
+                                <button
+                                    onClick={() => setSelectedProductForDetails(null)}
+                                    className="px-8 py-3 border border-white/10 hover:bg-white/5 text-slate-300 rounded-xl font-bold transition-all"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </div >
     );

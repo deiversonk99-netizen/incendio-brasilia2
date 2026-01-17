@@ -20,6 +20,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     { id: AppView.CATALOG, label: 'Catálogo Produtos', icon: 'inventory_2' },
     { id: AppView.SUPPLIERS, label: 'Fornecedores', icon: 'local_shipping' },
     { id: AppView.PLACAS, label: 'Gestão de Placas', icon: 'warning' },
+    { id: AppView.STOCK, label: 'Controle de Depósito', icon: 'warehouse' },
     { id: AppView.SERVICES, label: 'Catálogo Serviços', icon: 'settings_suggest' },
     { id: AppView.SERVICE_MODELS, label: 'Kits & Composições', icon: 'design_services' },
     { id: AppView.ENGINEERING_PHASE_A, label: 'Fase A - Levantamento', icon: 'architecture' },
@@ -38,7 +39,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     if (item.id === AppView.FINANCE) {
       return isFinanceAdmin(email);
     }
-    if (item.id === AppView.PLACAS) {
+    if (item.id === AppView.PLACAS || item.id === AppView.STOCK) {
       return isStockAdmin(email);
     }
     if (item.id === AppView.ENGINEERING_PHASE_A ||

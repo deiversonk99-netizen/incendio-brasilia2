@@ -17,6 +17,7 @@ import SuppliersView from './components/SuppliersView';
 import ServicesView from './components/ServicesView';
 import ServiceModelsView from './components/ServiceModelsView';
 import InventoryView from './components/InventoryView';
+import StockView from './components/StockView';
 import SettingsView from './components/SettingsView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin } from './lib/permissions';
@@ -35,7 +36,7 @@ const AppContent: React.FC = () => {
       if (view === AppView.FINANCE) {
         return isFinanceAdmin(email);
       }
-      if (view === AppView.PLACAS) {
+      if (view === AppView.PLACAS || view === AppView.STOCK) {
         return isStockAdmin(email);
       }
       if (view === AppView.ENGINEERING_PHASE_A ||
@@ -90,6 +91,8 @@ const AppContent: React.FC = () => {
         return <ServiceModelsView />;
       case AppView.PLACAS:
         return <InventoryView />;
+      case AppView.STOCK:
+        return <StockView />;
       case AppView.SETTINGS:
         return <SettingsView />;
       default:
