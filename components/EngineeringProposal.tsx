@@ -446,14 +446,33 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
       };
 
+      const drawHeader = (doc: any, title: string) => {
+        // Background for header (Black Banner) - using image if possible, otherwise color
+        try {
+          doc.addImage('/header_banner.png', 'PNG', 0, 0, pageWidth, 40);
+        } catch (e) {
+          doc.setFillColor(0, 0, 0);
+          doc.rect(0, 0, pageWidth, 40, 'F');
+        }
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text(title, 20, 25);
+      };
+
       // --- PAGE 1: COVER ---
       doc.setFillColor(0, 0, 0); // Black Cover
       doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
-      // Logo Placeholder or Design Element
-      doc.setDrawColor(255, 255, 255);
-      doc.setLineWidth(1);
-      doc.line(20, 40, 60, 40);
+      // Logo on Cover
+      try {
+        doc.addImage('/logo.png', 'PNG', 20, 20, 40, 20);
+      } catch (e) {
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(1);
+        doc.line(20, 40, 60, 40);
+      }
 
       doc.setFontSize(40);
       doc.setTextColor(255, 255, 255);
@@ -496,12 +515,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       if (hasDynamicSections || showStandardScope) {
         doc.addPage();
-        doc.setFillColor(0, 0, 0); // Black
-        doc.rect(0, 0, pageWidth, 40, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-        doc.text('ESCOPO TÉCNICO E OBJETIVO', 20, 25);
+        drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
 
         let yPos = 60;
 
@@ -509,7 +523,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           // Render Dynamic Sections
           sections.filter(s => s.is_active).forEach(section => {
             // Check Page Break
-            if (yPos > pageHeight - 40) { doc.addPage(); yPos = 30; }
+            if (yPos > pageHeight - 40) {
+              doc.addPage();
+              drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
+              yPos = 60;
+            }
 
             doc.setTextColor(40);
             doc.setFontSize(12);
@@ -545,7 +563,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           yPos += (splitIntro.length * 5) + 10;
 
           if (proposal.observations) {
-            if (yPos > pageHeight - 40) { doc.addPage(); yPos = 30; }
+            if (yPos > pageHeight - 40) {
+              doc.addPage();
+              drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
+              yPos = 60;
+            }
             doc.setFontSize(12);
             doc.setFont('helvetica', 'bold');
             doc.text('OBSERVAÇÕES GERAIS', 20, yPos);
@@ -562,12 +584,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // --- PAGE 3: INVESTMENT DETAIL ---
       doc.addPage();
-      doc.setFillColor(0, 0, 0); // Black
-      doc.rect(0, 0, pageWidth, 40, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.text('DETALHAMENTO DO INVESTIMENTO', 20, 25);
+      drawHeader(doc, 'DETALHAMENTO DO INVESTIMENTO');
 
       doc.setTextColor(40);
       doc.setFontSize(11);
@@ -756,9 +773,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         // IMPORTANT: For headers/special rows that use colSpan, we need to adjust colSpan
         didParseCell: (data) => {
           if (data.row.raw && (data.row.raw as any).content) {
-            if (data.row.raw && (data.row.raw as any).content) {
-              // It's a header row. colSpan is already set in tableBody generation.
-            }
+            // It's a header row. colSpan is already set in tableBody generation.
+          }
+        },
+        didDrawPage: (data) => {
+          if (data.pageNumber > 1) {
+            drawHeader(doc, 'DETALHAMENTO DO INVESTIMENTO (CONT.)');
           }
         }
       });
@@ -838,12 +858,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // --- PAGE 4: COMMERCIAL TERMS & SIGNATURES ---
       doc.addPage();
-      doc.setFillColor(0, 0, 0); // Black
-      doc.rect(0, 0, pageWidth, 40, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.text('CONDIÇÕES COMERCIAIS', 20, 25);
+      drawHeader(doc, 'CONDIÇÕES COMERCIAIS');
 
       doc.setTextColor(40);
       autoTable(doc, {

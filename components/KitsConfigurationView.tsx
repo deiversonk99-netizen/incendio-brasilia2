@@ -151,7 +151,7 @@ const KitsConfigurationView: React.FC = () => {
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <PageHeader
-                title="Kits de Composição"
+                title="Modelos de Serviços"
                 subtitle="Gerencie as receitas de conversão de infraestrutura para materiais."
                 actions={
                     !editingKit ? (

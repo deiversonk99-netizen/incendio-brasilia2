@@ -267,7 +267,7 @@ const ServiceModelsView: React.FC = () => {
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <PageHeader
-                title="Modelos de Serviços"
+                title="Kits de Composição"
                 subtitle="Gestão de composições de serviços e produtos."
             />
 
