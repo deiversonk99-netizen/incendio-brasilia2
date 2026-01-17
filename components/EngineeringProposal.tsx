@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import PageHeader from './PageHeader';
+import ProposalSections from './ProposalSections';
 import { supabase } from '../lib/supabase';
 import { Project, Proposal } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PDFDocument } from 'pdf-lib';
 
 // Add PaymentMethod interface
 interface PaymentMethod {
@@ -52,12 +54,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     show_total: true, // New
     visible_manual_items: [], // New: Array of item names to keep visible
-    hide_product_values: false // New: Hide values and correlate scope
+    hide_product_values: false, // New: Hide values and correlate scope
+
+    // Certificates
+    show_cert_crq: true,
+    cert_crq_file: null, // Base64 or URL. If null, try default
+    show_cert_regularity: true,
+    cert_regularity_file: null
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [showVisibilityModal, setShowVisibilityModal] = useState(false);
   const [candidateItems, setCandidateItems] = useState<any[]>([]);
   const [tempVisibleItems, setTempVisibleItems] = useState<string[]>([]);
+  const [sections, setSections] = useState<any[]>([]); // Dynamic Sections State
 
   const loadPdfSettings = async (projectId: string) => {
     try {
@@ -76,14 +85,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_referencias: true,
           show_carimbo: true,
           show_cost: true,
-          show_subtotal: true, // New default
-          show_bdi: true,      // New default
-          show_profit: true,   // New default
-          show_discount: true, // New default
-
-          show_total: true,    // New default
-          visible_manual_items: [], // New default
-          hide_product_values: false, // New default
+          show_subtotal: true,
+          show_bdi: true,
+          show_profit: true,
+          show_discount: true,
+          show_total: true,
+          visible_manual_items: [],
+          hide_product_values: false,
+          show_cert_crq: true,
+          show_cert_regularity: true,
           ...data.variables
         });
       } else {
@@ -110,7 +120,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
           show_total: true,
           visible_manual_items: [],
-          hide_product_values: false
+          hide_product_values: false,
+
+          show_cert_crq: true,
+          show_cert_regularity: true,
+          cert_crq_file: null,
+          cert_regularity_file: null
         });
       }
     } catch (e) {
@@ -229,10 +244,20 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     if (services) setServiceCatalog(services);
   };
 
+  const fetchSections = async (projectId: string) => {
+    const { data } = await supabase
+      .from('proposal_sections')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('order_index');
+    if (data) setSections(data);
+  };
+
   useEffect(() => {
     if (selectedProjectId) {
       loadProposalData(selectedProjectId);
       loadPdfSettings(selectedProjectId);
+      fetchSections(selectedProjectId);
     }
   }, [selectedProjectId]);
 
@@ -399,7 +424,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     }
   };
 
-  const generatePDF = (mode: 'download' | 'preview' = 'download') => {
+  const generatePDF = async (mode: 'download' | 'preview' = 'download') => {
     try {
       const project = projects.find(p => p.id === selectedProjectId);
       if (!project || !proposal) {
@@ -457,39 +482,80 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 20, pageHeight - 20);
       doc.text(`Validade: ${proposal.validity_days || 10} dias`, pageWidth - 20, pageHeight - 20, { align: 'right' });
 
-      // --- PAGE 2: SCOPE & OBJECTIVE ---
-      // Only show this dedicated page if NOT hiding product values (which implies "Technical Scope" mode where scope is inline)
-      if (!pdfSettings.hide_product_values) {
+      // --- PAGE 2: SCOPE & OBJECTIVE (Dynamic) ---
+      // We show this page if:
+      // A. We have dynamic sections
+      // OR
+      // B. We are NOT hiding product values (Standard Mode)
+      // OR
+      // C. We ARE hiding product values BUT have observations (Old Mode)
+
+      const hasDynamicSections = sections.some(s => s.is_active);
+      const showStandardScope = !pdfSettings.hide_product_values;
+
+      if (hasDynamicSections || showStandardScope) {
         doc.addPage();
         doc.setFillColor(0, 0, 0); // Black
         doc.rect(0, 0, pageWidth, 40, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('ESCOPO E OBJETIVO', 20, 25);
+        doc.text('ESCOPO TÉCNICO E OBJETIVO', 20, 25);
 
-        doc.setTextColor(40);
-        doc.setFontSize(12);
-        doc.text('OBJETIVO DA PROPOSTA', 20, 60);
-        doc.setDrawColor(200);
-        doc.line(20, 62, 80, 62);
+        let yPos = 60;
 
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${project.name}", contemplando o fornecimento de materiais e mão de obra conforme detalhamento técnico a seguir.`;
-        const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
-        doc.text(splitIntro, 20, 72);
+        if (hasDynamicSections) {
+          // Render Dynamic Sections
+          sections.filter(s => s.is_active).forEach(section => {
+            // Check Page Break
+            if (yPos > pageHeight - 40) { doc.addPage(); yPos = 30; }
 
-        if (proposal.observations) {
+            doc.setTextColor(40);
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.text(section.title.toUpperCase(), 20, yPos);
+            doc.setDrawColor(200);
+            doc.line(20, yPos + 2, 100, yPos + 2);
+
+            yPos += 10;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            const splitText = doc.splitTextToSize(section.content, pageWidth - 40);
+            doc.text(splitText, 20, yPos);
+
+            yPos += (splitText.length * 5) + 15;
+          });
+        } else {
+          // Fallback to Standard Static Text
+          doc.setTextColor(40);
           doc.setFontSize(12);
-          doc.setFont('helvetica', 'bold');
-          doc.text('DETALHAMENTO DO ESCOPO', 20, 110);
-          doc.line(20, 112, 80, 112);
+          doc.text('OBJETIVO DA PROPOSTA', 20, yPos);
+          doc.setDrawColor(200);
+          doc.line(20, yPos + 2, 80, yPos + 2);
+
+          yPos += 10;
 
           doc.setFontSize(10);
           doc.setFont('helvetica', 'normal');
-          const splitObs = doc.splitTextToSize(proposal.observations, pageWidth - 40);
-          doc.text(splitObs, 20, 122);
+          const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${project.name}", contemplando o fornecimento de materiais e mão de obra conforme detalhamento técnico a seguir.`;
+          const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
+          doc.text(splitIntro, 20, yPos);
+
+          yPos += (splitIntro.length * 5) + 10;
+
+          if (proposal.observations) {
+            if (yPos > pageHeight - 40) { doc.addPage(); yPos = 30; }
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.text('OBSERVAÇÕES GERAIS', 20, yPos);
+            doc.line(20, yPos + 2, 80, yPos + 2);
+
+            yPos += 10;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            const splitObs = doc.splitTextToSize(proposal.observations, pageWidth - 40);
+            doc.text(splitObs, 20, yPos);
+          }
         }
       }
 
@@ -848,11 +914,75 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         }
       }
 
+      // --- MERGE CERTIFICATES (via pdf-lib) ---
+      const reportPdfBytes = doc.output('arraybuffer');
+      const pdfDoc = await PDFDocument.create();
+
+      // 1. Embed Main Report
+      const reportPdf = await PDFDocument.load(reportPdfBytes);
+      const reportPages = await pdfDoc.copyPages(reportPdf, reportPdf.getPageIndices());
+      reportPages.forEach((page) => pdfDoc.addPage(page));
+
+      // 2. Helper to merge External PDF
+      const mergeExternalPdf = async (source: string | ArrayBuffer) => {
+        try {
+          let buffer: ArrayBuffer;
+          if (typeof source === 'string') {
+            // Check if Base64
+            if (source.startsWith('data:application/pdf;base64,')) {
+              buffer = Uint8Array.from(atob(source.split(',')[1]), c => c.charCodeAt(0)).buffer;
+            } else {
+              // Should be a URL
+              const res = await fetch(source);
+              if (!res.ok) throw new Error(`Failed to load ${source}`);
+              buffer = await res.arrayBuffer();
+            }
+          } else {
+            buffer = source;
+          }
+
+          const extPdf = await PDFDocument.load(buffer);
+          const extPages = await pdfDoc.copyPages(extPdf, extPdf.getPageIndices());
+          extPages.forEach((page) => pdfDoc.addPage(page));
+        } catch (err) {
+          console.error('Error merging PDF:', err);
+          // Don't block whole process, just warn
+          alert('Aviso: Não foi possível anexar um dos certificados. Verifique se o arquivo existe.');
+        }
+      };
+
+      // 3. Merge CRQ
+      if (pdfSettings.show_cert_crq) {
+        if (pdfSettings.cert_crq_file) {
+          await mergeExternalPdf(pdfSettings.cert_crq_file);
+        } else {
+          // Default
+          await mergeExternalPdf('/CRQ PJ CREA.pdf');
+        }
+      }
+
+      // 4. Merge Regularity
+      if (pdfSettings.show_cert_regularity) {
+        if (pdfSettings.cert_regularity_file) {
+          await mergeExternalPdf(pdfSettings.cert_regularity_file);
+        } else {
+          await mergeExternalPdf('/CRD Certificado de Credencimento até 10.7.26.pdf');
+        }
+      }
+
+      const finalPdfBytes = await pdfDoc.save();
+      const finalBlob = new Blob([finalPdfBytes], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(finalBlob);
+
       if (mode === 'preview') {
-        const blobUrl = doc.output('bloburl');
         window.open(blobUrl, '_blank');
       } else {
-        doc.save(`Proposta_${project.name.replace(/\s+/g, '_')}.pdf`);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `Proposta_${project.name.replace(/\s+/g, '_')}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
     } catch (error: any) {
       console.error('Erro ao gerar PDF:', error);
@@ -1147,6 +1277,87 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       )}
                     </div>
                   </div>
+
+                  {/* Certificates Section */}
+                  <div className="lg:col-span-3 border-t border-white/5 pt-6 mt-2">
+                    <h4 className="text-white font-bold mb-4 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-primary">verified</span>
+                      Certificados e Anexos
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* CRQ Certificate */}
+                      <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="text-sm font-bold text-white">Certificado CRQ PJ CREA</label>
+                          <input
+                            type="checkbox"
+                            checked={pdfSettings.show_cert_crq}
+                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_cert_crq: e.target.checked })}
+                            className="w-5 h-5 rounded border-white/10 bg-background-dark text-primary focus:ring-primary"
+                          />
+                        </div>
+                        <p className="text-xs text-slate-400 mb-3">
+                          Anexa o certificado CRQ ao final da proposta.
+                          {pdfSettings.cert_crq_file ? ' (Arquivo Personalizado)' : ' (Arquivo Padrão)'}
+                        </p>
+                        <label className="flex items-center gap-2 px-3 py-2 bg-background-dark border border-white/10 rounded cursor-pointer hover:bg-white/5 transition-colors">
+                          <span className="material-symbols-outlined text-slate-400 text-sm">upload_file</span>
+                          <span className="text-xs text-slate-300">Substituir Arquivo (PDF)</span>
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="application/pdf"
+                            onChange={(e) => e.target.files?.[0] && handleImageUpload('cert_crq_file', e.target.files[0])}
+                          />
+                        </label>
+                        {pdfSettings.cert_crq_file && (
+                          <button
+                            onClick={() => savePdfSettings({ ...pdfSettings, cert_crq_file: null })}
+                            className="text-xs text-red-400 hover:text-red-300 mt-2 flex items-center gap-1"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">close</span>
+                            Restaurar Padrão
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Regularity Certificate */}
+                      <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="text-sm font-bold text-white">Certificado de Regularidade</label>
+                          <input
+                            type="checkbox"
+                            checked={pdfSettings.show_cert_regularity}
+                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_cert_regularity: e.target.checked })}
+                            className="w-5 h-5 rounded border-white/10 bg-background-dark text-primary focus:ring-primary"
+                          />
+                        </div>
+                        <p className="text-xs text-slate-400 mb-3">
+                          Anexa o certificado de Regularidade/Credenciamento.
+                          {pdfSettings.cert_regularity_file ? ' (Arquivo Personalizado)' : ' (Arquivo Padrão)'}
+                        </p>
+                        <label className="flex items-center gap-2 px-3 py-2 bg-background-dark border border-white/10 rounded cursor-pointer hover:bg-white/5 transition-colors">
+                          <span className="material-symbols-outlined text-slate-400 text-sm">upload_file</span>
+                          <span className="text-xs text-slate-300">Substituir Arquivo (PDF)</span>
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="application/pdf"
+                            onChange={(e) => e.target.files?.[0] && handleImageUpload('cert_regularity_file', e.target.files[0])}
+                          />
+                        </label>
+                        {pdfSettings.cert_regularity_file && (
+                          <button
+                            onClick={() => savePdfSettings({ ...pdfSettings, cert_regularity_file: null })}
+                            className="text-xs text-red-400 hover:text-red-300 mt-2 flex items-center gap-1"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">close</span>
+                            Restaurar Padrão
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1350,6 +1561,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2">
+                  <div className="bg-surface-dark border border-white/5 rounded-xl p-6 mb-8">
+                    <ProposalSections
+                      projectId={selectedProjectId}
+                      sections={sections}
+                      onUpdate={() => fetchSections(selectedProjectId)}
+                    />
+                  </div>
+
                   <div className="bg-surface-dark border border-white/5 rounded-xl p-6">
                     <h3 className="text-white text-lg font-bold mb-6 flex items-center gap-2">
                       <span className="material-symbols-outlined text-slate-400">gavel</span>
