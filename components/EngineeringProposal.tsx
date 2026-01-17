@@ -230,6 +230,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
   const [newItem, setNewItem] = useState({ name: '', quantity: 1, price: 0 });
+  const [modalSearchTerm, setModalSearchTerm] = useState('');
+  const [showSearchList, setShowSearchList] = useState(false);
+  const [itemToReplace, setItemToReplace] = useState<any | null>(null);
 
   useEffect(() => {
     fetchProjects();
@@ -391,14 +394,33 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       item_type: modalTab === 'service' ? 'SERVICE' : 'PRODUCT'
     };
 
-    const { data, error } = await supabase.from('budget_items').insert(newItemData).select();
+    if (itemToReplace) {
+      // Update existing item
+      const { data, error } = await supabase
+        .from('budget_items')
+        .update(newItemData)
+        .eq('id', itemToReplace.id)
+        .select();
 
-    if (error) {
-      alert('Erro ao adicionar item: ' + error.message);
+      if (error) {
+        alert('Erro ao substituir item: ' + error.message);
+      } else {
+        setBudgetItems(prev => prev.map(item => item.id === itemToReplace.id ? data?.[0] : item));
+        setIsAddItemModalOpen(false);
+        setNewItem({ name: '', quantity: 1, price: 0 });
+        setItemToReplace(null);
+      }
     } else {
-      setBudgetItems(prev => [...prev, data?.[0]]);
-      setIsAddItemModalOpen(false);
-      setNewItem({ name: '', quantity: 1, price: 0 });
+      // Insert new item
+      const { data, error } = await supabase.from('budget_items').insert(newItemData).select();
+
+      if (error) {
+        alert('Erro ao adicionar item: ' + error.message);
+      } else {
+        setBudgetItems(prev => [...prev, data?.[0]]);
+        setIsAddItemModalOpen(false);
+        setNewItem({ name: '', quantity: 1, price: 0 });
+      }
     }
     setLoading(false);
   };
@@ -410,13 +432,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     else setBudgetItems(prev => prev.filter(i => i.id !== id));
   };
 
-  const handleUpdateItem = async (id: string, field: 'unit_price' | 'cost_price', value: number) => {
+  const handleUpdateItem = async (id: string, updates: Partial<any>) => {
     // Optimistic update
-    setBudgetItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+    setBudgetItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
 
     const { error } = await supabase
       .from('budget_items')
-      .update({ [field]: value })
+      .update(updates)
       .eq('id', id);
 
     if (error) {
@@ -455,10 +477,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           doc.rect(0, 0, pageWidth, 40, 'F');
         }
 
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(18);
+        doc.setTextColor(40); // Dark grey for title below banner
+        doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
-        doc.text(title, 20, 25);
+        doc.text(title.toUpperCase(), 20, 52);
+
+        // Red accent line below title
+        doc.setDrawColor(239, 68, 68);
+        doc.setLineWidth(1);
+        doc.line(20, 56, 60, 56);
       };
 
       // --- PAGE 1: COVER ---
@@ -517,7 +544,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.addPage();
         drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
 
-        let yPos = 60;
+        let yPos = 70;
 
         if (hasDynamicSections) {
           // Render Dynamic Sections
@@ -526,7 +553,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             if (yPos > pageHeight - 40) {
               doc.addPage();
               drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
-              yPos = 60;
+              yPos = 70;
             }
 
             doc.setTextColor(40);
@@ -566,7 +593,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             if (yPos > pageHeight - 40) {
               doc.addPage();
               drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
-              yPos = 60;
+              yPos = 70;
             }
             doc.setFontSize(12);
             doc.setFont('helvetica', 'bold');
@@ -588,7 +615,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       doc.setTextColor(40);
       doc.setFontSize(11);
-      doc.text('ITENS E EQUIPAMENTOS', 20, 55);
+      doc.text('ITENS E EQUIPAMENTOS', 20, 68);
 
       const centralItems = budgetItems.filter(item => {
         const isModel = item.name.includes('[MODELO:');
@@ -741,7 +768,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       }
 
       autoTable(doc, {
-        startY: pdfSettings.hide_product_values ? 60 : 60, // Keep same Y for simplicity
+        startY: 75, // Lowered to avoid header
         head: [tableHead],
         body: tableBody.map(row => {
           // If hiding values, ensure we slice the row if it comes from our helper logic
@@ -776,6 +803,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             // It's a header row. colSpan is already set in tableBody generation.
           }
         },
+        margin: { top: 70 },
         didDrawPage: (data) => {
           if (data.pageNumber > 1) {
             drawHeader(doc, 'DETALHAMENTO DO INVESTIMENTO (CONT.)');
@@ -862,13 +890,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       doc.setTextColor(40);
       autoTable(doc, {
-        startY: 60,
+        startY: 70,
         body: [
           ['Cronograma de Execução', proposal.execution_schedule || 'A combinar'],
           ['Condições de Pagamento', proposal.payment_conditions || 'A combinar'],
           ['Validade da Proposta', `${proposal.validity_days || 10} dias a partir desta data`]
         ],
         theme: 'grid',
+        margin: { top: 70 },
         styles: { fontSize: 10, cellPadding: 5 },
         columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60, fillColor: [248, 250, 252] } }
       });
@@ -1520,8 +1549,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       <tr>
                         <th className="px-6 py-3">Descrição</th>
                         <th className="px-6 py-3 text-center">Qtd</th>
-                        <th className="px-6 py-3 w-32">Custo Unit.</th>
-                        <th className="px-6 py-3 w-32">Venda Unit.</th>
+                        <th className="px-6 py-3 w-44">Custo Unit.</th>
+                        <th className="px-6 py-3 w-44">Venda Unit.</th>
                         <th className="px-6 py-3 text-right">Total Venda</th>
                         <th className="px-6 py-3 w-16"></th>
                       </tr>
@@ -1530,17 +1559,40 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       {budgetItems.map(item => (
                         <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                           <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              {item.item_type === 'SERVICE' && (
-                                <span className="p-1 rounded bg-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase">Serviço</span>
-                              )}
-                              <div className="text-white font-medium text-sm">{item.name}</div>
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
-                              {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleUpdateItem(item.id, { item_type: item.item_type === 'SERVICE' ? 'PRODUCT' : 'SERVICE' })}
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all shadow-sm ${item.item_type === 'SERVICE'
+                                    ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/40 border border-indigo-500/30'
+                                    : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40 border border-emerald-500/30'
+                                    }`}
+                                  title="Clique para alternar entre Produto e Serviço"
+                                >
+                                  {item.item_type === 'SERVICE' ? 'Serviço' : 'Produto'}
+                                </button>
+                                <input
+                                  type="text"
+                                  className="bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5"
+                                  value={item.name}
+                                  onChange={(e) => handleUpdateItem(item.id, { name: e.target.value })}
+                                />
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
+                                {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
+                              </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-center text-slate-300 font-bold">{item.quantity_final}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex justify-center">
+                              <input
+                                type="number"
+                                className="w-16 bg-background-dark border border-white/10 rounded px-2 py-1 text-white text-center font-bold text-xs outline-none focus:border-primary"
+                                value={item.quantity_final}
+                                onChange={(e) => handleUpdateItem(item.id, { quantity_final: Number(e.target.value) })}
+                              />
+                            </div>
+                          </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-1 bg-background-dark border border-white/10 rounded px-2 py-1.5 focus-within:border-primary transition-colors">
                               <span className="text-slate-500 text-xs text-rose-500/80">R$</span>
@@ -1548,7 +1600,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 type="number"
                                 className="w-full bg-transparent text-white outline-none text-right font-mono text-xs"
                                 value={item.cost_price || 0}
-                                onChange={(e) => handleUpdateItem(item.id, 'cost_price', Number(e.target.value))}
+                                onChange={(e) => handleUpdateItem(item.id, { cost_price: Number(e.target.value) })}
                                 step="any"
                               />
                             </div>
@@ -1560,18 +1612,32 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 type="number"
                                 className="w-full bg-transparent text-white outline-none text-right font-mono text-xs font-bold"
                                 value={item.unit_price}
-                                onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
+                                onChange={(e) => handleUpdateItem(item.id, { unit_price: Number(e.target.value) })}
                                 step="any"
                               />
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right text-white font-bold">R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                           <td className="px-6 py-4 text-right">
-                            {item.origin === 'MANUAL' && (
-                              <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 hover:bg-rose-500/10 rounded-lg text-rose-500 opacity-0 group-hover:opacity-100 transition-all">
+                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                              <button
+                                onClick={() => {
+                                  setItemToReplace(item);
+                                  setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price });
+                                  setModalTab(item.item_type === 'SERVICE' ? 'service' : 'product');
+                                  setModalSearchTerm('');
+                                  setShowSearchList(false);
+                                  setIsAddItemModalOpen(true);
+                                }}
+                                className="p-1.5 hover:bg-primary/10 rounded-lg text-primary"
+                                title="Substituir por Item do Catálogo"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                              </button>
+                              <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 hover:bg-rose-500/10 rounded-lg text-rose-500">
                                 <span className="material-symbols-outlined text-[18px]">delete</span>
                               </button>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1838,12 +1904,31 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         )
       }
 
-      {/* Add Item Modal */}
+      {/* Add/Replace Item Modal */}
       {
         isAddItemModalOpen && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
-              <h3 className="text-xl font-bold text-white mb-6">Adicionar à Proposta</h3>
+            <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl relative">
+              <button
+                onClick={() => {
+                  setIsAddItemModalOpen(false);
+                  setItemToReplace(null);
+                }}
+                className="absolute top-4 right-4 text-slate-500 hover:text-white"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+
+              <h3 className="text-xl font-bold text-white mb-6">
+                {itemToReplace ? 'Substituir Item' : 'Adicionar à Proposta'}
+              </h3>
+
+              {itemToReplace && (
+                <div className="mb-6 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                  <p className="text-[10px] text-primary font-bold uppercase mb-1">Substituindo:</p>
+                  <p className="text-sm text-white font-medium truncate">{itemToReplace.name}</p>
+                </div>
+              )}
 
               {/* Tabs */}
               <div className="flex bg-background-dark p-1 rounded-lg mb-6 border border-white/5">
@@ -1853,6 +1938,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     onClick={() => {
                       setModalTab(tab);
                       setNewItem({ name: '', quantity: 1, price: 0 });
+                      setModalSearchTerm('');
+                      setShowSearchList(false);
                     }}
                     className={`flex-1 py-2 text-xs font-bold rounded-md transition-all uppercase ${modalTab === tab ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
                   >
@@ -1863,35 +1950,96 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
               <div className="space-y-4">
                 {modalTab === 'product' && (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Produto</label>
-                    <select
-                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
-                      onChange={e => {
-                        const p = catalogItems.find(x => x.name === e.target.value);
-                        if (p) setNewItem({ ...newItem, name: p.name, price: p.price });
-                      }}
-                    >
-                      <option value="">Selecione...</option>
-                      {catalogItems.map(p => <option key={p.name} value={p.name}>{p.name} - R${p.price}</option>)}
-                    </select>
+                  <div className="relative">
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Buscar Produto</label>
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">search</span>
+                      <input
+                        type="text"
+                        className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
+                        placeholder="Pesquise por nome, marca ou modelo..."
+                        value={modalSearchTerm}
+                        onChange={e => {
+                          setModalSearchTerm(e.target.value);
+                          setShowSearchList(true);
+                        }}
+                        onFocus={() => setShowSearchList(true)}
+                      />
+                    </div>
+
+                    {showSearchList && modalSearchTerm && (
+                      <div className="absolute z-50 w-full mt-2 bg-[#2D2D39] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                        {catalogItems
+                          .filter(p => p.name.toLowerCase().includes(modalSearchTerm.toLowerCase()))
+                          .map(p => (
+                            <button
+                              key={p.name}
+                              onClick={() => {
+                                setNewItem({ ...newItem, name: p.name, price: p.price });
+                                setModalSearchTerm(p.name);
+                                setShowSearchList(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-indigo-600/20 text-sm border-b border-white/5 last:border-none group flex justify-between items-center"
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-white font-medium group-hover:text-indigo-400 transition-colors uppercase text-[11px]">{p.name}</span>
+                                <span className="text-xs text-slate-400">Preço Base: R${p.price.toLocaleString('pt-BR')}</span>
+                              </div>
+                              <span className="material-symbols-outlined text-indigo-500 opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
+                            </button>
+                          ))}
+                        {catalogItems.filter(p => p.name.toLowerCase().includes(modalSearchTerm.toLowerCase())).length === 0 && (
+                          <div className="p-4 text-center text-slate-500 text-xs italic">Nenhum produto encontrado.</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {modalTab === 'service' && (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Serviço</label>
-                    <select
-                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
-                      onChange={e => {
-                        const s = serviceCatalog.find(x => x.name === e.target.value);
-                        // In a real scenario, services might have prices. For now using 0 or descriptive.
-                        if (s) setNewItem({ ...newItem, name: s.name, price: 0 });
-                      }}
-                    >
-                      <option value="">Selecione...</option>
-                      {serviceCatalog.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-                    </select>
+                  <div className="relative">
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Buscar Serviço</label>
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">search</span>
+                      <input
+                        type="text"
+                        className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
+                        placeholder="Pesquise o serviço..."
+                        value={modalSearchTerm}
+                        onChange={e => {
+                          setModalSearchTerm(e.target.value);
+                          setShowSearchList(true);
+                        }}
+                        onFocus={() => setShowSearchList(true)}
+                      />
+                    </div>
+
+                    {showSearchList && modalSearchTerm && (
+                      <div className="absolute z-50 w-full mt-2 bg-[#2D2D39] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                        {serviceCatalog
+                          .filter(s => s.name.toLowerCase().includes(modalSearchTerm.toLowerCase()))
+                          .map(s => (
+                            <button
+                              key={s.name}
+                              onClick={() => {
+                                setNewItem({ ...newItem, name: s.name, price: 0 });
+                                setModalSearchTerm(s.name);
+                                setShowSearchList(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-indigo-600/20 text-sm border-b border-white/5 last:border-none group flex justify-between items-center"
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-white font-medium group-hover:text-indigo-400 transition-colors uppercase text-[11px]">{s.name}</span>
+                                <span className="text-[10px] text-slate-500 truncate max-w-[300px]">{s.description}</span>
+                              </div>
+                              <span className="material-symbols-outlined text-indigo-500 opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
+                            </button>
+                          ))}
+                        {serviceCatalog.filter(s => s.name.toLowerCase().includes(modalSearchTerm.toLowerCase())).length === 0 && (
+                          <div className="p-4 text-center text-slate-500 text-xs italic">Nenhum serviço encontrado.</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
