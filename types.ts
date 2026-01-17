@@ -68,6 +68,8 @@ export interface Product {
   user_id?: string;
   supplier_id?: string;
   is_signage?: boolean;
+  cost_price?: number;
+  observation?: string;
 }
 
 export interface Supplier {

@@ -50,7 +50,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     show_discount: true, // New
 
     show_total: true, // New
-    visible_manual_items: [] // New: Array of item names to keep visible
+    visible_manual_items: [], // New: Array of item names to keep visible
+    hide_product_values: false // New: Hide values and correlate scope
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [showVisibilityModal, setShowVisibilityModal] = useState(false);
@@ -81,6 +82,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
           show_total: true,    // New default
           visible_manual_items: [], // New default
+          hide_product_values: false, // New default
           ...data.variables
         });
       } else {
@@ -105,7 +107,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_discount: true,
 
           show_total: true,
-          visible_manual_items: []
+          visible_manual_items: [],
+          hide_product_values: false
         });
       }
     } catch (e) {
@@ -438,36 +441,39 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text(`Validade: ${proposal.validity_days || 10} dias`, pageWidth - 20, pageHeight - 20, { align: 'right' });
 
       // --- PAGE 2: SCOPE & OBJECTIVE ---
-      doc.addPage();
-      doc.setFillColor(0, 0, 0); // Black
-      doc.rect(0, 0, pageWidth, 40, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.text('ESCOPO E OBJETIVO', 20, 25);
-
-      doc.setTextColor(40);
-      doc.setFontSize(12);
-      doc.text('OBJETIVO DA PROPOSTA', 20, 60);
-      doc.setDrawColor(200);
-      doc.line(20, 62, 80, 62);
-
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${project.name}", contemplando o fornecimento de materiais e mão de obra conforme detalhamento técnico a seguir.`;
-      const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
-      doc.text(splitIntro, 20, 72);
-
-      if (proposal.observations) {
-        doc.setFontSize(12);
+      // Only show this dedicated page if NOT hiding product values (which implies "Technical Scope" mode where scope is inline)
+      if (!pdfSettings.hide_product_values) {
+        doc.addPage();
+        doc.setFillColor(0, 0, 0); // Black
+        doc.rect(0, 0, pageWidth, 40, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('DETALHAMENTO DO ESCOPO', 20, 110);
-        doc.line(20, 112, 80, 112);
+        doc.text('ESCOPO E OBJETIVO', 20, 25);
+
+        doc.setTextColor(40);
+        doc.setFontSize(12);
+        doc.text('OBJETIVO DA PROPOSTA', 20, 60);
+        doc.setDrawColor(200);
+        doc.line(20, 62, 80, 62);
 
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
-        const splitObs = doc.splitTextToSize(proposal.observations, pageWidth - 40);
-        doc.text(splitObs, 20, 122);
+        const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${project.name}", contemplando o fornecimento de materiais e mão de obra conforme detalhamento técnico a seguir.`;
+        const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
+        doc.text(splitIntro, 20, 72);
+
+        if (proposal.observations) {
+          doc.setFontSize(12);
+          doc.setFont('helvetica', 'bold');
+          doc.text('DETALHAMENTO DO ESCOPO', 20, 110);
+          doc.line(20, 112, 80, 112);
+
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          const splitObs = doc.splitTextToSize(proposal.observations, pageWidth - 40);
+          doc.text(splitObs, 20, 122);
+        }
       }
 
       // --- PAGE 3: INVESTMENT DETAIL ---
@@ -605,18 +611,35 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       }
 
       const tableHead = ['Descrição', 'Qtd'];
-      if (pdfSettings.show_cost) {
+      // Only show cost columns if global show_cost is true AND we are NOT hiding product values specifically
+      const showCostsInTable = pdfSettings.show_cost && !pdfSettings.hide_product_values;
+
+      if (showCostsInTable) {
         tableHead.push('Unit. (R$)', 'Total (R$)');
       }
 
       autoTable(doc, {
-        startY: 60,
+        startY: pdfSettings.hide_product_values ? 60 : 60, // Keep same Y for simplicity
         head: [tableHead],
-        body: tableBody,
+        body: tableBody.map(row => {
+          // If hiding values, ensure we slice the row if it comes from our helper logic
+          // Note towards 'tableBody' logic above: we pushed 4 items for valid rows.
+          // We need to ensure we don't display them if showCostsInTable is false.
+          // However, autoTable expects body rows to match head length usually?
+          // Actually, our previous pushes respected 'pdfSettings.show_cost'.
+          // We need to make sure the pushes ABOVE also respect 'hide_product_values'.
+          // Let's rely on autoTable slicing or better yet, fix the pushes above?
+          // To be safe, let's filter the row array here if needed.
+          if (!Array.isArray(row)) return row; // It's a special row object (header)
+          if (!showCostsInTable && row.length > 2) {
+            return [row[0], row[1]];
+          }
+          return row;
+        }),
         theme: 'grid',
         headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
         styles: { fontSize: 9 },
-        columnStyles: pdfSettings.show_cost ? {
+        columnStyles: showCostsInTable ? {
           0: { cellWidth: 100 },
           1: { halign: 'center' },
           2: { halign: 'right' },
@@ -624,12 +647,48 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         } : {
           0: { cellWidth: 140 },
           1: { halign: 'center' }
+        },
+        // IMPORTANT: For headers/special rows that use colSpan, we need to adjust colSpan
+        didParseCell: (data) => {
+          if (data.row.raw && (data.row.raw as any).content) {
+            // It's a header row
+            if (!showCostsInTable) {
+              data.cell.colSpan = 2; // Reduce colSpan to 2 if no prices
+            }
+          }
         }
       });
 
       let yPos = (doc as any).lastAutoTable.finalY + 15;
+
+      // --- SCOPE AFTER TABLE (If hiding product values) ---
+      if (pdfSettings.hide_product_values && proposal.observations) {
+        if (yPos > pageHeight - 60) { doc.addPage(); yPos = 30; }
+
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(40);
+        doc.text('DETALHAMENTO DO ESCOPO / OBSERVAÇÕES', 20, yPos);
+        doc.setDrawColor(200);
+        doc.line(20, yPos + 2, 100, yPos + 2);
+
+        yPos += 10;
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        const splitObs = doc.splitTextToSize(proposal.observations, pageWidth - 40);
+        doc.text(splitObs, 20, yPos);
+
+        // Update yPos based on height of text
+        const lines = splitObs.length;
+        yPos += (lines * 5) + 10;
+      }
+
       if (yPos > pageHeight - 60) { doc.addPage(); yPos = 30; }
 
+      if (yPos > pageHeight - 60) { doc.addPage(); yPos = 30; }
+
+      // --- FINANCIAL SUMMARY ---
+      // We SHOW financial summary even if hiding product values, so client sees final total.
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text('RESUMO FINANCEIRO', 20, yPos);
@@ -662,6 +721,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         { content: `R$ ${vals.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold' as const, fillColor: [0, 0, 0] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } }]);
       }
 
+      // Render Financial Table ALWAYS (even if hiding product values, as requested)
       autoTable(doc, {
         startY: yPos + 6,
         body: financeBody,
@@ -669,6 +729,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         styles: { fontSize: 10 },
         columnStyles: { 1: { halign: 'right', cellWidth: 60 } }
       });
+
+      yPos = (doc as any).lastAutoTable.finalY + 40;
 
       // --- PAGE 4: COMMERCIAL TERMS & SIGNATURES ---
       doc.addPage();
@@ -1269,6 +1331,25 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             </div>
                           </label>
                         </div>
+                      </div>
+
+                      {/* New Option: Hide Values / Scope Correlation */}
+                      <div className="bg-background-dark/30 p-4 rounded-lg border border-white/5 mt-4">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${pdfSettings.hide_product_values ? 'bg-indigo-500 border-indigo-500' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                            {pdfSettings.hide_product_values && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                          </div>
+                          <input
+                            type="checkbox"
+                            className="hidden"
+                            checked={pdfSettings.hide_product_values || false}
+                            onChange={e => savePdfSettings({ ...pdfSettings, hide_product_values: e.target.checked })}
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-white">Ocultar Valores (Somente Texto)</span>
+                            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Remove preços e correlaciona escopo abaixo dos itens</span>
+                          </div>
+                        </label>
                       </div>
 
                       <div>

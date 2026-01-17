@@ -19,7 +19,9 @@ const ProductsView: React.FC = () => {
         unit: 'un',
         price: 0,
         supplier_id: '',
-        is_signage: false
+        is_signage: false,
+        cost_price: 0,
+        observation: ''
     });
 
     const [suppliers, setSuppliers] = useState<{ id: string, name: string }[]>([]);
@@ -57,7 +59,9 @@ const ProductsView: React.FC = () => {
                 unit: product.unit,
                 price: product.price,
                 supplier_id: product.supplier_id || '',
-                is_signage: !!product.is_signage
+                is_signage: !!product.is_signage,
+                cost_price: product.cost_price || 0,
+                observation: product.observation || ''
             });
         } else {
             setEditingProduct(null);
@@ -67,7 +71,9 @@ const ProductsView: React.FC = () => {
                 unit: 'un',
                 price: 0,
                 supplier_id: '',
-                is_signage: false
+                is_signage: false,
+                cost_price: 0,
+                observation: ''
             });
         }
         setIsModalOpen(true);
@@ -826,6 +832,8 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                         <th className="px-6 py-4">Fornecedor</th>
                                         <th className="px-6 py-4 text-center">Unidade</th>
                                         <th className="px-6 py-4 text-right">Preço Unit.</th>
+                                        <th className="px-6 py-4 text-right">Preço Custo</th>
+                                        <th className="px-6 py-4">Observação</th>
                                         <th className="px-6 py-4 text-right">Ações</th>
                                     </tr>
                                 </thead>
@@ -868,6 +876,12 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                 <td className="px-6 py-4 text-center text-slate-400">{product.unit || 'un'}</td>
                                                 <td className="px-6 py-4 text-right font-medium text-emerald-400">
                                                     R$ {product.price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-medium text-slate-400">
+                                                    R$ {Number(product.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-text-muted truncate max-w-[150px]" title={product.observation}>
+                                                    {product.observation || '-'}
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
                                                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -965,17 +979,30 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Preço Unitário (R$)</label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    required
-                                    className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
-                                    value={formData.price}
-                                    onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
-                                />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-1">Preço Venda (R$)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        required
+                                        className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
+                                        value={formData.price}
+                                        onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-1">Preço Custo (R$)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
+                                        value={formData.cost_price}
+                                        onChange={e => setFormData({ ...formData, cost_price: parseFloat(e.target.value) })}
+                                    />
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-3 bg-white/5 p-3 rounded-lg border border-white/10">
@@ -989,6 +1016,15 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 <label htmlFor="is_signage" className="text-sm font-medium text-white cursor-pointer select-none">
                                     Este produto é uma Placa/Sinalização
                                 </label>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-400 mb-1">Observação</label>
+                                <textarea
+                                    className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none resize-none h-20"
+                                    value={formData.observation}
+                                    onChange={e => setFormData({ ...formData, observation: e.target.value })}
+                                ></textarea>
                             </div>
 
                             <div className="flex gap-3 mt-4">
@@ -1008,9 +1044,9 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                             </div>
                         </form>
                     </div>
-                </div>
+                </div >
             )}
-        </div>
+        </div >
     );
 };
 

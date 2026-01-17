@@ -1,0 +1,493 @@
+
+const rawData = `Abraçadeira pacote com 100	100
+Abrigo para extintor externo sobrepor	160
+Abrigo, caixa para Mangueira 90x60x17 sobrepor	255
+ACIONADOR MANUAL ENDER. SEM SIRENE COMPACT SEGURIMAX	63,89
+ACIONADOR MANUAL C/ SIRENE CONVENCIONAL segurirmax	33
+ACIONADOR MANUAL ENDEREÇAVEL COM SIRENE COMPACT SEGURIMAX	103,29
+ACIONADOR MANUAL ENDERECAVEL S/ SIRENE AME 521, Intelbrás	68,32
+CHAVE STORZ P/CONEXOES 1.1/2X2.1/2 ALUM	5,16
+ADAPTADOR PRA ESGUICHO 1.1/2X2.1/2" ALUMINIO	18,82
+Adesivo Epoxi profissional, cola 1,8kg	257
+ARALDITE,ADESIVO EPOXI 1,8KG PROFISSIONAL	580,5
+Balão de AR/ TANQUE DE PRESSAO 12L	320
+BARRAMENTO TERRA 08 FUROS C/SUP VD	15,31
+TUBO PVC SOLDAVEL 50MM	86,23
+BASE MASTRO 2" POLEGADAS, ACO ELETRO	47,83
+BATERIA 12V 7ah	110
+Bateria 150 Amperes cral a base de troca, garantia de 15 meses sem manutenção	620
+Bateria selada 12v 1.3 Amper	51
+Bateria selada 12 V 18 AH	270
+BICO DE SPRINKLER PENDENTE 1/2" 68 K-80 CR 15MM SPK	20,85
+BOIA AUTOMATICO DE NIVEL 1,2MT, SOORANO	27,57
+BOMBA CENTRIFUGA TRIFASICA PRA INCENDIO ,5CV 2.1/2X2.1/2" BPI21R	5714,8
+Bucha redução galvanizado 1/2" x 1/4"	2,75
+Bucha 2.1/2 x 1" de redução  galvanizado	44,29
+Bucha 3"x 2 .1/2 Redução  galvanizado SEGURIMAX	40,91
+Bucha de redução 2"x1" Galvanizado	16,92
+Bucha de redução  Galvanizado 2.1/2×1"	19,87
+Cabo 1,5 mm flexível vermelho 750v	127,95
+Cabo flexível 2,5 mm vermelho 750V	195,07
+Cabo 4p p/ CFTV, CABO REDE LAN 4P CAT5E AZUL CMX 305M MEGATRON	605,78
+Cabo blindado p/ incêndio 2 x 1,5mm	3,6
+CABO DE INCENDIO 2X1.50MM NBR 17240 VERMELHO	5,43
+CABO FLEXIVEL 6,0MM 750V	498,9
+CABO COAXIAL CFTV BIP 80% 4MM BR 100M	154,5
+CAIXA DE INSPECAO PRA ,ATERRAMENTO, 20X23CM PVC	11,46
+CAIXA CONDULETE PVC  4X2 05 ENTRADA	4,16
+CAIXA DE MEDICAO METAL TRIFASICO, CEB P1	419,2
+Caixa CONDULETE MULTIPLO 3/4" X S/T	7,07
+CANOPLA PRA /SPRINKLER 1/2" ALUMINIO	2,36
+CAPTOR FRANKLIN COM 2 DECIDAS 300MM LATAO 3/4	106,5
+CENTRAL INCENDIO 12 LACOS 12V CONVENCIONAL SEGURIMAX	485,85
+CENTRAL DE INCENDIO 125 LACOS 24V ENDEREÇAVEL SEGURIMAX	1447,69
+CENTRAL DE INCENDIO 12 LACOS 24V CONVENCIONAL SEGURIMAX	596,86
+Central de alarme de incêndio Verin VR 40. com display digital sem baterias.	1250
+CENTRAL INCENDIO 24 LACOS 12V CONVENCIONAL SEGURIMAX	443,64
+Central de alarme digital verin VR-08 com display digital sem baterias.	445
+Chave storz dupla	6
+ADESIVO PVC 175GR COM /PINCEL	8,26
+Conector botinha 35 mm Tipo terminal de pressão.	5,9
+Conector botinha 50mm/Terminal de pressão.	9,15
+CONECTOR BOTINHA ,TERMINAL DE PRESSAO 16MM	4,54
+Conector U CLIPS PRA,REBAR GALVANIZADO 3/8" 8-10MM	2,53
+CONECTOR P/HASTE DE ATERRAM 3/4"	2,65
+CONECTOR SPLIT BOLD 35MM	11,39
+CONECTOR SPLIT BOLD 50MM	15,55
+Conector tipo Clipes, CLIPS P/REBAR GALV 3/8" 8-10MM  termotecnica	2,6
+COPEX METAL FLEX REV 3/4" 30MT	270,45
+CORDAO PARALELO TORCIDO 2X1,5MM BR	289,34
+CORDOALHA 35MM COBREADA NORMATIZADA	17,8
+CORDOALHA 50MM COBRE NU	39,27
+Cotovelo 1 1/2" galvanizado 90º	21,32
+cotovelo  1 1/4" Galvanizado 45º	17,83
+Cotovelo galvanizado 45 1"	10,97
+Cotovelo galvanizado 90º 1"	7,29
+Cotovelo galvanizado 90º 2.1/2"	35,25
+cotovelo 2" polegadas Galvanizado 45º	33,51
+Cotovelo 2" galvanizado 90º	30,85
+COTOVELO GALVANIZADO 90, 3/4"	7,16
+COTOVELO GALVANIZADO 45, 4"	176,86
+Cotovelo reduzido 1 x 1/2" galvanizado 90º	11,61
+CURVA GALVANIZADA F 2" ,90	71,29
+Curva galvanizado Eletrolítica 90°×03/4"	1,94
+Detector de temperatura endereçável	161,83
+DETECTOR DE TEMPERATURA CONVEBCIONAL	85,03
+DPS UNIPOLAR 45KA CLASSE II	35,26
+BOMBA CENT TRIFAZICA 3CV 2.1/2X2.1/2"BPI92SR	2940,92
+ELETRODUTO PVC CORRUG 25MMX50MT AM	66,49
+ELETRODUTO PVC RIGIDO ROSC 3MT 3/4"	12,71
+ESGUICHO 1.1/2" JATO REGULAVEL 3 POSIÇOES ALUMINIO	83,69
+Esguicho de jato Sólido alum	17,7
+ESTICADOR PRA CABO DE ACO 1/4-6MM	2,09
+ESTICADOR PRA CABO DE ACO 3/8-10MM	4,21
+ESTICADOR PRA CABO DE ACO 7/8-22MM	77,84
+Fita ante-corrosiva. p gás FITA SILVERTAPE 25MTX48MM	15,48
+FITA DEMARCACAO SOLO 50MMX30MT AMARELO	24,64
+FITA ISOLANTE 18MMX20METRO	5,86
+Fita perfurada caixa, 17X0,40X30 GALVANIZADO	28,76
+FITA VEDA ROSCA 12MMX 25 METRO	1,25
+FLANGE GALVANIZADO SEXTAVADA 3" POLEGADAS	112,05
+ADAPTADO AA FLANGE+ANEL CAIXA  DAGUA 50MM 1.1/2	16,86
+AGUA RAZ 900ML	11,28
+TINTA ESMALTE BRIL STD 3,0LT HIPER AMARELO	64,93
+TINTA ESMALTE BRIL STD 3,0LT DELANIL PRETO	68,87
+HASTE PRA ATERRAMENTO 3/8" 3,00 METROS	21,03
+RODANA ISOLADOR SIMP 2 DECIDA MASTRO 1.1/2"ACO ELET	15,46
+JOELHO PVC SOLDAVEL 90 50MM	3,34
+UNIAO GALVANIZADO C/ASSENTO BRONZE 2.1/2"	166,95
+LIXA MASSA/MAD G120 50FOLHAS A257	27,07
+LUMIN EMERGENCIA 30 LEDS	15,76
+Luva  1" galvanizado	8,44
+Luva galvanizado 2"	21,88
+Luva  3/4" galvanizado	4,87
+Luva galvanizado redução 1x1/2"	8,21
+Mangueira de incêndio tipo I MANG INCENDIO TIPO I 1.1/2 15M	299,9
+Mangueira de incêndio tipo II MANG INCENDIO TIPO II 1.1/2 15M	313,48
+MAO FRANCESA 20CM PRATA	8,3
+MAO FRANCESA 15CM PRATA	6,97
+Martelinho para acionador manual do tipo quedra vidro	29
+Mastro 3 metros aço galvanizado com redução 1.1/2"	196,63
+MODULO ISOLADOR DE LACO ENDERECAVEL SEGURIMAX	110,69
+MODULO ISOLADOR DE LACO COMPACT SEGURIMAX	86,26
+MODULO SAIDA ENDERECAVEL SEGURIMAX	137,81
+MODULO SAIDA COMPACT SEGURIMAX	108,55
+Niple 1/4" galvanizado	5,98
+Niple galvanizado 1"	5,21
+NIPLE DUPLO GALVANIZADO 3/4"	5,18
+Niple duplo de  4"polegadas galvanizado.	93,51
+PARAF AA CHIP MDF CH PH 4,5X45 200UN BC	13,99
+Parabolt chumbador, 3/8X3"	1,47
+PARAF PB TROM PHP GESSO 3,5X25 1000UN FO	38,26
+Presilha tipo chapinha em U PRESILHA TIPO U P/CABO 16/50MM2	1,05
+QUADRO COMANDO 400X300X200 S/FLANGE	213,53
+QUADRO COMANDO 400X400X200 COM FLANGE	277,51
+QUADRO COMANDO 500X400X200 COM FLANGE	186,78
+REGISTRO ESFERA METAL 1.1/2"	83,49
+Registro esfera latão alavanca 1"	38,23
+Registro esfera metal 2"	168,5
+Registro bruto de gaveta 2" polegada	153,26
+Registro 3/4" esfera	15,55
+Registro bruto gaveta 4" polegada	685,81
+REGISTRO ESFERA METAL 2" POLEGADA	178,64
+SELANTE PU BRANCO 400GR PU40	10,72
+SIRENE SINALIZADOR AUDIOVISUAL CONVENCIONAL. COM SIRENE	66,95
+SINALIZADOR DUPLO COM FOTOCELULA	95,93
+SINALIZADOR AUDIOVISUAL ENDER. SMART	215,58
+Te galvanizado  1" POLEGADA 90GR	13,35
+Te galvanizado 2" POLEGADA 90GR	42,36
+Te galvanizado  3/4" 90GR	8,43
+Te galvanizado 3"POLEGADA 90GR	110
+Te galvanizado 4" 90GR	109,86
+Te reduzido galvanizado 1.1/2 x 1"	31,48
+Te reduzido 1"x1/2 galvanizado	16,11
+Tee reduzido 2 1/2" x 1"	98,38
+Te reduzido 2"x 1"galvanizado	45,99
+Tubo  galvanizado 1.1/4" galvanizado 6M	222,51
+Tubo galvanizado 1" galvanizado	195,9
+Tubo galvanizado 2.1/2" 6Metro	429,25
+Tubo galvanizado 2" galvanizado 6M	428,95
+Tubo 3/4" galvanizado	132,57
+Tubo 3" galvanizado	569,65
+Tubo galvanizado 4" Polegadas  6M	943,41
+Tubo, ELETROD GALV ZINC 3M LEV 3/4"	15
+Tubo galvanizado 1 1/2" galvanizado.	309,63
+UNIA DE 1" GALVANIZADO COM ASSENTO BRONZE	36,3
+União galvanizado 2 1/2" assento bronze	166,95
+União galvanizado assento bronze 2"	99,58
+União Galvanizado com assento bronze  3/4"	31,35
+União Galvanizado Assento Bronze 4"	506,92
+União soldável de PVC 50 mm	24,22
+Unidut  multiplo Conector caixa  condulete 3/4	1,83
+Conector para caixa multipla petrolet 3/4	1,78
+Válvula Retençao Horizontal 1"	48,52
+Válvula De Retençao Vertical 1 1/4"	57,54
+Válvula De Retençao Horizontal 2 1/2"	302,71
+Válvula De Retençao Vertical 2"	139,13
+Válvula De Retençao Vertical 3"	321,54
+Válvula de retenção vertical 2.1/2"	242,74
+Válvula De Retençao horizontal de 2"	159,85
+VálvulaDe Retençao horizontal de 4"	745,17
+TE GALVANIZADO DE REDUCAO 3/4X1/2"	11,47
+NIPLE DUPLO GALVANIZADO 1/2"	3,85
+TAMPAO CEGO COM /CORRENTE 2.1/2" ALUM	52,84
+REGISTRO ESFERA METAL 1/2"	10,78
+CONECTOR PRA /HASTE DE ATERRAMENTO 5/8 GTDU	5,19
+CORDOALHA 35MM COBRE NU	28,94
+Compound adesivo epoxi, vedacit. 1kg,	61
+CABO PP 4X10MM 1KV CLASSE 2	48,83
+DISJUNTOR N TRIPOLAR.C 025A 3,0KA 5SL132-7MB	57,04
+ACIONADOR MANUAL ENDERECAVEL - IRIS MCP150	248
+Detector de fumaça Convencional 12v/24v	44,31
+Descida de Spda aparente em metro	1000
+CURVA CONDULETE SOLD PVC  90 3/4"	2,07
+Tubo 1/2" galvanizado 6m	97,58
+Cotovelo 2 1/2" polegadas galvanizado 45º	70,33
+TRINCHA 4" CERDA TRADICIONAL 302	8,37
+Cotovelo 1/2" polegadas galvanizado 90º	4,59
+Luva  galvanizado 3''	84,68
+Cotovelo 1 1/2" galvanizado 45º	22,01
+Cotovelo 1/2" galvanizado 45º	4,61
+Bloco autônomo led de emergência 2200 Lumens 2 farois	137,44
+Bateria 12v 2.3 ah	120
+Tirante ( Barra roscada zincada de 1/4 3m")	8,41
+Fechadura Para Porta Corta Fogo Sobrepor S/chave Cor Preto	80
+FITA ANTI DERRAPAANTE 50MMX20MT PRETO	86,63
+ABRACADEIRA GOTA 2.1/2"	1,85
+DR Disjuntor diferencial 4 Polos 100A 30ma WEG	303
+Detector fumaça op720 Siemens	300
+Detector de Temperatura HI722 Siemens da 722pro	255
+PARAFUSO PHILLIPS S8 4,8X45MM	35
+ADAPTADOR PVC 01/2" Vermelho	0,64
+CURVA GALV ZINC 90 3/4"	3,25
+MÓDULO DE ZONA TELETEK MCZ	467
+Mangueira de incêndio tipo 1	206
+ABRIGO, CAIXA DE INCENDIO EMBUTIR 90X60X17	253,57
+INP ADAPTADOR D PVC VERMELHO 01/2" ADP012V.	0,64
+Adaptador pra caixinha condulete vermelho 01/2	1,79
+Curva condulete vermelha 01/2 S/R	1,74
+Luva condulete pvc vermelha 01/2 S/R	1,37
+Abraçadeira pra condulete pvc vermelho 01/2	1,9
+Tampa cega pra condulete  vermelho 3/4	2,91
+Cabo de incêndio vermelho 2×1,5mm	4,55
+Tomada 2P+T PB 10A/250 S/Placa-20140/0	3,39
+Tampa condulete hexagonal vertical	2,28
+Caixa múltipla sem tampa Petrolete 03/4"	5,65
+Cordoalha de cobre nu 016mm	6,94
+Terminal botinha mc 016mm	3,36
+Conector Split Bolt CP 35mm	8,92
+Válvula de retenção Horizontal 3" polegadas	305,09
+Botina Nobuck Pu Biden Cafe	144,59
+Alicate universal 8" 1000v aço carbono	28,91
+Tinta spray vermelho 400ML 250gr	11,81
+Lâmpada led bulb 9w bv 810lm 3k	2,61
+Plafon pvc E27 100w	2,42
+Chave phillips 3/16×5" imantada	2,89
+Chave phillips 1/4×4" imantada	3,78
+Chave phillips 1/8×6" imantada	1,66
+CHAVE DE FENDA 1/8X5" IMANTADA	1,52
+CHAVE PHILLIPS 1/8X6" IMANTADA	1,79
+CHAVE PHILLIPS 1/8X2" IMANTADA	1,48
+FILTRO DE LINHA 3 TOMADA 2P+T PT	16,64
+SERRA COPO AÇO RAP BI-METAL 22MM 7/8"	13,13
+CAIXA MEDIDOR TRIFÁSICO P1 VISOR DE VIDRO - 52X26X18CM	79,69
+VALVULA DE RETENÇÃO HORIZONTAL 2.1/2	210,04
+UNIAO GALVANIZADO 2.1/2 ASS.BRONZE	110,12
+TE GALVANIZADO RED 1X1/2	11,62
+Niple galvanizado 1.1/4"	7,55
+Tubo pvc vermelho 01/2"	7,94
+Adaptador pra caixa de pvc vermelho /2"	0,64
+Braçadeira vermelho de pvc  01/2"	0,49
+Caixa entradas pra pvc vermelho 03/4"	3,14
+Cotovelo de pvc vermelho 01/2"	3,25
+Curva de pvc vermelho 90°graus 01/2"	1,76
+Tampão pra caixa de pvc vermelho	0,25
+Caixa entrada de pvc cinza 03/4"	3,14
+Adaptador de pvc cinza 01/2"	0,58
+Cotovelo pvc cinza 01/2"	2,37
+Braçadeira pvc cinza 01/2"	0,45
+Tampa condulete cega cinza pvc 03/4"	1,36
+Tubo eletroduto condulete pvc vermelho 01/2"	7,88
+Conector pra caixa múltipla 03/4"	1,78
+Te galvanizado 1"	9,56
+Bucha de redução galvanizado 1/2"×1/4"	2,76
+Cabo de incêndio Blindado vermelho 2x1,5mm 600v	4,95
+Módulo zona DI-9319E GST	322,87
+Detector optico de fumaça endereçavel DI-9102E GST	192,88
+Detector de fumaça endereçavel-3 fios se D-13120199m base	115
+Detector de temperatura Térmico E Termovelocimétrico - 3 Fios SEM BASE.D13120243	115
+CENTRAL ALARME ENDEREÇAVEL SIRIUS COMPACT II 125 1L S/BAT	1825
+BATERIA ESTACIONÁRIA SELADA 12V2,2A	86
+ACIONADOR MANUAL SOBREPOR SIRIUS AMQ-D	92
+SIRENE AUDIOVISUAL SOBREPOR SIRIUS SAVQI-D	135
+DETECTOR DE FUMACA OPTICO BRANCO SIRIUS SDO-D	120
+DETECTOR DE TEMPERATURA TERMOVELOCIMETRICO BRANCO SIRIUS TDV-D A2	125
+PROGRAMADOR PORTATIL ENDERECAVEL PPD-E	1080
+MODULO DE ENTRADA DE ZONA SIRIUS MZE2-D	205
+DETECTOR FUMACA OPTICO  CONVENCIONAL SDO-C	76
+CENTRAL ALARME CONVENCIONAL CAC 06.24 S/BAT	269
+DETECTOR ENDEREÇÁVEL DE FUMAÇA IRIS S130 COM BASE	260
+ACOPLAMENTO RANHURADO RIGIDO 3"	45
+Broca Plus sds 08×110mm	9,73
+Niple duplo redução galvanizado 1/2"×1/4"	4,71
+Luva pra mão pu tátil forr PT M	2,74
+Bucha de redução galvanizado 1/2"×1/4"	2,76
+Te galvanizado de redução 1×1/2"	14,83
+Broca Plus sds 06×160mm	4,65
+Broca Plus sds 10×160mm	5,92
+Luva pra mão pu tátil forr smart PT G	2,62
+Luva pra mão pu tátil forr smart PT P	2,62
+Te ranhurado mecanico sprink 2×3/4"	16,98
+Óculos leopardo incolor	2,83
+Registro esfera metal alavancar 1"	24,18
+Niple duplo galvanizado 1/4"	5,5
+Denverpoxi 1kg	39,87
+Disjuntor monofásico 25A 3KA -curva B	6,38
+Válvula de retenção Horizontal 3" docol	574,3
+Clips conector U pra cabo de aço (D) 5/16-8,0mm	0,71
+Válvula de retenção vertical 2.1/2"	242,74
+Adesivo epoxi profissional 1.8kg (araldite) brascola	214,47
+Niple galvanizado de 2.1/2" polegadas	23,51
+Cotovelo galvanizado de 90º 3" podegadas segurimax	58,71
+Te galvanizado 3"polegadas	78,33
+Bucha de redução galvanizado 3×2.1/2"	28,22
+União galvanizado 3" polegadas ass.plano	116,42
+Registro gaveta bruto 2.1/2" polegadas	195,84
+Abrigo, caixa para Mangueira 90x60x17 Embutir	263,57
+ACIONADOR MANUAL CONVENCIONAL COM SIRENE , SEGURIMAX	44,39
+BASE MASTRO 1.1/2" POLEGADAS,ACO ELET	40,54
+CABO FLEXIVEL 4,0MM VERMELHO 750V	335,54
+TAMPAO FERRO 60X60 SIMPLES	283,06
+TAMPAO FERRO T-16 LISO 30X30	59,51
+TAMPAO FERRO T-16 TEL 25X25	43,96
+CANALETA 20X10X2000MM BR S/DIV COM FITA	4,67
+TAMPAO CEGO COM/CORRENTE 1.1/2" ALUM	36,39
+CONTATOR 3TS31 12A 220V 1NA	106,03
+CORDOALHA 50MM COBREADA NORMATIZADA	24,06
+CORDOALHA 16MM COBRE NU	13,5
+CORDOALHA 16MM COBREADA NORMATIZADA	8,22
+COTOVELO GALVANIZADO 1" 90	10,37
+COTOVELO GALVANIZADO 2.1/2" 90	53,83
+COTOVELO GALVANIZADO 45, 3" POLEGADA	95,91
+COTOVELO GALVANIZADO 45 3/4"	7,42
+COTOVELO GALVANIZADO 4" ,90	160,91
+COTOVELO GALVANIZADO,1.1/4" ,90	15,27
+COTOVELO GALVANIZADO 1.1/2" ,45	22,01
+CURVA GALV ZINCADO 90, 3/4"	3,25
+ESGUICHO 1.1/2" JATO REGUL 3 POS ALUM	83,69
+CAPTOR FRANKLIN COM,1 DECIDA 300MM LATAO 3/4	111,47
+CENTRAL DE INCENDIO 80 LACOS 24V COMPACT SUGURIMAX	1183,74
+CENTRAL INCENDIO 24 LACOS 24V CONVENCIONAL SEGURIMAX	659,39
+CHAVE DUPL PRA CONEXOES 1.1/2X2.1/2" LATAO	15,66
+ADAPTADOR PRA ESGUICHO 2.1/2X2.1/2" ALUMINIO	26,43
+ESTICADOR PRA CABO DE ACO 3/4-20MM	47,03
+ESTICADOR PRA CABO DE ACO 3/16-5MM	2,95
+ESTICADOR PRA CABO DE ACO 5/8-16MM	16,42
+ESTICADOR PRA CABO DE ACO 5/16-08MM	3,79
+ESTICADOR PRA CABO DE ACO 1/2-12MM	9,81
+FITA ANTI DERRAPANTE 50MMX05MT PRETO	25,01
+CABO PP 4X25MM 1KV HEPR MT	103,39
+CABO PP 4X25MM 1KV HEPR METRO	22,49
+CABO PP 4X 1,5MM 500V	6,88
+CABO PP 3X 2,5MM 1KV HEPR MT	7,88
+CABO PP 3X 6,0MM 1KV HEPR MT	19,39
+FITA ISOLANTE 18MMX10MT CZ	2,34
+FITA ISOLANTE AUTOFUSAO 05MT PT23	17,99
+FITA ISOLANTE 19MMX10METRO AZUL	1,97
+FITA ISOLANTE 19MMX10MT VERMELHO	1,79
+FITA ISOLANTE 19MMX10MT AMARELO	1,8
+FITA DUPLA FACE ACR 19MMX20MT FITA FORTE 080	29,79
+FITA DUPLA FACE ACR 12MMX20MT FITA FORTE	20,48
+FITA ZEBRADA 70MMX200M PT/AM	8,79
+FITA DEMARCACAO SOLO 50MMX30MT VERMELHO	24,64
+FITA VEDA ROSCA 18MMX25 METRO	1,72
+ADAPTADOR AA FLANGE+ANEL CAIXA DAGUA 60MM 2"	33,16
+AGUA RAZ 5LT	55,67
+ABRAÇADEIRA TIPO D COM CUNHA 3/4"	0,61
+TINTA SPRAY U.G VERMELHO 250ML 120GR	10
+TINTA SPRAY U.G BRANCO FO 250ML 120GR	9,1
+TINTA SPRAY U.G GRAFITE 250ML 120GR	9,23
+ISOLADOR REF CHAPA ENCOSTO ACO ELET	10,38
+ISOLADOR REF 1 DC MASTRO 1.1/2" ACO ELET	13,71
+ISOLADOR SIMP 2 DECIDA MASTRO 2" ACO ELET	18,45
+HASTE P/ATERRAMENTO 5/8" 3,00M	36,13
+JOELHO PVC SOLDAVEL 45 50MM	4,82
+BLOCO DE EMERGENCIA LED 400 LUMENS	131,74
+BLOCO DE EMERGENCIA LED 300 LUMENS	126,18
+BLOCO DE EMERGENCIA LED 1200 LUMENS	138,25
+BLOCO DE EMERGENCIA LED 200 LUMENS	72,15
+BLOCO DE EMERGENCIA LED 3000 LUMENS	465,81
+BUCHA FIXACAO PLAST S08 COM,1000 COM ANEL	22,11
+BUCHA FIXACAO PLAST S06 COM,1000 COM ANEL	13,81
+BUCHA FIXACAO PLAST S05 COM 1000 COM ANEL	14,97
+BUCHA FIXACAO PLAST S08 COM 1000 SEM ANEL	18,8
+BUCHA FIXACAO PLAST S10 COM/500 CCOM/ANEL	21,41
+MAO FRANCESA 30CM PRATA	11,16
+MASTRO SIMPLES 3M 2" ACO GALV	236,82
+NIPLE DUPLO GALV 1"	7,67
+NIPLE DUPLO GALV 2.1/2"	34,46
+NIPLE DUPLO GALV 2"	22,05
+CHUMBADOR CBA 3/8X3.1/2" COM PARAFUSO	2,81
+CAIXA PROTECAO GERAL CEB	414,19
+BUCHA DE RED GALVANIZADO 4X2.1/2"	78,31
+COTOVELO RANHURADO 45 2.1/2" 76MM	50,16
+COTOVELO RANHURADO 90 2.1/2" 73MM	45,98
+TE RANHURADO 2.1/2" 73MM	71,92
+ACOPLAMENTO RANHURADO RIGIDO 2.1/2" 73MM	34
+TE RANHURADO MECANICO 4X2.1/2" 73MM	76,18
+TIMER DIGITAL P/TRILHO DIN 35MM	81,29
+SELANTE PU PRETO 400GR PU40	10,23
+TE GALVANIZADO 90 1.1/4"	20,33
+BOTINHA TERMINAL DE PRESSAO 16MM	4,54
+TUBO GALV C/COST BS LEV 6M 5580 1/2"	97,58
+TUBO GALVANIZADO C/COST BS LEV 6M 5580 2.1/2"	471,36
+UNIDUT RETO CONECTOR LUVA 3/4"	2,81
+Placas de Sinalização	5
+TAMPAO GALVANIZADO C/SEXTAVADO 2.1/2"	36,86
+TAMPAO GALV C/SEXTAVADO 1"	6,26
+TAMPAO GALV C/SEXTAVADO 2"	17,77
+TAMPAO GALV C/SEXTAVADO 3/4"	4,41
+TE GALVANIZADO 45 3"	348,28
+TE RANHURADO 1"	23,63
+TE RANHURADO 3"	87,49
+TE RANHURADO 2"	51,85
+TE RANHURADO MECANICO 4X3"	94,28
+TE RANHURADO 1.1/4"	34,23
+TE RANHURADO MECANICO 2X1.1/2"	34,61
+TE RANHURADO MECANICO SPRINK 2X1" NPT	20,14
+TE RANHURADO MECANICO SPRINK 2.1/2X1" NPT	23,87
+TAMPAO RANHURADO 3"	17,87
+TAMPAO RANHURADO 2.1/2"	14,7
+ACOPLAMENTO RANHURADO RIGIDO 2" 1/36	27,48
+ACOPLAMENTO RANHURADO RIGIDO 2.1/2" 76MM	34,53
+ACOPLAMENTO RANHURADO RIGIDO 3"	45
+COTOVELO RANHURADO 90 3"	57,24
+COTOVELO RANHURADO 90 2"	32,55
+COTOVELO RANHURADO 45 2.1/2" 73MM	45,52
+TE RANHURADO MECANICO  4X3"	94,28
+TE RANHURADO MECANICO  2X1.1/4" 60X42MM	42,3
+TE RANHURADO MEC 2X1.1/4" 60X42MM	42,3
+BUJAO GALVANIZADO 2''	12,8
+BUJAO GALVANIZADO 3''	36,27
+ABRAÇADEIRA TIPO GOTA 3/4	0,59
+ABRAÇADEIRA TIPO COPO 3/4	1,9
+BUCHA DE REDUÇAO 2.1/2X2''	29,32
+BUCHA DE REDUÇAO 3X2.1/2''	40,92
+MANOMETRO DN63 S VERT CAIXA INOX C-GLIC BSP 1-4 0A 10BAR	100
+Lampada de emergência	20
+Infra Hidrante Galvanizado em metro	1000
+Infra alarme zincado em metro	1000
+Infra Sprinkler Galvanizado em metro	1000
+Infra Luminária, Lampada em metro	1000
+silicone acético preto 250ml	9,65
+ADAPTADOR PRENSA CABO 1/2''	3,36
+LUK SINALEIRO LED VD AD16 22A 220V	8,85
+Botão comutador 2 estágio luk, quadro de comando.	16,82
+ESPUMA EXPANSIVA PU 500ML	11,98
+NIPLE GALVANIZADO 3''	46,46
+COTOVELO GALVANIZADO 3''	81,82
+REGISTRO BRUTO DE GAVETA 3''	374,04
+REGISTRO BRUTO DE GAVETA 3/4''	32,81
+TOMADA EM BARRA 2PXT 10A PRETA	10,28
+TINTA SPRAY USO GERAL PRETO FOSCO 400ML	11,69
+TINTA SPRAY USO GERAL BRANCO FOSCO 400ML	11,29
+TE GALVANIZADO 2.1/2	58,48
+TE GALVANIZADO 2.1/2''	83,05
+CONTATOR 3TS 33-11-220V 025A 0AN2	126,31
+DISJUNTOR N UNIPOLAR.C 010A 3,0KA 5SL1110-7MB	10,72
+TERMINAL PRE ISOLADO TP23-6 OLHAL AM 100	82,65
+CONECTOR SAK 0O4.00 WDU BG	2,55
+CNX POSTE PLASTICO WEW35/2	3,22
+Puxador para abrigo de hidrante em aço, redondo	12,5
+Acrílico com adesivo mensagem no visor ( incêndio) para abrigo de hidrante..	19
+Registro angular pra hidrante 45 2.1/2''	79,57
+Mangueira corrugada de 1/2mm 50m	50
+Caixa de inpeção de aterramento com tampa em FF T16	100
+Caixa de Incêndio Abrigo sobrepor pequena 75x45x17	194
+Manômetro 0-300psi Glp	96
+Regulador segundo estágio com Manômetro	300
+Regulador de Primeiro Estágio Com Manômetro.	400
+Mangueira flexivel Glp Segundo Estágio.	100
+Mangueira primeiro Estágio Glp com Engate.	100
+Parabolt 1/4"	5
+Bucha de Redução galvanizado 3/4' x 1/2"	10
+Registro gaveta 1.1/4"	80
+União 1.1/4"	50`;
+
+const lines = rawData.trim().split('\n');
+const updates = [];
+
+for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+
+    let name, priceStr;
+
+    if (line.includes('\t')) {
+        const parts = line.split('\t');
+        name = parts[0].trim();
+        priceStr = parts[parts.length - 1].trim();
+    } else {
+        const parts = line.split(' ');
+        priceStr = parts.pop();
+        name = parts.join(' ').trim();
+    }
+
+    if (!priceStr || !name) continue;
+
+    // Clean price string: 1.000,50 -> 1000.50
+    // Try to guess format
+    // Simple case: no dots, only comma as decimal
+    let cleanPrice = priceStr.replace(/\./g, '').replace(',', '.');
+
+    // Check if valid number
+    if (!isNaN(parseFloat(cleanPrice))) {
+        // Escape quotes in name for SQL
+        const safeName = name.replace(/'/g, "''");
+        updates.push(`UPDATE product_catalog SET cost_price = ${cleanPrice} WHERE name = '${safeName}';`);
+    }
+}
+
+const fs = require('fs');
+fs.writeFileSync('updates.sql', updates.join('\n'), 'utf8');
+console.log('Written ' + updates.length + ' updates to updates.sql');
