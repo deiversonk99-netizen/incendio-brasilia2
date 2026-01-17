@@ -44,6 +44,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     carimbo_img: '',
     validade: '10',
     show_cost: true,
+    show_cost_column: false, // New: Toggle Cost Price Column in PDF
     show_subtotal: true, // New
     show_bdi: true, // New
     show_profit: true, // New
@@ -101,6 +102,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           carimbo_img: '',
           validade: '10',
           show_cost: true,
+          show_cost_column: false,
           show_subtotal: true,
           show_bdi: true,
           show_profit: true,
@@ -281,7 +283,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     // 1. Fetch Items Cost from Phase B
     const { data: budgetItemsData } = await supabase
       .from('budget_items')
-      .select('id, name, quantity_final, unit_price, origin, item_type')
+      .select('id, name, quantity_final, unit_price, cost_price, origin, item_type')
       .eq('project_id', projectId);
 
     if (budgetItemsData) setBudgetItems(budgetItemsData);
@@ -380,6 +382,21 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const { error } = await supabase.from('budget_items').delete().eq('id', id);
     if (error) alert('Erro ao excluir: ' + error.message);
     else setBudgetItems(prev => prev.filter(i => i.id !== id));
+  };
+
+  const handleUpdateItem = async (id: string, field: 'unit_price' | 'cost_price', value: number) => {
+    // Optimistic update
+    setBudgetItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+
+    const { error } = await supabase
+      .from('budget_items')
+      .update({ [field]: value })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error updating item:', error);
+      alert('Erro ao atualizar item: ' + error.message);
+    }
   };
 
   const generatePDF = (mode: 'download' | 'preview' = 'download') => {
@@ -534,9 +551,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // Add Central Items
       if (centralItems.length > 0) {
-        tableBody.push([{ content: 'ITENS DE COTAÇÃO CENTRAL', colSpan: pdfSettings.show_cost ? 4 : 2, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+        let colSpan = 2;
+        if (pdfSettings.show_cost) colSpan += 2;
+        if (pdfSettings.show_cost_column) colSpan += 2;
+        tableBody.push([{ content: 'ITENS DE COTAÇÃO CENTRAL', colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
         centralItems.forEach(item => {
           const row = [item.name || 'Item', item.quantity_final || 0];
+          if (pdfSettings.show_cost_column) {
+            row.push(`R$ ${Number(item.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+            row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.cost_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+          }
           if (pdfSettings.show_cost) {
             row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
             row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -569,9 +593,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
 
           // Header for Model
+          let colSpan = 2;
+          if (pdfSettings.show_cost) colSpan += 2;
+          if (pdfSettings.show_cost_column) colSpan += 2;
+
           tableBody.push([{
             content: `MODELO DE SERVIÇO: ${modelName.toUpperCase()} ${pdfSettings.show_cost ? `(Total: R$ ${modelTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}`,
-            colSpan: pdfSettings.show_cost ? 4 : 2,
+            colSpan: colSpan,
             styles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold' }
           }]);
 
@@ -597,10 +625,17 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         }, {} as Record<string, any[]>);
 
         (Object.entries(grouped) as [string, any[]][]).forEach(([kitName, kitItems]) => {
-          tableBody.push([{ content: `INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: pdfSettings.show_cost ? 4 : 2, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
+          let colSpan = 2;
+          if (pdfSettings.show_cost) colSpan += 2;
+          if (pdfSettings.show_cost_column) colSpan += 2;
+          tableBody.push([{ content: `INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: colSpan, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
           kitItems.forEach(item => {
             const cleanName = item.name.includes('[INFRA:') ? item.name.split('[INFRA:')[0].trim() : item.name;
             const row = [cleanName, item.quantity_final || 0];
+            if (pdfSettings.show_cost_column) {
+              row.push(`R$ ${Number(item.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+              row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.cost_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+            }
             if (pdfSettings.show_cost) {
               row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
               row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -614,8 +649,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       // Only show cost columns if global show_cost is true AND we are NOT hiding product values specifically
       const showCostsInTable = pdfSettings.show_cost && !pdfSettings.hide_product_values;
 
+      if (pdfSettings.show_cost_column) {
+        tableHead.push('Custo Unit.', 'Custo Total');
+      }
       if (showCostsInTable) {
-        tableHead.push('Unit. (R$)', 'Total (R$)');
+        tableHead.push('Venda Unit.', 'Venda Total');
       }
 
       autoTable(doc, {
@@ -651,9 +689,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         // IMPORTANT: For headers/special rows that use colSpan, we need to adjust colSpan
         didParseCell: (data) => {
           if (data.row.raw && (data.row.raw as any).content) {
-            // It's a header row
-            if (!showCostsInTable) {
-              data.cell.colSpan = 2; // Reduce colSpan to 2 if no prices
+            if (data.row.raw && (data.row.raw as any).content) {
+              // It's a header row. colSpan is already set in tableBody generation.
             }
           }
         }
@@ -1031,69 +1068,84 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       />
                     </div>
 
-                    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 mt-auto">
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-white uppercase">Preços de Custo</span>
-                        <span className="text-[10px] text-slate-400">Exibir valores e detalhamento financeiro no PDF</span>
+                    <div className="flex flex-col gap-2 mt-auto">
+                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-white uppercase">Ativar Finanças</span>
+                          <span className="text-[10px] text-slate-400">Ativa seção financeira no PDF</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          className="w-5 h-5 rounded border-white/10 bg-background-dark text-primary focus:ring-primary"
+                          checked={pdfSettings.show_cost}
+                          onChange={(e) => savePdfSettings({ ...pdfSettings, show_cost: e.target.checked })}
+                        />
                       </div>
-                      <input
-                        type="checkbox"
-                        className="w-5 h-5 rounded border-white/10 bg-background-dark text-primary focus:ring-primary"
-                        checked={pdfSettings.show_cost}
-                        onChange={(e) => savePdfSettings({ ...pdfSettings, show_cost: e.target.checked })}
-                      />
+
+                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-white uppercase">Coluna Custo</span>
+                          <span className="text-[10px] text-slate-400">Exibir coluna de custo na tabela</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          className="w-5 h-5 rounded border-white/10 bg-background-dark text-primary focus:ring-primary"
+                          checked={pdfSettings.show_cost_column || false}
+                          onChange={(e) => savePdfSettings({ ...pdfSettings, show_cost_column: e.target.checked })}
+                        />
+                      </div>
+
+                      {pdfSettings.show_cost && (
+                        <div className="flex flex-col gap-2 p-3 bg-white/5 rounded-lg border border-white/10 animate-in slide-in-from-top-1">
+                          <span className="text-xs font-bold text-slate-400 uppercase mb-1">Detalhamento Financeiro</span>
+
+                          <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                            <span>Exibir Subtotal</span>
+                            <input
+                              type="checkbox"
+                              checked={pdfSettings.show_subtotal !== false}
+                              onChange={(e) => savePdfSettings({ ...pdfSettings, show_subtotal: e.target.checked })}
+                            />
+                          </label>
+
+                          <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                            <span>Exibir BDI</span>
+                            <input
+                              type="checkbox"
+                              checked={pdfSettings.show_bdi !== false}
+                              onChange={(e) => savePdfSettings({ ...pdfSettings, show_bdi: e.target.checked })}
+                            />
+                          </label>
+
+                          <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                            <span>Exibir Lucro</span>
+                            <input
+                              type="checkbox"
+                              checked={pdfSettings.show_profit !== false}
+                              onChange={(e) => savePdfSettings({ ...pdfSettings, show_profit: e.target.checked })}
+                            />
+                          </label>
+
+                          <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                            <span>Exibir Descontos</span>
+                            <input
+                              type="checkbox"
+                              checked={pdfSettings.show_discount !== false}
+                              onChange={(e) => savePdfSettings({ ...pdfSettings, show_discount: e.target.checked })}
+                            />
+                          </label>
+
+                          <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                            <span>Exibir Total Global</span>
+                            <input
+                              type="checkbox"
+                              checked={pdfSettings.show_total !== false}
+                              onChange={(e) => savePdfSettings({ ...pdfSettings, show_total: e.target.checked })}
+                            />
+                          </label>
+                        </div>
+                      )}
                     </div>
-
-                    {pdfSettings.show_cost && (
-                      <div className="flex flex-col gap-2 p-3 bg-white/5 rounded-lg border border-white/10 animate-in slide-in-from-top-1">
-                        <span className="text-xs font-bold text-slate-400 uppercase mb-1">Detalhamento Financeiro</span>
-
-                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
-                          <span>Exibir Subtotal</span>
-                          <input
-                            type="checkbox"
-                            checked={pdfSettings.show_subtotal !== false}
-                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_subtotal: e.target.checked })}
-                          />
-                        </label>
-
-                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
-                          <span>Exibir BDI</span>
-                          <input
-                            type="checkbox"
-                            checked={pdfSettings.show_bdi !== false}
-                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_bdi: e.target.checked })}
-                          />
-                        </label>
-
-                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
-                          <span>Exibir Lucro</span>
-                          <input
-                            type="checkbox"
-                            checked={pdfSettings.show_profit !== false}
-                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_profit: e.target.checked })}
-                          />
-                        </label>
-
-                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
-                          <span>Exibir Descontos</span>
-                          <input
-                            type="checkbox"
-                            checked={pdfSettings.show_discount !== false}
-                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_discount: e.target.checked })}
-                          />
-                        </label>
-
-                        <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
-                          <span>Exibir Total Global</span>
-                          <input
-                            type="checkbox"
-                            checked={pdfSettings.show_total !== false}
-                            onChange={(e) => savePdfSettings({ ...pdfSettings, show_total: e.target.checked })}
-                          />
-                        </label>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -1158,7 +1210,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           {selectedProjectId && (
             <>
               {/* Calculation Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                <div className="bg-surface-dark p-5 rounded-xl border border-white/5 border-l-4 border-l-rose-500/50 bg-rose-500/5">
+                  <p className="text-rose-400 text-[11px] font-bold uppercase tracking-wider mb-1">Total Custo</p>
+                  <p className="text-white text-xl font-bold">
+                    R$ {budgetItems.filter(i => i.item_type !== 'SERVICE').reduce((acc, item) => acc + (item.quantity_final * (item.cost_price || 0)), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-slate-600 mt-1">Soma de custos</p>
+                </div>
                 <div className="bg-surface-dark p-5 rounded-xl border border-white/5 font-inter">
                   <p className="text-slate-400 text-[11px] font-bold uppercase tracking-wider mb-1">Base Produtos</p>
                   <p className="text-white text-xl font-bold">R$ {values.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
@@ -1222,8 +1281,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       <tr>
                         <th className="px-6 py-3">Descrição</th>
                         <th className="px-6 py-3 text-center">Qtd</th>
-                        <th className="px-6 py-3 text-right">Unitário</th>
-                        <th className="px-6 py-3 text-right">Total</th>
+                        <th className="px-6 py-3 w-32">Custo Unit.</th>
+                        <th className="px-6 py-3 w-32">Venda Unit.</th>
+                        <th className="px-6 py-3 text-right">Total Venda</th>
                         <th className="px-6 py-3 w-16"></th>
                       </tr>
                     </thead>
@@ -1242,7 +1302,30 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             </div>
                           </td>
                           <td className="px-6 py-4 text-center text-slate-300 font-bold">{item.quantity_final}</td>
-                          <td className="px-6 py-4 text-right text-slate-400">R$ {Number(item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1 bg-background-dark border border-white/10 rounded px-2 py-1.5 focus-within:border-primary transition-colors">
+                              <span className="text-slate-500 text-xs text-rose-500/80">R$</span>
+                              <input
+                                type="number"
+                                className="w-full bg-transparent text-white outline-none text-right font-mono text-xs"
+                                value={item.cost_price || 0}
+                                onChange={(e) => handleUpdateItem(item.id, 'cost_price', Number(e.target.value))}
+                                step="any"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1 bg-background-dark border border-white/10 rounded px-2 py-1.5 focus-within:border-primary transition-colors">
+                              <span className="text-slate-500 text-xs">R$</span>
+                              <input
+                                type="number"
+                                className="w-full bg-transparent text-white outline-none text-right font-mono text-xs font-bold"
+                                value={item.unit_price}
+                                onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
+                                step="any"
+                              />
+                            </div>
+                          </td>
                           <td className="px-6 py-4 text-right text-white font-bold">R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                           <td className="px-6 py-4 text-right">
                             {item.origin === 'MANUAL' && (
@@ -1255,7 +1338,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       ))}
                       {budgetItems.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
+                          <td colSpan={6} className="px-6 py-12 text-center text-slate-500 italic">
                             Nenhum item na proposta. Adicione itens acima ou finalize a composição na Fase B.
                           </td>
                         </tr>
@@ -1444,178 +1527,182 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             </>
           )}
         </div>
-      </main>
+      </main >
 
       {/* Modal for Selecting Visibility of Custom Items */}
-      {showVisibilityModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-surface-dark border border-white/10 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-6 border-b border-white/10">
-              <h3 className="text-xl font-bold text-white mb-2">Exibição de Itens Personalizados</h3>
-              <p className="text-sm text-slate-400">
-                Você optou por <strong>Ocultar Produtos</strong>. Selecione quais destes itens manuais ou serviços você gostaria de <strong>MANTER VISÍVEIS</strong> no PDF.
-              </p>
-            </div>
+      {
+        showVisibilityModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="bg-surface-dark border border-white/10 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+              <div className="p-6 border-b border-white/10">
+                <h3 className="text-xl font-bold text-white mb-2">Exibição de Itens Personalizados</h3>
+                <p className="text-sm text-slate-400">
+                  Você optou por <strong>Ocultar Produtos</strong>. Selecione quais destes itens manuais ou serviços você gostaria de <strong>MANTER VISÍVEIS</strong> no PDF.
+                </p>
+              </div>
 
-            <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2">
-              {candidateItems.map((item, idx) => {
-                const isSelected = tempVisibleItems.includes(item.name);
-                return (
-                  <label key={idx} className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${isSelected ? 'bg-primary/20 border-primary' : 'bg-background-dark border-white/10 hover:border-white/20'}`}>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-white">{item.name}</span>
-                      <span className="text-xs text-slate-400">
-                        {item.origin === 'MANUAL' ? 'Item Manual' : 'Serviço Calculado'}
-                      </span>
-                    </div>
-                    <input
-                      type="checkbox"
-                      className="w-5 h-5 rounded border-white/20 bg-background-dark checked:bg-primary"
-                      checked={isSelected}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setTempVisibleItems(prev => [...prev, item.name]);
-                        } else {
-                          setTempVisibleItems(prev => prev.filter(n => n !== item.name));
-                        }
-                      }}
-                    />
-                  </label>
-                );
-              })}
-            </div>
+              <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2">
+                {candidateItems.map((item, idx) => {
+                  const isSelected = tempVisibleItems.includes(item.name);
+                  return (
+                    <label key={idx} className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${isSelected ? 'bg-primary/20 border-primary' : 'bg-background-dark border-white/10 hover:border-white/20'}`}>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-white">{item.name}</span>
+                        <span className="text-xs text-slate-400">
+                          {item.origin === 'MANUAL' ? 'Item Manual' : 'Serviço Calculado'}
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        className="w-5 h-5 rounded border-white/20 bg-background-dark checked:bg-primary"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setTempVisibleItems(prev => [...prev, item.name]);
+                          } else {
+                            setTempVisibleItems(prev => prev.filter(n => n !== item.name));
+                          }
+                        }}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
 
-            <div className="p-6 border-t border-white/10 bg-background-dark/50 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowVisibilityModal(false);
-                  setProposal({ ...proposal, hide_products_pdf: false });
-                }}
-                className="px-4 py-2 text-slate-300 hover:text-white font-bold"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmVisibilitySelection}
-                className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold shadow-lg shadow-primary/20"
-              >
-                Confirmar Exibição
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Item Modal */}
-      {isAddItemModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-6">Adicionar à Proposta</h3>
-
-            {/* Tabs */}
-            <div className="flex bg-background-dark p-1 rounded-lg mb-6 border border-white/5">
-              {(['product', 'service', 'custom'] as const).map(tab => (
+              <div className="p-6 border-t border-white/10 bg-background-dark/50 flex justify-end gap-3">
                 <button
-                  key={tab}
                   onClick={() => {
-                    setModalTab(tab);
-                    setNewItem({ name: '', quantity: 1, price: 0 });
+                    setShowVisibilityModal(false);
+                    setProposal({ ...proposal, hide_products_pdf: false });
                   }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-md transition-all uppercase ${modalTab === tab ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                  className="px-4 py-2 text-slate-300 hover:text-white font-bold"
                 >
-                  {tab === 'product' ? 'Produto' : tab === 'service' ? 'Serviço' : 'Personalizado'}
+                  Cancelar
                 </button>
-              ))}
-            </div>
-
-            <div className="space-y-4">
-              {modalTab === 'product' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Produto</label>
-                  <select
-                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
-                    onChange={e => {
-                      const p = catalogItems.find(x => x.name === e.target.value);
-                      if (p) setNewItem({ ...newItem, name: p.name, price: p.price });
-                    }}
-                  >
-                    <option value="">Selecione...</option>
-                    {catalogItems.map(p => <option key={p.name} value={p.name}>{p.name} - R${p.price}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {modalTab === 'service' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Serviço</label>
-                  <select
-                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
-                    onChange={e => {
-                      const s = serviceCatalog.find(x => x.name === e.target.value);
-                      // In a real scenario, services might have prices. For now using 0 or descriptive.
-                      if (s) setNewItem({ ...newItem, name: s.name, price: 0 });
-                    }}
-                  >
-                    <option value="">Selecione...</option>
-                    {serviceCatalog.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {modalTab === 'custom' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Descrição da Proposta (Subjetiva)</label>
-                  <textarea
-                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 h-24 resize-none"
-                    placeholder="Ex: Fornecimento de uma ampliação de uma tubulação enterrada..."
-                    value={newItem.name}
-                    onChange={e => setNewItem({ ...newItem, name: e.target.value })}
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Quantidade</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
-                    value={newItem.quantity}
-                    onChange={e => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Preço Unitário (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
-                    value={newItem.price}
-                    onChange={e => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
-                  />
-                </div>
+                <button
+                  onClick={confirmVisibilitySelection}
+                  className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold shadow-lg shadow-primary/20"
+                >
+                  Confirmar Exibição
+                </button>
               </div>
             </div>
+          </div>
+        )
+      }
 
-            <div className="flex gap-4 mt-8">
-              <button
-                onClick={() => setIsAddItemModalOpen(false)}
-                className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleAddItem}
-                disabled={!newItem.name || loading}
-                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold shadow-lg shadow-indigo-900/20 disabled:opacity-50 transition-all"
-              >
-                Adicionar
-              </button>
+      {/* Add Item Modal */}
+      {
+        isAddItemModalOpen && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
+              <h3 className="text-xl font-bold text-white mb-6">Adicionar à Proposta</h3>
+
+              {/* Tabs */}
+              <div className="flex bg-background-dark p-1 rounded-lg mb-6 border border-white/5">
+                {(['product', 'service', 'custom'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      setModalTab(tab);
+                      setNewItem({ name: '', quantity: 1, price: 0 });
+                    }}
+                    className={`flex-1 py-2 text-xs font-bold rounded-md transition-all uppercase ${modalTab === tab ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    {tab === 'product' ? 'Produto' : tab === 'service' ? 'Serviço' : 'Personalizado'}
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-4">
+                {modalTab === 'product' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Produto</label>
+                    <select
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                      onChange={e => {
+                        const p = catalogItems.find(x => x.name === e.target.value);
+                        if (p) setNewItem({ ...newItem, name: p.name, price: p.price });
+                      }}
+                    >
+                      <option value="">Selecione...</option>
+                      {catalogItems.map(p => <option key={p.name} value={p.name}>{p.name} - R${p.price}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {modalTab === 'service' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Serviço</label>
+                    <select
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                      onChange={e => {
+                        const s = serviceCatalog.find(x => x.name === e.target.value);
+                        // In a real scenario, services might have prices. For now using 0 or descriptive.
+                        if (s) setNewItem({ ...newItem, name: s.name, price: 0 });
+                      }}
+                    >
+                      <option value="">Selecione...</option>
+                      {serviceCatalog.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {modalTab === 'custom' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Descrição da Proposta (Subjetiva)</label>
+                    <textarea
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 h-24 resize-none"
+                      placeholder="Ex: Fornecimento de uma ampliação de uma tubulação enterrada..."
+                      value={newItem.name}
+                      onChange={e => setNewItem({ ...newItem, name: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Quantidade</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                      value={newItem.quantity}
+                      onChange={e => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Preço Unitário (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                      value={newItem.price}
+                      onChange={e => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-4 mt-8">
+                <button
+                  onClick={() => setIsAddItemModalOpen(false)}
+                  className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddItem}
+                  disabled={!newItem.name || loading}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold shadow-lg shadow-indigo-900/20 disabled:opacity-50 transition-all"
+                >
+                  Adicionar
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
       <NewProjectModal
         isOpen={isNewProjectModalOpen}
         onClose={() => {
@@ -1628,7 +1715,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           onSelectProject(id);
         }}
       />
-    </div>
+    </div >
   );
 };
 

@@ -21,6 +21,7 @@ interface BudgetItem {
   origin: 'CALCULATED' | 'MANUAL';
   item_type: 'PRODUCT' | 'SERVICE';
   project_id: string;
+  cost_price?: number;
 }
 
 const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext, selectedProjectId, onSelectProject }) => {
@@ -254,12 +255,17 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     // 2.1 Fetch Catalog Logic for Pricing
     const { data: catalogProducts } = await supabase
       .from('product_catalog')
-      .select('name, price');
+      .select('name, price, cost_price');
 
-    const priceMap: Record<string, number> = {};
+    const priceMap: Record<string, { price: number, cost: number }> = {};
     if (catalogProducts) {
       // Normalize to lowercase for matching
-      catalogProducts.forEach(p => priceMap[p.name.trim().toLowerCase()] = p.price);
+      catalogProducts.forEach(p => {
+        priceMap[p.name.trim().toLowerCase()] = {
+          price: p.price,
+          cost: p.cost_price || 0
+        };
+      });
     }
 
     const kitMap: Record<string, { loss: number, components: any[] }> = {};
@@ -341,14 +347,15 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       // Fix: strip the [INFRA:...] part before checking price catalog
       // Example: "TUBO 1/2 [INFRA:Infra Alarme]" -> "TUBO 1/2"
       const cleanName = name.includes('[INFRA:') ? name.split('[INFRA:')[0].trim() : name.trim();
-      const unitPrice = priceMap[cleanName.toLowerCase()] || 0;
+      const productInfo = priceMap[cleanName.toLowerCase()] || { price: 0, cost: 0 };
 
       return {
         project_id: selectedProjectId,
         name: name,
         quantity_calculated: qty,
         quantity_final: qty,
-        unit_price: unitPrice,
+        unit_price: productInfo.price,
+        cost_price: productInfo.cost,
         origin: 'CALCULATED' as const,
         item_type: 'PRODUCT' as const
       };
@@ -389,11 +396,27 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           const catalogProd = catalogProducts.find(p => p.name === value);
           if (catalogProd) {
             updatedItem.unit_price = catalogProd.price;
+            updatedItem.cost_price = catalogProd.cost_price; // Also update cost
             // Also sync price to DB immediately for the item
-            supabase.from('budget_items').update({ unit_price: catalogProd.price }).eq('id', id).then(({ error }) => {
+            supabase.from('budget_items').update({ unit_price: catalogProd.price, cost_price: catalogProd.cost_price }).eq('id', id).then(({ error }) => {
               if (error) console.error('Error auto-updating price field:', error);
             });
           }
+        }
+
+        // SYNC LOGIC: If updating cost_price, also update the product catalog
+        if (field === 'cost_price') {
+          // Find the product name (strip tags like [INFRA:...] or [MODELO:...])
+          const rawName = item.name;
+          let cleanName = rawName;
+          if (rawName.includes('[INFRA:')) cleanName = rawName.split('[INFRA:')[0].trim();
+          if (rawName.includes('[MODELO:')) cleanName = rawName.includes('] ') ? rawName.split('] ')[1].trim() : rawName;
+
+          // Update in catalog
+          supabase.from('product_catalog').update({ cost_price: value }).eq('name', cleanName).then(({ error }) => {
+            if (error) console.error('Error syncing cost price to catalog:', error);
+            else console.log('Cost price synced to catalog for:', cleanName);
+          });
         }
 
         return updatedItem;
@@ -1077,7 +1100,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           {selectedProjectId && (
             <>
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="bg-surface-dark p-6 rounded-xl border border-white/5">
                   <h4 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Total de Itens</h4>
                   <div className="text-3xl font-black text-white">{items.length}</div>
@@ -1086,8 +1109,14 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                   <h4 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Itens com Conflito</h4>
                   <div className="text-3xl font-black text-yellow-500">0</div>
                 </div>
-                <div className="bg-surface-dark p-6 rounded-xl border border-white/5 border-l-4 border-l-primary/50 bg-primary/5">
-                  <h4 className="text-primary/70 text-xs font-bold uppercase tracking-wider mb-2">Custo Estimado</h4>
+                <div className="bg-surface-dark p-6 rounded-xl border border-white/5 border-l-4 border-l-rose-500/50 bg-rose-500/5">
+                  <h4 className="text-rose-400/70 text-xs font-bold uppercase tracking-wider mb-2">Total Custo</h4>
+                  <div className="text-3xl font-black text-white">
+                    R$ {items.reduce((acc, item) => acc + (item.quantity_final * (item.cost_price || 0)), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="bg-surface-dark p-6 rounded-xl border border-white/5 border-l-4 border-l-emerald-500/50 bg-emerald-500/5">
+                  <h4 className="text-emerald-400/70 text-xs font-bold uppercase tracking-wider mb-2">Total Venda</h4>
                   <div className="text-3xl font-black text-white">R$ {calculateTotal().toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
@@ -1120,22 +1149,23 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                         <th className="px-6 py-4 text-center">Qtd. Sistema</th>
                         <th className="px-6 py-4 text-center">Qtd. Final</th>
                         <th className="px-6 py-4 text-right">Custo Unit.</th>
+                        <th className="px-6 py-4 text-right">Venda Unit.</th>
                         <th className="px-6 py-4 text-right">Total</th>
                         <th className="px-6 py-4 text-center">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
                       {loading || calculating ? (
-                        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">Calculando materiais...</td></tr>
+                        <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-500">Calculando materiais...</td></tr>
                       ) : items.length === 0 ? (
-                        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">Nenhum item encontrado. Adicione manualmente ou verifique a Fase A.</td></tr>
+                        <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-500">Nenhum item encontrado. Adicione manualmente ou verifique a Fase A.</td></tr>
                       ) : (
                         <>
                           {/* 1. Itens de Cotação (Central Items) */}
                           {items.filter(i => !i.name.includes('[INFRA:')).length > 0 && (
                             <>
                               <tr className="bg-white/5">
-                                <td colSpan={7} className="px-6 py-2">
+                                <td colSpan={8} className="px-6 py-2">
                                   <div className="flex items-center gap-2 text-primary font-bold text-[10px] uppercase tracking-widest">
                                     <span className="material-symbols-outlined text-[14px]">inventory_2</span>
                                     Itens de Cotação Central
@@ -1194,6 +1224,17 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                       <input
                                         type="number"
                                         className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
+                                        value={item.cost_price || 0}
+                                        onChange={(e) => handleUpdateItem(item.id, 'cost_price', Number(e.target.value))}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <span className="text-slate-500 text-xs">R$</span>
+                                      <input
+                                        type="number"
+                                        className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
                                         value={item.unit_price}
                                         onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
                                       />
@@ -1227,7 +1268,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                           }, {} as Record<string, BudgetItem[]>)) as [string, BudgetItem[]][]).map(([kitName, kitItems]) => (
                             <React.Fragment key={kitName}>
                               <tr className="bg-white/5 border-t border-white/10">
-                                <td colSpan={7} className="px-6 py-2">
+                                <td colSpan={8} className="px-6 py-2">
                                   <div className="flex items-center gap-2 text-orange-400 font-bold text-[11px] uppercase tracking-widest">
                                     <span className="material-symbols-outlined text-[16px]">construction</span>
                                     Infraestrutura: <span className="text-white bg-orange-500/20 px-2 py-0.5 rounded border border-orange-500/30">{kitName}</span>
@@ -1290,6 +1331,17 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                         <input
                                           type="number"
                                           className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
+                                          value={item.cost_price || 0}
+                                          onChange={(e) => handleUpdateItem(item.id, 'cost_price', Number(e.target.value))}
+                                        />
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                      <div className="flex items-center justify-end gap-1">
+                                        <span className="text-slate-500 text-xs">R$</span>
+                                        <input
+                                          type="number"
+                                          className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
                                           value={item.unit_price}
                                           onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
                                         />
@@ -1329,7 +1381,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                             return (
                               <React.Fragment key={modelName}>
                                 <tr className="bg-white/5 border-t border-white/10 group/header">
-                                  <td colSpan={7} className="px-6 py-3">
+                                  <td colSpan={8} className="px-6 py-3">
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-3">
                                         <div className="flex items-center gap-2 text-indigo-400 font-bold text-[12px] uppercase tracking-widest">
@@ -1398,6 +1450,17 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                           <input
                                             type="number"
                                             className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
+                                            value={item.cost_price || 0}
+                                            onChange={(e) => handleUpdateItem(item.id, 'cost_price', Number(e.target.value))}
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-1">
+                                          <span className="text-slate-500 text-xs">R$</span>
+                                          <input
+                                            type="number"
+                                            className="w-24 bg-background-dark border border-white/10 rounded px-2 py-1 text-right text-white focus:border-primary outline-none font-bold"
                                             value={item.unit_price}
                                             onChange={(e) => handleUpdateItem(item.id, 'unit_price', Number(e.target.value))}
                                           />
@@ -1426,6 +1489,43 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                     </tbody>
                   </table>
                 </div>
+
+                {/* Summary Footer */}
+                <div className="mt-6 flex justify-end">
+                  <div className="bg-surface-dark border border-white/10 rounded-xl p-6 min-w-[300px]">
+                    <h4 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-4">Resumo da Composição</h4>
+
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-slate-400">Total de Custos:</span>
+                      <span className="text-white font-bold text-lg">
+                        R$ {items.reduce((acc, item) => acc + (item.quantity_final * (item.cost_price || 0)), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-slate-400">Total de Venda:</span>
+                      <span className="text-emerald-400 font-bold text-2xl">
+                        R$ {calculateTotal().toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+
+                    <div className="h-px bg-white/10 my-3"></div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400">Margem Bruta Estimada:</span>
+                      <span className="text-emerald-500 font-bold">
+                        {(() => {
+                          const totalSale = calculateTotal();
+                          const totalCost = items.reduce((acc, item) => acc + (item.quantity_final * (item.cost_price || 0)), 0);
+                          if (totalSale === 0) return '0%';
+                          const margin = ((totalSale - totalCost) / totalSale) * 100;
+                          return `${margin.toFixed(1)}%`;
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </>
           )}
