@@ -125,7 +125,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_cert_crq: true,
           show_cert_regularity: true,
           cert_crq_file: null,
-          cert_regularity_file: null
+          cert_regularity_file: null,
+          project_name_pdf: ''
         });
       }
     } catch (e) {
@@ -441,7 +442,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const addFooter = (doc: any, pageNum: number, totalPages: number) => {
         doc.setFontSize(8);
         doc.setTextColor(150);
-        const footerText = `Proposta Comercial - ${project.name} | Página ${pageNum} de ${totalPages}`;
+        const footerText = `Proposta Comercial - ${pdfSettings.project_name_pdf || project.name} | Página ${pageNum} de ${totalPages}`;
         doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
       };
 
@@ -476,7 +477,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(230, 230, 230);
       doc.text(project.client || 'N/A', 20, 208);
-      doc.text(project.name, 20, 215);
+      doc.text(pdfSettings.project_name_pdf || project.name, 20, 215);
 
       doc.setFontSize(10);
       doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 20, pageHeight - 20);
@@ -537,7 +538,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
           doc.setFontSize(10);
           doc.setFont('helvetica', 'normal');
-          const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${project.name}", contemplando o fornecimento de materiais e mão de obra conforme detalhamento técnico a seguir.`;
+          const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${pdfSettings.project_name_pdf || project.name}", contemplando o fornecimento de materiais e mão de obra conforme detalhamento técnico a seguir.`;
           const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
           doc.text(splitIntro, 20, yPos);
 
@@ -971,7 +972,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       }
 
       const finalPdfBytes = await pdfDoc.save();
-      const finalBlob = new Blob([finalPdfBytes], { type: 'application/pdf' });
+      const finalBlob = new Blob([finalPdfBytes as any], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(finalBlob);
 
       if (mode === 'preview') {
@@ -1081,6 +1082,18 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
               {showPdfSettings && (
                 <div className="p-6 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-200">
+                  <div className="lg:col-span-3 flex flex-col gap-3 pb-2 border-b border-white/5">
+                    <label className="text-xs font-bold text-primary uppercase tracking-wider">Identificação do Projeto no PDF</label>
+                    <input
+                      type="text"
+                      className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white focus:border-primary outline-none text-lg font-bold"
+                      value={pdfSettings.project_name_pdf || ''}
+                      onChange={(e) => savePdfSettings({ ...pdfSettings, project_name_pdf: e.target.value })}
+                      placeholder="Nome personalizado (ex: RESIDENCIAL VIA NATURALE)"
+                    />
+                    <p className="text-[10px] text-slate-500">Este nome aparecerá no cabeçalho e capa do PDF da Proposta Comercial.</p>
+                  </div>
+
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-400 uppercase">Responsável / Assinatura</label>
