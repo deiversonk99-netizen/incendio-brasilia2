@@ -12,6 +12,12 @@ const ProductsView: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [selectedProductForDetails, setSelectedProductForDetails] = useState<Product | null>(null);
+    const [stockMovements, setStockMovements] = useState<any[]>([]);
+
+    // Stock Movement Modal State
+    const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+    const [stockModalAction, setStockModalAction] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
+    const [stockQuantity, setStockQuantity] = useState<number>(0);
 
     // Form state
     const [formData, setFormData] = useState<Partial<Product>>({
@@ -47,11 +53,53 @@ const ProductsView: React.FC = () => {
             setProducts(data);
         }
 
+        const { data: stockData } = await supabase.from('product_stock').select('*');
+        if (stockData) setStockMovements(stockData);
+
         // Fetch suppliers for dropdown
         const { data: suppliersData } = await supabase.from('suppliers').select('id, name').order('name');
         if (suppliersData) setSuppliers(suppliersData);
 
         setLoading(false);
+    };
+
+    const computeQuantity = (productId: string) => {
+        const movements = stockMovements.filter((s) => s.product_id === productId);
+        return movements.reduce((sum, m) => {
+            if (m.movement_type === 'IN') return sum + m.quantity;
+            if (m.movement_type === 'OUT') return sum - m.quantity;
+            if (m.movement_type === 'ADJUST') return sum + m.quantity; // ADJUST behaves like IN
+            return sum;
+        }, 0);
+    };
+
+    const handleStockSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const product = selectedProductForDetails;
+        if (!product) return;
+
+        if (stockModalAction === 'OUT') {
+            const currentQty = computeQuantity(product.id);
+            if (stockQuantity > currentQty) {
+                alert('Quantidade de saída maior que o estoque disponível.');
+                return;
+            }
+        }
+
+        const { error } = await supabase.from('product_stock').insert([{
+            product_id: product.id,
+            movement_type: stockModalAction,
+            quantity: stockQuantity,
+            user_id: user?.id
+        }]);
+
+        if (error) {
+            alert('Erro ao registrar movimentação: ' + error.message);
+        } else {
+            setIsStockModalOpen(false);
+            setStockQuantity(0);
+            fetchProducts();
+        }
     };
 
     const handleOpenModal = (product?: Product) => {
@@ -880,7 +928,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                         filteredProducts.map(product => (
                                             <tr key={product.id} className="hover:bg-white/5 transition-colors group">
                                                 <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <div className="flex items-center gap-2">
                                                         <button
                                                             onClick={() => setSelectedProductForDetails(product)}
                                                             className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
@@ -904,7 +952,15 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                         </button>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 font-medium text-white">{product.name}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="font-medium text-white">{product.name}</div>
+                                                    {computeQuantity(product.id) > 0 && (
+                                                        <div className="text-[10px] text-emerald-400 font-bold mt-0.5 flex items-center gap-1">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                            ESTOQUE: {computeQuantity(product.id)} {product.unit || 'un'}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-6 py-4 text-center">
                                                     {product.is_signage ? (
                                                         <span className="material-symbols-outlined text-amber-500 text-[18px]" title="Identificado como Placa">warning</span>
@@ -1161,6 +1217,38 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 </div>
                             </div>
 
+                            {/* Stock Management Section */}
+                            <div className="bg-white/5 rounded-2xl border border-white/10 p-6 mb-8 shadow-inner">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <p className="text-[10px] text-slate-500 uppercase font-bold mb-1 tracking-tighter">Estoque Atual</p>
+                                        <p className={`text-3xl font-black ${computeQuantity(selectedProductForDetails.id) > 0 ? 'text-emerald-500' : 'text-slate-600'}`}>
+                                            {computeQuantity(selectedProductForDetails.id)} <span className="text-sm font-medium uppercase tracking-widest">{selectedProductForDetails.unit || 'un'}</span>
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => { setStockModalAction('IN'); setIsStockModalOpen(true); }}
+                                            className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-lg transition-all flex items-center gap-1 font-bold text-xs"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">add</span> ENTRADA
+                                        </button>
+                                        <button
+                                            onClick={() => { setStockModalAction('OUT'); setIsStockModalOpen(true); }}
+                                            className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg transition-all flex items-center gap-1 font-bold text-xs"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">remove</span> SAÍDA
+                                        </button>
+                                        <button
+                                            onClick={() => { setStockModalAction('ADJUST'); setIsStockModalOpen(true); }}
+                                            className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 rounded-lg transition-all flex items-center gap-1 font-bold text-xs"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">shuffle</span> AJUSTE
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-6 mb-8">
                                 <div className="bg-white/5 rounded-xl p-4 border border-white/5">
                                     <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Localização no Depósito</p>
@@ -1219,6 +1307,64 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                     Fechar
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Sub-modal para Movimentação de Estoque */}
+            {isStockModalOpen && selectedProductForDetails && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+                    <div className="bg-surface-dark border border-white/20 rounded-2xl w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    {stockModalAction === 'IN' && <><span className="text-emerald-500 material-symbols-outlined">add_circle</span> Registrar Entrada</>}
+                                    {stockModalAction === 'OUT' && <><span className="text-rose-500 material-symbols-outlined">remove_circle</span> Registrar Saída</>}
+                                    {stockModalAction === 'ADJUST' && <><span className="text-amber-500 material-symbols-outlined">settings_backup_restore</span> Ajuste Manual</>}
+                                </h3>
+                                <button onClick={() => setIsStockModalOpen(false)} className="text-slate-500 hover:text-white"><span className="material-symbols-outlined">close</span></button>
+                            </div>
+
+                            <form onSubmit={handleStockSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Quantidade ({selectedProductForDetails.unit || 'un'})</label>
+                                    <input
+                                        type="number"
+                                        autoFocus
+                                        required
+                                        min="1"
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xl font-black focus:ring-2 focus:ring-primary outline-none transition-all"
+                                        value={stockQuantity}
+                                        onChange={(e) => setStockQuantity(Number(e.target.value))}
+                                    />
+                                </div>
+
+                                <div className="p-3 bg-white/5 rounded-lg border border-white/5 text-xs text-slate-400 italic">
+                                    {stockModalAction === 'IN' && "Isso aumentará o saldo total deste item no depósito."}
+                                    {stockModalAction === 'OUT' && "Isso reduzirá o saldo total. Certifique-se de que há estoque suficiente."}
+                                    {stockModalAction === 'ADJUST' && "O ajuste funciona como um incremento positivo ao saldo atual."}
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsStockModalOpen(false)}
+                                        className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl border border-white/10 font-bold transition-all"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className={`flex-1 py-3 text-white rounded-xl font-bold transition-all shadow-lg ${stockModalAction === 'IN' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20' :
+                                            stockModalAction === 'OUT' ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-900/20' :
+                                                'bg-amber-600 hover:bg-amber-500 shadow-amber-900/20'
+                                            }`}
+                                    >
+                                        Confirmar
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>

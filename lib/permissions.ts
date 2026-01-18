@@ -32,27 +32,54 @@ export const TASK_CENTRAL_USERS = [
     'cleodson.batata@gmail.com'
 ];
 
-export const isSuperAdmin = (email?: string) => {
+export const isSuperAdmin = (email?: string, profile?: any) => {
     if (!email) return false;
-    return SUPER_ADMINS.includes(email.toLowerCase());
+    // Hardcoded master admins always have full access
+    if (SUPER_ADMINS.includes(email.toLowerCase())) return true;
+    if (profile?.role === 'ADMIN') return true;
+    return false;
 };
 
-export const isStockAdmin = (email?: string) => {
+export const canViewTab = (viewId: string, email?: string, profile?: any) => {
     if (!email) return false;
-    return STOCK_ADMINS.includes(email.toLowerCase());
+
+    // Super admins see everything
+    if (isSuperAdmin(email, profile)) return true;
+
+    // Check dynamic permissions first
+    if (profile?.permissions && profile.permissions[viewId] !== undefined) {
+        return profile.permissions[viewId] === true;
+    }
+
+    // Default RBAC fallbacks
+    const role = profile?.role || 'USER';
+
+    // Groups logic
+    if (viewId === 'FINANCE') {
+        if (FINANCE_ADMINS.includes(email.toLowerCase())) return true;
+        return role === 'ADMIN';
+    }
+
+    if (viewId === 'PLACAS' || viewId === 'STOCK' || viewId === 'SUPPLIERS') {
+        if (STOCK_ADMINS.includes(email.toLowerCase())) return true;
+        return role === 'ADMIN' || role === 'MANAGER';
+    }
+
+    if (viewId.startsWith('ENG_')) {
+        if (PROPOSAL_ADMINS.includes(email.toLowerCase())) return true;
+        return role === 'ADMIN' || role === 'MANAGER';
+    }
+
+    // Default public tabs (DASHBOARD, CLIENTS, TASKS, etc.)
+    return true;
 };
 
-export const isFinanceAdmin = (email?: string) => {
+export const isStockAdmin = (email?: string, profile?: any) => canViewTab('PLACAS', email, profile);
+export const isFinanceAdmin = (email?: string, profile?: any) => canViewTab('FINANCE', email, profile);
+export const isProposalAdmin = (email?: string, profile?: any) => canViewTab('ENG_A', email, profile);
+export const isTaskCentralUser = (email?: string, profile?: any) => {
     if (!email) return false;
-    return FINANCE_ADMINS.includes(email.toLowerCase());
-};
-
-export const isProposalAdmin = (email?: string) => {
-    if (!email) return false;
-    return PROPOSAL_ADMINS.includes(email.toLowerCase());
-};
-
-export const isTaskCentralUser = (email?: string) => {
-    if (!email) return false;
-    return TASK_CENTRAL_USERS.includes(email.toLowerCase());
+    if (isSuperAdmin(email, profile)) return true;
+    if (TASK_CENTRAL_USERS.includes(email.toLowerCase())) return true;
+    return profile?.role === 'ADMIN' || profile?.role === 'MANAGER';
 };

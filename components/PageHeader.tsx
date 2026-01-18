@@ -7,17 +7,17 @@ export interface BreadcrumbItem {
 }
 
 interface PageHeaderProps {
-  title: string;
+  title: React.ReactNode;
   subtitle?: string;
   breadcrumbs?: BreadcrumbItem[];
   actions?: React.ReactNode;
   className?: string;
 }
 
-const PageHeader: React.FC<PageHeaderProps> = ({ 
-  title, 
-  subtitle, 
-  breadcrumbs, 
+const PageHeader: React.FC<PageHeaderProps> = ({
+  title,
+  subtitle,
+  breadcrumbs,
   actions,
   className = ''
 }) => {
@@ -32,12 +32,11 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                   chevron_right
                 </span>
               )}
-              <span 
-                className={`${
-                  item.active 
-                    ? "text-primary font-semibold" 
+              <span
+                className={`${item.active
+                    ? "text-primary font-semibold"
                     : "text-slate-400"
-                } ${item.onClick ? "cursor-pointer hover:text-white transition-colors" : ""}`}
+                  } ${item.onClick ? "cursor-pointer hover:text-white transition-colors" : ""}`}
                 onClick={item.onClick}
               >
                 {item.label}
@@ -46,13 +45,13 @@ const PageHeader: React.FC<PageHeaderProps> = ({
           ))}
         </div>
       )}
-      
+
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h2 className="text-3xl font-black text-white tracking-tight">{title}</h2>
           {subtitle && <p className="text-slate-400">{subtitle}</p>}
         </div>
-        
+
         {actions && (
           <div className="flex items-center gap-3">
             {actions}

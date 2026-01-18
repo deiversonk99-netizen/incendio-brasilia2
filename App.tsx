@@ -18,6 +18,7 @@ import ServicesView from './components/ServicesView';
 import ServiceModelsView from './components/ServiceModelsView';
 import InventoryView from './components/InventoryView';
 import StockView from './components/StockView';
+import RenewalControlView from './components/RenewalControlView';
 import SettingsView from './components/SettingsView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin } from './lib/permissions';
@@ -93,6 +94,8 @@ const AppContent: React.FC = () => {
         return <InventoryView />;
       case AppView.STOCK:
         return <StockView />;
+      case AppView.RENEWALS:
+        return <RenewalControlView />;
       case AppView.SETTINGS:
         return <SettingsView />;
       default:

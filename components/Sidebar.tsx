@@ -2,7 +2,7 @@
 import React from 'react';
 import { AppView } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin } from '../lib/permissions';
+import { isSuperAdmin, canViewTab } from '../lib/permissions';
 
 interface SidebarProps {
   currentView: AppView;
@@ -10,7 +10,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
-  const { signOut, user } = useAuth();
+  const { signOut, user, profile } = useAuth();
 
   const allNavItems = [
     { id: AppView.DASHBOARD, label: 'Dashboard', icon: 'dashboard' },
@@ -20,34 +20,27 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     { id: AppView.CATALOG, label: 'Catálogo Produtos', icon: 'inventory_2' },
     { id: AppView.SUPPLIERS, label: 'Fornecedores', icon: 'local_shipping' },
     { id: AppView.PLACAS, label: 'Gestão de Placas', icon: 'warning' },
-    { id: AppView.STOCK, label: 'Controle de Depósito', icon: 'warehouse' },
     { id: AppView.SERVICES, label: 'Catálogo Serviços', icon: 'settings_suggest' },
     { id: AppView.SERVICE_MODELS, label: 'Kits & Composições', icon: 'design_services' },
     { id: AppView.ENGINEERING_PHASE_A, label: 'Fase A - Levantamento', icon: 'architecture' },
     { id: AppView.ENGINEERING_PHASE_B, label: 'Fase B - Composição', icon: 'dataset_linked' },
     { id: AppView.ENGINEERING_PHASE_C, label: 'Fase C - Proposta', icon: 'description' },
+    { id: AppView.RENEWALS, label: 'Controle de Renovação', icon: 'contract_edit' },
     { id: AppView.FINANCE, label: 'Financeiro', icon: 'account_balance_wallet' },
     { id: AppView.SETTINGS, label: 'Configurações', icon: 'settings' },
   ];
 
-  // RBAC Filtering logic
+  // Dynamic Permissions Filtering logic
   const navItems = allNavItems.filter(item => {
     const email = user?.email;
+
+    // Always show Settings to SuperAdmins
     if (item.id === AppView.SETTINGS) {
-      return isSuperAdmin(email);
+      return isSuperAdmin(email, profile);
     }
-    if (item.id === AppView.FINANCE) {
-      return isFinanceAdmin(email);
-    }
-    if (item.id === AppView.PLACAS || item.id === AppView.STOCK) {
-      return isStockAdmin(email);
-    }
-    if (item.id === AppView.ENGINEERING_PHASE_A ||
-      item.id === AppView.ENGINEERING_PHASE_B ||
-      item.id === AppView.ENGINEERING_PHASE_C) {
-      return isProposalAdmin(email);
-    }
-    return true; // Other items are public for logged-in users
+
+    // Check dynamic tab visibility
+    return canViewTab(item.id, email, profile);
   });
 
   const isEngActive = currentView.startsWith('ENG_');

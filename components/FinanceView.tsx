@@ -14,23 +14,17 @@ const FinanceView: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   // Forecasting State
-  const [selectedMonthOffset, setSelectedMonthOffset] = useState(0); // 0=Current, 1=Next...
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonthIdx, setSelectedMonthIdx] = useState(new Date().getMonth());
 
   const monthsList = useMemo(() => {
-    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-    const now = new Date();
-    return Array.from({ length: 4 }).map((_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      return {
-        label: months[d.getMonth()],
-        year: d.getFullYear(),
-        monthIdx: d.getMonth(),
-        offset: i
-      };
-    });
+    return [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
   }, []);
 
-  const activeMonth = monthsList[selectedMonthOffset];
+  const activeMonthLabel = monthsList[selectedMonthIdx];
 
   const fetchData = async () => {
     setLoading(true);
@@ -80,9 +74,9 @@ const FinanceView: React.FC = () => {
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       const tDate = new Date(t.date + 'T12:00:00');
-      return tDate.getMonth() === activeMonth.monthIdx && tDate.getFullYear() === activeMonth.year;
+      return tDate.getMonth() === selectedMonthIdx && tDate.getFullYear() === selectedYear;
     });
-  }, [transactions, activeMonth]);
+  }, [transactions, selectedMonthIdx, selectedYear]);
 
   const stats = useMemo(() => {
     const income = filteredTransactions.filter(t => t.type === 'INCOME');
@@ -209,7 +203,7 @@ const FinanceView: React.FC = () => {
               <p className="text-3xl font-black text-white tracking-tight mt-2 relative z-10">
                 {card.isCount ? card.val : `R$ ${card.val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
               </p>
-              <p className="text-[10px] text-slate-500 mt-2 font-medium">Mês atual</p>
+              <p className="text-[10px] text-slate-500 mt-2 font-medium">{monthsList[selectedMonthIdx]} de {selectedYear}</p>
             </div>
           ))}
         </div>
@@ -292,22 +286,40 @@ const FinanceView: React.FC = () => {
           <div className="px-8 py-6 border-b border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex flex-col gap-1">
               <h3 className="text-xl font-black text-white italic">Fluxo de Caixa</h3>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Detalhamento de lançamentos para {activeMonth.label} / {activeMonth.year}</p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Detalhamento de lançamentos para {activeMonthLabel} / {selectedYear}</p>
             </div>
 
-            <div className="flex bg-background-dark p-1 rounded-xl border border-white/5">
-              {monthsList.map(m => (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 bg-background-dark p-1 rounded-xl border border-white/5">
                 <button
-                  key={m.offset}
-                  onClick={() => setSelectedMonthOffset(m.offset)}
-                  className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${selectedMonthOffset === m.offset
-                    ? 'bg-primary text-white shadow-lg'
-                    : 'text-slate-500 hover:text-white'
-                    }`}
+                  onClick={() => setSelectedYear(y => y - 1)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
                 >
-                  {m.label}
+                  <span className="material-symbols-outlined text-[18px]">chevron_left</span>
                 </button>
-              ))}
+                <span className="text-sm font-black text-white px-2 italic">{selectedYear}</span>
+                <button
+                  onClick={() => setSelectedYear(y => y + 1)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
+                >
+                  <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap bg-background-dark p-1 rounded-xl border border-white/5 gap-1">
+                {monthsList.map((m, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedMonthIdx(idx)}
+                    className={`px-3 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${selectedMonthIdx === idx
+                      ? 'bg-primary text-white shadow-lg'
+                      : 'text-slate-500 hover:text-white hover:bg-white/5'
+                      }`}
+                  >
+                    {m.substring(0, 3)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div className="overflow-x-auto">

@@ -5,6 +5,8 @@ import NewTaskModal from './NewTaskModal';
 import { useAuth } from '../contexts/AuthContext';
 import { isTaskCentralUser } from '../lib/permissions';
 
+const SYNC_BOARD_ID = 'central-sync';
+
 interface TaskBoard {
   id: string;
   name: string;
@@ -56,17 +58,47 @@ const TasksView: React.FC = () => {
       .order('name');
 
     if (boardsData) {
-      setBoards(boardsData);
-      // If no board is selected, pick the first one (usually 'Quadro Geral' based on migration)
-      if (!selectedBoardId && boardsData.length > 0) {
-        setSelectedBoardId(boardsData[0].id);
-        // We'll let the useEffect handle the groups/tasks fetch on selectedBoardId change
+      let finalBoards = [...boardsData];
+      if (isCentral) {
+        finalBoards.push({ id: SYNC_BOARD_ID, name: '🔄 Sincronização - Todos os Usuários' });
+      }
+      setBoards(finalBoards);
+
+      // If no board is selected, pick the first one
+      if (!selectedBoardId && finalBoards.length > 0) {
+        setSelectedBoardId(finalBoards[0].id);
         setLoading(false);
         return;
       }
     }
 
     if (!selectedBoardId) {
+      setLoading(false);
+      return;
+    }
+
+    // Special Sync Board Handling
+    if (selectedBoardId === SYNC_BOARD_ID) {
+      const { data: syncData } = await supabase
+        .from('tasks')
+        .select(`
+          *, 
+          projects(name), 
+          user_profiles:user_id(email)
+        `)
+        .eq('status', 'PENDING')
+        .order('created_at', { ascending: false });
+
+      if (syncData) setTasks(syncData as any);
+
+      setGroups([{
+        id: 'sync-group-all',
+        name: 'Pendentes (Geral)',
+        color: 'bg-primary',
+        order_index: 0,
+        board_id: SYNC_BOARD_ID
+      }]);
+
       setLoading(false);
       return;
     }
@@ -216,10 +248,10 @@ const TasksView: React.FC = () => {
               <div className="p-3 flex-1 overflow-y-auto space-y-3 bg-black/10 scrollbar-hide">
                 {loading ? (
                   <div className="text-center text-slate-500 py-10 text-xs">Carregando...</div>
-                ) : filteredTasks.filter(t => t.group_id === group.id).length === 0 ? (
+                ) : filteredTasks.filter(t => selectedBoardId === SYNC_BOARD_ID ? true : t.group_id === group.id).length === 0 ? (
                   <div className="text-center text-slate-600 py-10 text-xs italic">Sem tarefas</div>
                 ) : (
-                  filteredTasks.filter(t => t.group_id === group.id).map(task => {
+                  filteredTasks.filter(t => selectedBoardId === SYNC_BOARD_ID ? true : t.group_id === group.id).map(task => {
                     const isExpired = task.expiration_date && new Date(task.expiration_date) < new Date();
                     return (
                       <div
@@ -299,10 +331,18 @@ const TasksView: React.FC = () => {
                             className="bg-surface-dark border border-white/5 text-[10px] text-slate-300 rounded px-2 py-1 outline-none cursor-pointer hover:border-primary transition-all"
                             value={task.group_id || ''}
                             onChange={(e) => handleUpdateTaskGroup(task.id, e.target.value)}
+                            disabled={selectedBoardId === SYNC_BOARD_ID}
                           >
                             <option value="" disabled>Mover para...</option>
                             {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                           </select>
+
+                          {(task as any).user_profiles?.email && (
+                            <div className="flex items-center gap-1.5 mt-1 text-[9px] font-black text-slate-500 uppercase tracking-widest bg-black/20 px-2 py-1 rounded border border-white/5">
+                              <span className="material-symbols-outlined text-[14px] text-primary">person</span>
+                              <span>{(task as any).user_profiles.email.split('@')[0]}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

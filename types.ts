@@ -15,6 +15,7 @@ export enum AppView {
   SERVICE_MODELS = 'SERVICE_MODELS',
   PLACAS = 'PLACAS',
   STOCK = 'STOCK',
+  RENEWALS = 'RENEWALS',
   SETTINGS = 'SETTINGS'
 }
 

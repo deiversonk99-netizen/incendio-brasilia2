@@ -200,7 +200,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-surface-dark border border-white/10 shadow-2xl overflow-hidden">
+            <div className="w-full max-w-lg rounded-2xl bg-surface-dark border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[95vh] md:max-h-[90vh]">
                 <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5">
                     <h2 className="text-xl font-bold text-white">
                         {editingTransaction
@@ -212,7 +212,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
                     {/* Type Toggle - Disable if editing? Usually better to keep as is but user might change it.
                         Actually, let's keep it but maybe hide if it complicates things. For now keep.
                     */}

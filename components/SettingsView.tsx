@@ -21,6 +21,26 @@ const SettingsView: React.FC = () => {
         show_logo: true
     });
     const [loading, setLoading] = useState(true);
+    const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+    const [isPermModalOpen, setIsPermModalOpen] = useState(false);
+    const [tempPerms, setTempPerms] = useState<any>({});
+
+    const allTabs = [
+        { id: 'DASHBOARD', label: 'Dashboard' },
+        { id: 'CLIENTS', label: 'Clientes' },
+        { id: 'TASKS', label: 'Tarefas' },
+        { id: 'KITS', label: 'Infraestruturas' },
+        { id: 'CATALOG', label: 'Catálogo Produtos' },
+        { id: 'SUPPLIERS', label: 'Fornecedores' },
+        { id: 'PLACAS', label: 'Gestão de Placas' },
+        { id: 'STOCK', label: 'Controle de Depósito' },
+        { id: 'SERVICES', label: 'Catálogo Serviços' },
+        { id: 'SERVICE_MODELS', label: 'Kits & Composições' },
+        { id: 'ENG_A', label: 'Fase A - Levantamento' },
+        { id: 'ENG_B', label: 'Fase B - Composição' },
+        { id: 'ENG_C', label: 'Fase C - Proposta' },
+        { id: 'FINANCE', label: 'Financeiro' },
+    ];
 
     useEffect(() => {
         fetchSettings();
@@ -60,6 +80,28 @@ const SettingsView: React.FC = () => {
         }, { onConflict: 'key' });
 
         if (!error) alert('Configurações de PDF salvas com sucesso!');
+    };
+
+    const handleOpenPermissionModal = (user: UserProfile) => {
+        setSelectedUser(user);
+        setTempPerms(user.permissions || {});
+        setIsPermModalOpen(true);
+    };
+
+    const handleSavePermissions = async () => {
+        if (!selectedUser) return;
+        const { error } = await supabase
+            .from('user_profiles')
+            .update({ permissions: tempPerms })
+            .eq('email', selectedUser.email);
+
+        if (!error) {
+            setProfiles(prev => prev.map(p => p.email === selectedUser.email ? { ...p, permissions: tempPerms } : p));
+            setIsPermModalOpen(false);
+            alert('Permissões atualizadas com sucesso!');
+        } else {
+            alert('Erro ao salvar permissões: ' + error.message);
+        }
     };
 
     return (
@@ -128,7 +170,12 @@ const SettingsView: React.FC = () => {
                                                         </select>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <button className="text-primary hover:underline text-xs font-bold">Configurar Visibilidade</button>
+                                                        <button
+                                                            onClick={() => handleOpenPermissionModal(profile)}
+                                                            className="text-primary hover:underline text-xs font-bold"
+                                                        >
+                                                            Configurar Visibilidade
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -214,6 +261,55 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* Permission Modal */}
+            {isPermModalOpen && selectedUser && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                    <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h2 className="text-xl font-bold text-white uppercase tracking-wider">Permissões de Acesso</h2>
+                                <p className="text-sm text-slate-400 mt-1">{selectedUser.email}</p>
+                            </div>
+                            <button onClick={() => setIsPermModalOpen(false)} className="text-slate-400 hover:text-white">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-x-8 gap-y-4 max-h-[60vh] overflow-y-auto pr-4 custom-scrollbar mb-8">
+                            {allTabs.map(tab => (
+                                <div key={tab.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
+                                    <span className="text-sm font-medium text-slate-200">{tab.label}</span>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only peer"
+                                            checked={tempPerms[tab.id] ?? true}
+                                            onChange={(e) => setTempPerms({ ...tempPerms, [tab.id]: e.target.checked })}
+                                        />
+                                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                    </label>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex gap-4 pt-4 border-t border-white/10">
+                            <button
+                                onClick={() => setIsPermModalOpen(false)}
+                                className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all text-sm uppercase tracking-widest"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleSavePermissions}
+                                className="flex-1 py-3 bg-primary hover:bg-primary-dark rounded-xl text-white font-bold shadow-lg shadow-primary/20 transition-all text-sm uppercase tracking-widest"
+                            >
+                                Salvar Permissões
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -25,6 +25,7 @@ const InventoryView: React.FC = () => {
 
     // Order Modal State
     const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+    const [editingOrder, setEditingOrder] = useState<any>(null);
     const [newOrder, setNewOrder] = useState({ supplier: '', delivery_date: '' });
     const [orderItems, setOrderItems] = useState<{ signage_id: string; quantity: number; signage_name: string }[]>([]);
     const [itemToAdd, setItemToAdd] = useState({ signage_id: '', quantity: 1 });
@@ -125,23 +126,73 @@ const InventoryView: React.FC = () => {
         // console.log('Added item:', newItem); // Debugging
     };
 
-    const handleCreateOrder = async () => {
-        console.log('Finalizing order with items:', orderItems);
-        if (orderItems.length === 0) {
-            return alert('Erro: Você ainda não adicionou nenhum item à lista. Clique no botão "+" ao lado da quantidade para adicionar o item antes de finalizar.');
-        }
+    const handleEditOrder = (order: any) => {
+        setEditingOrder(order);
+        setNewOrder({
+            supplier: order.supplier,
+            delivery_date: order.delivery_date ? order.delivery_date.split('T')[0] : ''
+        });
+        setOrderItems(order.items.map((item: any) => ({
+            signage_id: item.signage_id,
+            quantity: item.quantity,
+            signage_name: item.signage?.name || 'Unknown'
+        })));
+        setIsOrderModalOpen(true);
+    };
+
+    const handleDeleteOrder = async (orderId: string) => {
+        if (!confirm('Tem certeza que deseja excluir este pedido? Esta ação não pode ser desfeita.')) return;
 
         try {
-            const { data: order, error } = await supabase.from('signage_orders').insert([{
-                supplier: newOrder.supplier || 'Não informado',
-                delivery_date: newOrder.delivery_date || null,
-                status: 'PENDING'
-            }]).select().single();
+            // Remove order items first due to FK constraints
+            await supabase.from('signage_order_items').delete().eq('order_id', orderId);
+            const { error } = await supabase.from('signage_orders').delete().eq('id', orderId);
 
             if (error) throw error;
 
+            fetchData();
+            alert('Pedido excluído com sucesso!');
+        } catch (e: any) {
+            alert('Erro ao excluir pedido: ' + e.message);
+        }
+    };
+
+    const handleCreateOrder = async () => {
+        if (orderItems.length === 0) {
+            return alert('Erro: Você ainda não adicionou nenhum item à lista.');
+        }
+
+        try {
+            let orderId = editingOrder?.id;
+
+            if (editingOrder) {
+                // Update existing order
+                const { error: updateError } = await supabase
+                    .from('signage_orders')
+                    .update({
+                        supplier: newOrder.supplier || 'Não informado',
+                        delivery_date: newOrder.delivery_date || null
+                    })
+                    .eq('id', editingOrder.id);
+
+                if (updateError) throw updateError;
+
+                // Delete and re-insert items (simplest way to handle updates to item list)
+                await supabase.from('signage_order_items').delete().eq('order_id', editingOrder.id);
+            } else {
+                // Create new order
+                const { data: order, error } = await supabase.from('signage_orders').insert([{
+                    supplier: newOrder.supplier || 'Não informado',
+                    delivery_date: newOrder.delivery_date || null,
+                    status: 'PENDING'
+                }]).select().single();
+
+                if (error) throw error;
+                orderId = order.id;
+            }
+
             const itemsPayload = orderItems.map(item => ({
-                order_id: order.id,
+                order_id: orderId,
                 signage_id: item.signage_id,
                 quantity: item.quantity,
                 received_quantity: 0,
@@ -152,13 +203,14 @@ const InventoryView: React.FC = () => {
             if (itemsError) throw itemsError;
 
             setIsOrderModalOpen(false);
+            setEditingOrder(null);
             setNewOrder({ supplier: '', delivery_date: '' });
             setOrderItems([]);
             fetchData();
-            alert('Pedido criado com sucesso!');
+            alert(editingOrder ? 'Pedido atualizado com sucesso!' : 'Pedido criado com sucesso!');
         } catch (e: any) {
-            console.error('Order creation error:', e);
-            alert('Erro ao criar pedido: ' + e.message);
+            console.error('Order save error:', e);
+            alert('Erro ao salvar pedido: ' + e.message);
         }
     };
 
@@ -223,7 +275,12 @@ const InventoryView: React.FC = () => {
                             </button>
                         ) : (
                             <button
-                                onClick={() => setIsOrderModalOpen(true)}
+                                onClick={() => {
+                                    setEditingOrder(null);
+                                    setNewOrder({ supplier: '', delivery_date: '' });
+                                    setOrderItems([]);
+                                    setIsOrderModalOpen(true);
+                                }}
                                 className="flex items-center gap-2 h-10 px-4 rounded-lg bg-primary hover:bg-primary-dark text-white shadow-lg shadow-primary/20 transition-all font-bold text-sm"
                             >
                                 <span className="material-symbols-outlined text-[18px]">shopping_cart_checkout</span>
@@ -324,13 +381,25 @@ const InventoryView: React.FC = () => {
                                             <div className="text-xs text-slate-400">Entrega: {order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('pt-BR') : 'N/A'}</div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                                        <button onClick={() => handleEditOrder(order)} className="p-1 text-slate-400 hover:text-blue-400 transition-colors">
+                                            <span className="material-symbols-outlined text-[20px]">edit</span>
+                                        </button>
+                                        <button onClick={() => handleDeleteOrder(order.id)} className="p-1 text-slate-400 hover:text-red-400 transition-colors">
+                                            <span className="material-symbols-outlined text-[20px]">delete</span>
+                                        </button>
                                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${order.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-500' :
                                             order.status === 'PARTIAL' ? 'bg-blue-500/10 text-blue-500' : 'bg-amber-500/10 text-amber-500'
                                             }`}>
                                             {order.status === 'COMPLETED' ? 'Concluído' : order.status === 'PARTIAL' ? 'Parcial' : 'Pendente'}
                                         </span>
-                                        <span className="material-symbols-outlined text-slate-400 transition-transform duration-200" style={{ transform: expandedOrderId === order.id ? 'rotate(180deg)' : 'rotate(0deg)' }}>expand_more</span>
+                                        <span
+                                            className="material-symbols-outlined text-slate-400 transition-transform duration-200 cursor-pointer"
+                                            style={{ transform: expandedOrderId === order.id ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                                            onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
+                                        >
+                                            expand_more
+                                        </span>
                                     </div>
                                 </div>
 
@@ -445,8 +514,8 @@ const InventoryView: React.FC = () => {
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
                     <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
                         <h2 className="text-xl font-bold mb-6 text-white flex items-center gap-2">
-                            <span className="material-symbols-outlined">shopping_cart</span>
-                            Novo Pedido de Compra
+                            <span className="material-symbols-outlined">{editingOrder ? 'edit' : 'shopping_cart'}</span>
+                            {editingOrder ? 'Editar Pedido de Compra' : 'Novo Pedido de Compra'}
                         </h2>
 
                         <div className="grid grid-cols-2 gap-4 mb-6">
@@ -552,7 +621,7 @@ const InventoryView: React.FC = () => {
                                 onClick={handleCreateOrder}
                                 className="flex-1 py-3 bg-primary hover:bg-primary-dark rounded-xl text-white font-bold shadow-lg shadow-primary/20 transition-all"
                             >
-                                Finalizar Pedido
+                                {editingOrder ? 'Salvar Alterações' : 'Finalizar Pedido'}
                             </button>
                         </div>
                     </div>

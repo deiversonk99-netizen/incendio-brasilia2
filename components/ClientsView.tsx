@@ -123,7 +123,16 @@ const ClientsView: React.FC = () => {
         <div className="flex-1 overflow-y-auto px-8 py-6">
             <div className="mx-auto max-w-[1600px] flex flex-col gap-8 pb-12">
                 <PageHeader
-                    title="Gestão de Clientes"
+                    title={
+                        <div className="flex items-center gap-3">
+                            <span className="italic">Gestão de Clientes</span>
+                            {!loading && (
+                                <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-1 rounded-full border border-primary/20 tracking-widest italic uppercase">
+                                    {clients.length} Clientes
+                                </span>
+                            )}
+                        </div>
+                    }
                     subtitle="Visualize sua base de clientes e o histórico de cada um"
                     actions={
                         <div className="flex items-center gap-4">
