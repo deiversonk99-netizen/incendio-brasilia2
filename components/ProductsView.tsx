@@ -42,15 +42,35 @@ const ProductsView: React.FC = () => {
 
     const fetchProducts = async () => {
         setLoading(true);
-        const { data, error } = await supabase
-            .from('product_catalog')
-            .select('*')
-            .order('name');
+        let allProducts: Product[] = [];
+        let page = 0;
+        const pageSize = 1000;
+        let hasMore = true;
 
-        if (error) {
+        try {
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('product_catalog')
+                    .select('*')
+                    .order('name')
+                    .range(page * pageSize, (page + 1) * pageSize - 1);
+
+                if (error) throw error;
+
+                if (data) {
+                    allProducts = [...allProducts, ...data];
+                    if (data.length < pageSize) {
+                        hasMore = false;
+                    } else {
+                        page++;
+                    }
+                } else {
+                    hasMore = false;
+                }
+            }
+            setProducts(allProducts);
+        } catch (error) {
             console.error('Error fetching products:', error);
-        } else if (data) {
-            setProducts(data);
         }
 
         const { data: stockData } = await supabase.from('product_stock').select('*');
@@ -842,12 +862,16 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
         setLoading(false);
     };
 
-    const filteredProducts = products.filter(p =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.category || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.storage_location || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.observation || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredProducts = products.filter(p => {
+        const supplierName = suppliers.find(s => s.id === p.supplier_id)?.name || '';
+        return (
+            p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (p.category || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (p.storage_location || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (p.observation || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            supplierName.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    });
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
@@ -890,6 +914,22 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
 
                     {/* Table */}
                     <div className="bg-surface-dark rounded-xl border border-white/5 overflow-hidden shadow-sm">
+                        <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-black/10">
+                            <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-primary text-[20px]">inventory_2</span>
+                                <h3 className="text-white font-bold text-sm uppercase tracking-wider">Produtos Cadastrados</h3>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {searchTerm && (
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase bg-white/5 px-2 py-1 rounded">
+                                        Resultados: {filteredProducts.length}
+                                    </span>
+                                )}
+                                <span className="text-[10px] text-slate-500 font-bold uppercase border border-white/10 px-2 py-1 rounded bg-black/20">
+                                    Total: {products.length}
+                                </span>
+                            </div>
+                        </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left text-sm">
                                 <thead className="bg-white/5 text-slate-400 font-medium uppercase text-xs tracking-wider">
