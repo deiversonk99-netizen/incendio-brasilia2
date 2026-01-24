@@ -1087,7 +1087,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const financeBody = [];
 
       if (pdfSettings.show_subtotal !== false) {
-        financeBody.push(['Subtotal de Materiais/serviços', `R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        financeBody.push(['Subtotal de Materiais/Serviços', `R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
       }
 
       if (pdfSettings.show_bdi !== false) {
@@ -1095,7 +1095,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       }
 
       if (pdfSettings.show_profit !== false) {
-        financeBody.push(['Margem de Lucro', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        financeBody.push(['Margem de lucro encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
       }
 
       if (vals.servicesTotal > 0 && !proposal.hide_services_pdf) {

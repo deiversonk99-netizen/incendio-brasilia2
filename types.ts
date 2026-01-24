@@ -58,6 +58,8 @@ export interface Transaction {
   status: 'PAID' | 'PENDING';
   value: number;
   type: 'INCOME' | 'EXPENSE';
+  installment_number?: number;
+  total_installments?: number;
 }
 
 export interface Product {

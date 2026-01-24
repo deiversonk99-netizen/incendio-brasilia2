@@ -4,6 +4,9 @@ import { AreaChart, Area, XAxis, CartesianGrid, ResponsiveContainer, Tooltip } f
 import { supabase } from '../lib/supabase';
 import { Project, Transaction } from '../types';
 import NewTransactionModal from './NewTransactionModal';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import ReportFilterModal, { ReportFilters } from './ReportFilterModal';
 
 const FinanceView: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -12,6 +15,20 @@ const FinanceView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialType, setModalInitialType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+  // Advanced Filters State
+  const [startDate, setStartDate] = useState(
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
+  );
+  const [endDate, setEndDate] = useState(
+    new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]
+  );
+  const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'PAID' | 'PENDING'>('ALL');
+  const [showFilters, setShowFilters] = useState(false);
 
   // Forecasting State
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -48,7 +65,7 @@ const FinanceView: React.FC = () => {
       console.error('Error updating status:', error);
       alert('Erro ao atualizar status.');
     } else {
-      setTransactions(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+      setTransactions((prev: Transaction[]) => prev.map((t: Transaction) => t.id === id ? { ...t, status: newStatus } : t));
     }
   };
 
@@ -63,7 +80,28 @@ const FinanceView: React.FC = () => {
       console.error('Error deleting transaction:', error);
       alert('Erro ao excluir transação.');
     } else {
-      setTransactions(prev => prev.filter(t => t.id !== id));
+      setTransactions(prev => prev.filter((t: Transaction) => t.id !== id));
+    }
+  };
+
+  const handleDuplicateTransaction = async (transaction: Transaction) => {
+    try {
+      const { id, created_at, ...duplicateData } = transaction as any;
+      const { error } = await supabase
+        .from('financial_transactions')
+        .insert({
+          ...duplicateData,
+          description: `${duplicateData.description} (Cópia)`,
+          status: 'PENDING', // Default to pending for safety
+          date: new Date().toISOString().split('T')[0] // Default to today
+        });
+
+      if (error) throw error;
+      alert('Transação duplicada com sucesso!');
+      fetchData();
+    } catch (e: any) {
+      console.error('Error duplicating transaction:', e);
+      alert('Erro ao duplicar transação: ' + e.message);
     }
   };
 
@@ -71,20 +109,229 @@ const FinanceView: React.FC = () => {
     fetchData();
   }, []);
 
+  // Sync Start/End dates when Month/Year preset changes
+  useEffect(() => {
+    const start = new Date(selectedYear, selectedMonthIdx, 1);
+    const end = new Date(selectedYear, selectedMonthIdx + 1, 0);
+    setStartDate(start.toISOString().split('T')[0]);
+    setEndDate(end.toISOString().split('T')[0]);
+  }, [selectedMonthIdx, selectedYear]);
+
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
-      const tDate = new Date(t.date + 'T12:00:00');
-      return tDate.getMonth() === selectedMonthIdx && tDate.getFullYear() === selectedYear;
+    return transactions.filter((t: Transaction) => {
+      const tDateStr = t.date;
+      const isWithinDateRange = tDateStr >= startDate && tDateStr <= endDate;
+
+      if (!isWithinDateRange) return false;
+
+      const matchesType = filterType === 'ALL' || t.type === filterType;
+      if (!matchesType) return false;
+
+      const matchesStatus = filterStatus === 'ALL' || t.status === filterStatus;
+      if (!matchesStatus) return false;
+
+      if (!searchTerm) return true;
+
+      const search = searchTerm.toLowerCase();
+      return (
+        t.description?.toLowerCase().includes(search) ||
+        t.entity?.toLowerCase().includes(search) ||
+        t.category?.toLowerCase().includes(search)
+      );
     });
-  }, [transactions, selectedMonthIdx, selectedYear]);
+  }, [transactions, startDate, endDate, filterType, filterStatus, searchTerm]);
+
+  const generateFinancialReport = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Header
+    doc.setFillColor(0, 0, 0);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RELATÓRIO FINANCEIRO', 20, 25);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 32);
+
+    // Filter Info
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    doc.text(`Período: ${new Date(startDate).toLocaleDateString('pt-BR')} até ${new Date(endDate).toLocaleDateString('pt-BR')}`, 20, 50);
+    doc.text(`Emissão: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 20, 50, { align: 'right' });
+
+    // Summary Section
+    doc.setDrawColor(230);
+    doc.line(20, 55, pageWidth - 20, 55);
+
+    const sIncome = filteredTransactions.filter((t: Transaction) => t.type === 'INCOME').reduce((acc: number, t: Transaction) => acc + t.value, 0);
+    const sExpense = filteredTransactions.filter((t: Transaction) => t.type === 'EXPENSE').reduce((acc: number, t: Transaction) => acc + t.value, 0);
+    const sNet = sIncome - sExpense;
+
+    autoTable(doc, {
+      startY: 60,
+      head: [['Resumo Financeiro do Período', '']],
+      body: [
+        ['Total de Receitas', `R$ ${sIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Total de Despesas', `R$ ${sExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Saldo Líquido', `R$ ${sNet.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+      ],
+      theme: 'plain',
+      styles: { fontSize: 11, cellPadding: 2 },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 100 }, 1: { halign: 'right' } },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.row.index === 2) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.textColor = sNet >= 0 ? [16, 185, 129] : [226, 29, 72];
+        }
+      }
+    });
+
+    // Transactions Table
+    const tableBody = filteredTransactions.map((t: Transaction) => [
+      new Date(t.date).toLocaleDateString('pt-BR'),
+      t.description,
+      t.entity,
+      t.type === 'INCOME' ? 'Receita' : 'Despesa',
+      t.status === 'PAID' ? 'Pago' : 'Pendente',
+      `R$ ${t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+    ]);
+
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 15,
+      head: [['Data', 'Descrição', 'Entidade', 'Tipo', 'Status', 'Valor']],
+      body: tableBody,
+      theme: 'grid',
+      headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 'auto' },
+        5: { halign: 'right', fontStyle: 'bold' }
+      }
+    });
+
+    doc.save(`Relatorio_Financeiro_${startDate}_${endDate}.pdf`);
+  };
+
+  const handleGenerateReport = async (filters: ReportFilters) => {
+    setIsGeneratingReport(true);
+    try {
+      let query = supabase.from('financial_transactions').select('*');
+
+      if (filters.startDate) query = query.gte('date', filters.startDate);
+      if (filters.endDate) query = query.lte('date', filters.endDate);
+      if (filters.category !== 'ALL') query = query.eq('category', filters.category);
+      if (filters.status !== 'ALL') query = query.eq('status', filters.status);
+
+      const { data, error } = await query.order('date', { ascending: false });
+
+      if (error) throw error;
+
+      const reportData = data as Transaction[];
+
+      // Filter by search (case insensitive) if provided
+      const finalData = filters.search
+        ? reportData.filter(t =>
+          t.description?.toLowerCase().includes(filters.search.toLowerCase()) ||
+          t.entity?.toLowerCase().includes(filters.search.toLowerCase()) ||
+          t.category?.toLowerCase().includes(filters.search.toLowerCase())
+        )
+        : reportData;
+
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // Header
+      doc.setFillColor(0, 0, 0);
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text('RELATÓRIO FINANCEIRO', 20, 25);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 32);
+
+      // Filter Info
+      doc.setTextColor(60, 60, 60);
+      doc.setFontSize(10);
+      const periodLabel = `Período: ${new Date(filters.startDate).toLocaleDateString('pt-BR')} até ${new Date(filters.endDate).toLocaleDateString('pt-BR')}`;
+      doc.text(periodLabel, 20, 50);
+      doc.text(`Emissão: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 20, 50, { align: 'right' });
+
+      // Summary Section
+      doc.setDrawColor(230);
+      doc.line(20, 55, pageWidth - 20, 55);
+
+      const sIncome = finalData.filter((t: Transaction) => t.type === 'INCOME').reduce((acc: number, t: Transaction) => acc + t.value, 0);
+      const sExpense = finalData.filter((t: Transaction) => t.type === 'EXPENSE').reduce((acc: number, t: Transaction) => acc + t.value, 0);
+      const sNet = sIncome - sExpense;
+
+      autoTable(doc, {
+        startY: 60,
+        head: [['Resumo Financeiro do Período', '']],
+        body: [
+          ['Total de Receitas', `R$ ${sIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+          ['Total de Despesas', `R$ ${sExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+          ['Saldo Líquido', `R$ ${sNet.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ],
+        theme: 'plain',
+        styles: { fontSize: 11, cellPadding: 2 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 100 }, 1: { halign: 'right' } },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.row.index === 2) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.textColor = sNet >= 0 ? [16, 185, 129] : [226, 29, 72];
+          }
+        }
+      });
+
+      // Transactions Table
+      const tableBody = finalData.map((t: Transaction) => [
+        new Date(t.date).toLocaleDateString('pt-BR'),
+        t.description,
+        t.entity,
+        t.type === 'INCOME' ? 'Receita' : 'Despesa',
+        t.status === 'PAID' ? 'Pago' : 'Pendente',
+        `R$ ${t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      ]);
+
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 15,
+        head: [['Data', 'Descrição', 'Entidade', 'Tipo', 'Status', 'Valor']],
+        body: tableBody,
+        theme: 'grid',
+        headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
+        styles: { fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 20 },
+          1: { cellWidth: 'auto' },
+          5: { halign: 'right', fontStyle: 'bold' }
+        }
+      });
+
+      doc.save(`Relatorio_Financeiro_${filters.startDate}_${filters.endDate}.pdf`);
+      setIsReportModalOpen(false);
+    } catch (e: any) {
+      console.error('Error generating report:', e);
+      alert('Erro ao gerar relatório: ' + e.message);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
 
   const stats = useMemo(() => {
-    const income = filteredTransactions.filter(t => t.type === 'INCOME');
-    const expense = filteredTransactions.filter(t => t.type === 'EXPENSE');
+    const income = filteredTransactions.filter((t: Transaction) => t.type === 'INCOME');
+    const expense = filteredTransactions.filter((t: Transaction) => t.type === 'EXPENSE');
 
-    const totalIncome = income.reduce((acc, t) => acc + t.value, 0);
-    const totalExpense = expense.reduce((acc, t) => acc + t.value, 0);
-    const pendingCount = filteredTransactions.filter(t => t.status === 'PENDING').length;
+    const totalIncome = income.reduce((acc: number, t: Transaction) => acc + t.value, 0);
+    const totalExpense = expense.reduce((acc: number, t: Transaction) => acc + t.value, 0);
+    const pendingCount = filteredTransactions.filter((t: Transaction) => t.status === 'PENDING').length;
 
     return {
       totalIncome,
@@ -110,10 +357,10 @@ const FinanceView: React.FC = () => {
     }
 
     // Calculate real (Paid Income)
-    transactions.forEach(t => {
+    transactions.forEach((t: Transaction) => {
       const tDate = new Date(t.date);
       const tMonth = tDate.getMonth();
-      const dataPoint = last6Months.find(d => d.monthIdx === tMonth);
+      const dataPoint = last6Months.find((d: any) => d.monthIdx === tMonth);
       if (dataPoint) {
         if (t.type === 'INCOME' && t.status === 'PAID') {
           dataPoint.real += t.value;
@@ -125,7 +372,7 @@ const FinanceView: React.FC = () => {
     });
 
     // Add projects to previsto (if not DONE)
-    projects.forEach(p => {
+    projects.forEach((p: Project) => {
       if (p.status === 'DONE') return;
       // Projects usually have deadline like "15 Out" or ISO. 
       // We try to parse it. If it fails, we ignore for chart or use created_at.
@@ -133,7 +380,7 @@ const FinanceView: React.FC = () => {
       if (isNaN(pDate.getTime())) return;
 
       const pMonth = pDate.getMonth();
-      const dataPoint = last6Months.find(d => d.monthIdx === pMonth);
+      const dataPoint = last6Months.find((d: any) => d.monthIdx === pMonth);
       if (dataPoint) {
         dataPoint.previsto += p.value;
       }
@@ -144,13 +391,13 @@ const FinanceView: React.FC = () => {
 
   const recentSuppliers = useMemo(() => {
     const suppliersMap: Record<string, { name: string, cat: string, count: number }> = {};
-    transactions.filter(t => t.type === 'EXPENSE').forEach(t => {
+    transactions.filter((t: Transaction) => t.type === 'EXPENSE').forEach((t: Transaction) => {
       if (!suppliersMap[t.entity]) {
         suppliersMap[t.entity] = { name: t.entity, cat: t.category || 'Geral', count: 0 };
       }
       suppliersMap[t.entity].count += 1;
     });
-    return Object.values(suppliersMap).sort((a, b) => b.count - a.count).slice(0, 3);
+    return Object.values(suppliersMap).sort((a: any, b: any) => b.count - a.count).slice(0, 3);
   }, [transactions]);
 
   const openModal = (type: 'INCOME' | 'EXPENSE', transaction: Transaction | null = null) => {
@@ -168,6 +415,20 @@ const FinanceView: React.FC = () => {
             <p className="text-slate-400 text-base">Gestão de receitas, despesas e fluxo de caixa real</p>
           </div>
           <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-6 py-3 border border-white/10 rounded-xl transition-all text-sm font-bold shadow-lg ${showFilters ? 'bg-indigo-600 text-white' : 'bg-surface-dark text-slate-400 hover:bg-white/5'}`}
+            >
+              <span className="material-symbols-outlined text-[20px]">{showFilters ? 'filter_list_off' : 'filter_list'}</span>
+              <span>Filtros Avançados</span>
+            </button>
+            <button
+              onClick={() => setIsReportModalOpen(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-surface-dark border border-white/10 hover:bg-white/5 text-white rounded-xl transition-all text-sm font-bold shadow-lg"
+            >
+              <span className="material-symbols-outlined text-[20px] text-sky-400">picture_as_pdf</span>
+              <span>Gerar Relatório</span>
+            </button>
             <button
               onClick={() => openModal('EXPENSE')}
               className="flex items-center gap-2 px-6 py-3 bg-surface-dark border border-white/10 hover:bg-white/5 text-white rounded-xl transition-all text-sm font-bold shadow-lg"
@@ -207,6 +468,71 @@ const FinanceView: React.FC = () => {
             </div>
           ))}
         </div>
+
+        {showFilters && (
+          <div className="bg-surface-dark border border-indigo-500/30 rounded-2xl p-6 shadow-2xl animate-in slide-in-from-top-4 duration-300">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data Inicial</label>
+                <input
+                  type="date"
+                  className="bg-background-dark border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-primary"
+                  value={startDate}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data Final</label>
+                <input
+                  type="date"
+                  className="bg-background-dark border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-primary"
+                  value={endDate}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tipo de Lançamento</label>
+                <select
+                  className="bg-background-dark border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-primary"
+                  value={filterType}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterType(e.target.value as any)}
+                >
+                  <option value="ALL">Todos os Tipos</option>
+                  <option value="INCOME">Somente Receitas</option>
+                  <option value="EXPENSE">Somente Despesas</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</label>
+                <select
+                  className="bg-background-dark border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-primary"
+                  value={filterStatus}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value as any)}
+                >
+                  <option value="ALL">Todos os Status</option>
+                  <option value="PAID">Pago / Recebido</option>
+                  <option value="PENDING">Pendente</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/5 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setFilterType('ALL');
+                  setFilterStatus('ALL');
+                  setSearchTerm('');
+                  const start = new Date(selectedYear, selectedMonthIdx, 1);
+                  const end = new Date(selectedYear, selectedMonthIdx + 1, 0);
+                  setStartDate(start.toISOString().split('T')[0]);
+                  setEndDate(end.toISOString().split('T')[0]);
+                }}
+                className="text-xs text-slate-500 hover:text-white font-bold uppercase tracking-wider transition-colors"
+              >
+                Limpar Filtros
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-surface-dark border border-white/5 rounded-2xl p-8 shadow-2xl">
@@ -289,17 +615,29 @@ const FinanceView: React.FC = () => {
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Detalhamento de lançamentos para {activeMonthLabel} / {selectedYear}</p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Search Field */}
+              <div className="relative min-w-[300px]">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
+                <input
+                  type="text"
+                  placeholder="Pesquisar por descrição, entidade ou categoria..."
+                  className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-primary outline-none transition-all placeholder:text-slate-600"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
               <div className="flex items-center gap-2 bg-background-dark p-1 rounded-xl border border-white/5">
                 <button
-                  onClick={() => setSelectedYear(y => y - 1)}
+                  onClick={() => setSelectedYear((y: number) => y - 1)}
                   className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
                 >
                   <span className="material-symbols-outlined text-[18px]">chevron_left</span>
                 </button>
                 <span className="text-sm font-black text-white px-2 italic">{selectedYear}</span>
                 <button
-                  onClick={() => setSelectedYear(y => y + 1)}
+                  onClick={() => setSelectedYear((y: number) => y + 1)}
                   className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
                 >
                   <span className="material-symbols-outlined text-[18px]">chevron_right</span>
@@ -346,7 +684,7 @@ const FinanceView: React.FC = () => {
                     <td colSpan={6} className="px-8 py-20 text-center text-slate-600 italic">Nenhum lançamento encontrado para este período</td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((t: any, idx) => (
+                  filteredTransactions.map((t: Transaction, idx: number) => (
                     <tr key={idx} className="group hover:bg-white/5 transition-all">
                       <td className="px-8 py-5 whitespace-nowrap text-sm text-slate-400 font-medium">
                         {new Date(t.date).toLocaleDateString('pt-BR')}
@@ -387,6 +725,13 @@ const FinanceView: React.FC = () => {
                           >
                             <span className="material-symbols-outlined text-[18px]">edit</span>
                           </button>
+                          <button
+                            onClick={() => handleDuplicateTransaction(t)}
+                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-blue-500/10 text-slate-500 hover:text-blue-400 flex items-center justify-center transition-all border border-white/5 hover:border-blue-500/20"
+                            title="Duplicar Transação"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                          </button>
                           {t.status === 'PENDING' && (
                             <button
                               onClick={() => handleStatusUpdate(t.id, 'PAID')}
@@ -423,6 +768,13 @@ const FinanceView: React.FC = () => {
         onSuccess={() => fetchData()}
         initialType={modalInitialType}
         editingTransaction={editingTransaction}
+      />
+
+      <ReportFilterModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        onGenerate={handleGenerateReport}
+        isLoading={isGeneratingReport}
       />
     </div>
   );
