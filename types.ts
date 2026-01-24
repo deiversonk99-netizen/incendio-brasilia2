@@ -117,6 +117,7 @@ export interface Proposal {
   hide_products_pdf?: boolean;
   status: 'DRAFT' | 'SENT' | 'APPROVED';
   created_at?: string;
+  proposal_number?: number;
 }
 
 export interface BudgetItem {
@@ -126,6 +127,7 @@ export interface BudgetItem {
   quantity_calculated: number;
   quantity_final: number;
   unit_price: number;
+  cost_price?: number;
   origin: 'CALCULATED' | 'MANUAL';
   item_type: 'PRODUCT' | 'SERVICE';
   created_at?: string;

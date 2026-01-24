@@ -70,11 +70,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   const loadPdfSettings = async (projectId: string) => {
     try {
+      // 1. Load project-specific settings
       const { data } = await supabase
         .from('pdf_settings')
         .select('variables')
         .eq('project_id', projectId)
         .eq('phase', 'ENG_C')
+        .single();
+
+      // 2. Load Global User Profile Defaults
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('assinatura, crq, credentials, credentials_img, carimbo, carimbo_img')
+        .eq('user_id', user?.id)
         .single();
 
       if (data) {
@@ -94,22 +102,29 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           hide_product_values: false,
           show_cert_crq: true,
           show_cert_regularity: true,
-          ...data.variables
+          ...data.variables,
+          // Fallback individual fields if they are missing/empty in variables
+          assinatura: data.variables.assinatura || profile?.assinatura || '',
+          crq: data.variables.crq || profile?.crq || '',
+          credentials: data.variables.credentials || profile?.credentials || '',
+          credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
+          carimbo: data.variables.carimbo || profile?.carimbo || '',
+          carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || ''
         });
       } else {
         setPdfSettings({
           show_assinatura: true,
-          assinatura: '',
+          assinatura: profile?.assinatura || '',
           show_crq: true,
-          crq: '',
+          crq: profile?.crq || '',
           show_credentials: true,
-          credentials: '',
-          credentials_img: '',
+          credentials: profile?.credentials || '',
+          credentials_img: profile?.credentials_img || '',
           show_referencias: true,
           referencias: '',
           show_carimbo: true,
-          carimbo: '',
-          carimbo_img: '',
+          carimbo: profile?.carimbo || '',
+          carimbo_img: profile?.carimbo_img || '',
           validade: '10',
           show_cost: true,
           show_cost_column: false,
@@ -117,11 +132,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_bdi: true,
           show_profit: true,
           show_discount: true,
-
           show_total: true,
           visible_manual_items: [],
           hide_product_values: false,
-
           show_cert_crq: true,
           show_cert_regularity: true,
           cert_crq_file: null,
@@ -265,9 +278,66 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     }
   }, [selectedProjectId]);
 
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Auto-recalculate prices when BDI or Profit changes
+  useEffect(() => {
+    if (!budgetItems.length) return;
+
+    // We only auto-recalculate if explicitly enabled or if standard behavior
+    // User requested: "must recalculate automatically"
+    const bdiPct = Number(proposal.bdi_percent) || 0;
+    const profitPct = Number(proposal.profit_percent) || 0;
+    const bdiFactor = 1 + (bdiPct / 100);
+    const profitFactor = 1 + (profitPct / 100);
+
+    setBudgetItems(prev => prev.map(item => {
+      // Only recalculate if we have a valid cost price. 
+      // If it's a service/manual item without strict cost, we might want to keep it or apply differently?
+      // Requirement: "Custo Unitário deve vir do banco... Venda Unitário ... recalcular automaticamente"
+      // Usually applies to items where we start from Cost.
+      if (item.item_type !== 'SERVICE' && item.cost_price > 0) {
+        return {
+          ...item,
+          unit_price: item.cost_price * bdiFactor * profitFactor
+        };
+      }
+      return item;
+    }));
+  }, [proposal.bdi_percent, proposal.profit_percent]);
+
   const fetchProjects = async () => {
     const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
     if (data) setProjects(data);
+  };
+
+  const filteredProjects = projects.filter(p =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.client && p.client.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  const handleDuplicateProposal = async (project: Project) => {
+    const newName = prompt('Nome para a cópia do projeto:', `${project.name} (Cópia)`);
+    if (!newName) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('clone_project_data', {
+        source_project_id: project.id,
+        new_name: newName
+      });
+
+      if (error) throw error;
+
+      alert('Projeto e proposta duplicados com sucesso!');
+      await fetchProjects();
+      if (data) onSelectProject(data); // Select the new project
+    } catch (e: any) {
+      console.error('Error duplicating:', e);
+      alert('Erro ao duplicar: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteProject = async () => {
@@ -316,7 +386,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       .eq('project_id', projectId);
 
     if (budgetItemsData) setBudgetItems(budgetItemsData);
-    const totalCost = budgetItemsData?.reduce((acc, item) => acc + (item.quantity_final * item.unit_price), 0) || 0;
+
+    // Correct totalCost to use COST_PRICE for base material cost
+    // Requirement: "Custo Unitário deve vir do banco" -> Base Cost for BDI calculation.
+    const totalCost = budgetItemsData?.reduce((acc, item) => {
+      // Exclude Services from Material Base Cost
+      if (item.item_type === 'SERVICE') return acc;
+      return acc + (item.quantity_final * (item.cost_price || 0));
+    }, 0) || 0;
 
     // 2. Fetch Existing Proposal
     const { data: existingProposal } = await supabase
@@ -328,17 +405,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     if (existingProposal) {
       setProposal({
         ...existingProposal,
-        cost_material_base: totalCost,
+        cost_material_base: totalCost, // Always refresh cost base from items
         hide_services_pdf: existingProposal.hide_services_pdf ?? false,
-        hide_products_pdf: existingProposal.hide_products_pdf ?? false
-      }); // Ensure cost is updated from Phase B always
+        hide_products_pdf: existingProposal.hide_products_pdf ?? false,
+        proposal_number: existingProposal.proposal_number // Load number
+      });
     } else {
       setProposal(prev => ({
         ...prev,
         project_id: projectId,
         cost_material_base: totalCost,
         hide_services_pdf: false,
-        hide_products_pdf: false
+        hide_products_pdf: false,
+        proposal_number: undefined
       }));
     }
 
@@ -346,41 +425,64 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   };
 
   const calculateValues = () => {
-    // Separate Items
-    const products = budgetItems.filter(i => i.item_type !== 'SERVICE');
-    const services = budgetItems.filter(i => i.item_type === 'SERVICE');
+    const bdiPctNum = Number(proposal.bdi_percent) || 0;
+    const profitPctNum = Number(proposal.profit_percent) || 0;
 
-    // Cost base for markups
-    const productsCostBase = products.reduce((acc, i) => acc + (i.quantity_final * (i.cost_price || 0)), 0);
-    const servicesTotal = services.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+    // Factors for calculations
+    const bdiFactor = 1 + (bdiPctNum / 100);
+    const profitFactor = 1 + (profitPctNum / 100);
+    const combinedFactor = bdiFactor * profitFactor;
 
-    const bdiPct = Number(proposal.bdi_percent) || 0;
-    const profitPct = Number(proposal.profit_percent) || 0;
+    let productsCostTotal = 0;
+    let servicesCostTotal = 0;
+    let bdiTotal = 0;
+    let profitTotal = 0;
 
-    // Apply BDI/Profit on COST BASE
-    const subtotal = productsCostBase * (1 + (bdiPct / 100));
-    const productsWithMarkup = subtotal * (1 + (profitPct / 100));
+    budgetItems.forEach(item => {
+      const q = Number(item.quantity_final || 0);
+      const sale = Number(item.unit_price || 0);
+      let cost = Number(item.cost_price || 0);
 
-    // The real total is based on unit_price (venda) in case of manual edits
-    const productsTotalVenda = products.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
-    const preDiscountTotal = productsTotalVenda + servicesTotal;
+      // Reverse calculate cost base if missing but sale price exists
+      if (cost <= 0 && sale > 0) {
+        cost = sale / (combinedFactor || 1);
+      }
+
+      const totalLineCost = cost * q;
+      const totalLineVenda = sale * q;
+
+      if (item.item_type === 'SERVICE') {
+        servicesCostTotal += totalLineCost;
+      } else {
+        productsCostTotal += totalLineCost;
+      }
+
+      // Proportional slices for this specific row
+      // BDI slice: Cost -> Cost * BDI_Factor
+      const lineBdi = (totalLineCost * bdiFactor) - totalLineCost;
+      // Profit slice: (Cost * BDI_Factor) -> (Cost * BDI_Factor * Profit_Factor)
+      const lineProfit = (totalLineCost * bdiFactor * profitFactor) - (totalLineCost * bdiFactor);
+
+      bdiTotal += lineBdi;
+      profitTotal += lineProfit;
+    });
+
+    const totalVendaGlobal = budgetItems.reduce((acc, i) => acc + (Number(i.quantity_final || 0) * Number(i.unit_price || 0)), 0);
 
     let discountVal = 0;
     if (proposal.discount_type === 'FIXED') {
       discountVal = Number(proposal.discount_value) || 0;
     } else {
-      discountVal = preDiscountTotal * ((Number(proposal.discount_value) || 0) / 100);
+      discountVal = totalVendaGlobal * ((Number(proposal.discount_value) || 0) / 100);
     }
 
-    const final = preDiscountTotal - discountVal;
-
     return {
-      productsBase: productsCostBase, // Use cost as base for the summary
-      servicesTotal,
-      bdiVal: subtotal - productsCostBase,
-      profitVal: productsWithMarkup - subtotal,
+      productsBase: productsCostTotal,
+      servicesTotal: servicesCostTotal,
+      bdiVal: bdiTotal,
+      profitVal: profitTotal,
       discountVal,
-      final
+      final: totalVendaGlobal - discountVal
     };
   };
 
@@ -395,8 +497,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const profitFactor = 1 + (profitPct / 100);
 
     const updatedItems = budgetItems.map(item => {
-      if (item.item_type !== 'SERVICE') {
-        const cost = Number(item.cost_price || 0);
+      const cost = Number(item.cost_price || 0);
+      if (cost > 0) {
         const newUnitPrice = cost * bdiFactor * profitFactor;
         return { ...item, unit_price: newUnitPrice };
       }
@@ -565,6 +667,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.setFont('helvetica', 'bold');
         doc.text(title.toUpperCase(), 20, 52);
 
+        // Proposal Number
+        if (proposal.proposal_number) {
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(100);
+          doc.text(`Proposta Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, pageWidth - 20, 52, { align: 'right' });
+        }
+
         // Red accent line below title
         doc.setDrawColor(239, 68, 68);
         doc.setLineWidth(1);
@@ -594,6 +704,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(200, 200, 200);
       doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 115);
+
+      if (proposal.proposal_number) {
+        doc.setFontSize(18);
+        doc.setTextColor(239, 68, 68);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, 20, 130);
+      }
 
       doc.setFillColor(239, 68, 68); // Red Accent
       doc.rect(0, 140, pageWidth * 0.4, 2, 'F');
@@ -625,21 +742,30 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text(`Validade: ${proposal.validity_days || 10} dias`, pageWidth - 20, pageHeight - 20, { align: 'right' });
 
       // --- PAGE 2: SCOPE & OBJECTIVE (Dynamic) ---
-      // We show this page if:
-      // A. We have dynamic sections
-      // OR
-      // B. We are NOT hiding product values (Standard Mode)
-      // OR
-      // C. We ARE hiding product values BUT have observations (Old Mode)
-
       const hasDynamicSections = sections.some(s => s.is_active);
       const showStandardScope = !pdfSettings.hide_product_values;
 
-      if (hasDynamicSections || showStandardScope) {
+      if (hasDynamicSections || showStandardScope || pdfSettings.scope_img) {
         doc.addPage();
         drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
 
         let yPos = 70;
+
+        // Render Scope Image if present
+        if (pdfSettings.scope_img) {
+          try {
+            // Determine image dimensions to fit within margins
+            // Use 16:9 ratio or actual aspect ratio if possible, but jsPDF addImage handles scaling if we give strict bounds?
+            // Let's force full width - 40px
+            const imgWidth = pageWidth - 40;
+            const imgHeight = imgWidth * 0.5625; // 16:9 approx
+
+            doc.addImage(pdfSettings.scope_img, 'PNG', 20, yPos, imgWidth, imgHeight);
+            yPos += imgHeight + 10;
+          } catch (e) {
+            console.error('Error adding scope image to PDF:', e);
+          }
+        }
 
         if (hasDynamicSections) {
           // Render Dynamic Sections
@@ -754,15 +880,18 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       });
 
       const tableBody: any[] = [];
+      let majorIndex = 0;
 
       // Add Central Items
       if (centralItems.length > 0) {
+        majorIndex++;
         let colSpan = 2;
         if (pdfSettings.show_cost) colSpan += 2;
         if (pdfSettings.show_cost_column) colSpan += 2;
-        tableBody.push([{ content: 'ITENS DE COTAÇÃO CENTRAL', colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
-        centralItems.forEach(item => {
-          const row = [item.name || 'Item', item.quantity_final || 0];
+        tableBody.push([{ content: `${majorIndex}. ITENS DE COTAÇÃO CENTRAL`, colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+
+        centralItems.forEach((item, idx) => {
+          const row = [`${majorIndex}.${idx + 1} ${item.name || 'Item'}`, item.quantity_final || 0];
           if (pdfSettings.show_cost_column) {
             row.push(`R$ ${Number(item.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
             row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.cost_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -796,6 +925,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
           if (visibleItems.length === 0) return;
 
+          majorIndex++;
           const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
 
           // Header for Model
@@ -804,13 +934,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           if (pdfSettings.show_cost_column) colSpan += 2;
 
           tableBody.push([{
-            content: `MODELO DE SERVIÇO: ${modelName.toUpperCase()} ${pdfSettings.show_cost ? `(Total: R$ ${modelTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}`,
+            content: `${majorIndex}. MODELO DE SERVIÇO: ${modelName.toUpperCase()} ${pdfSettings.show_cost ? `(Total: R$ ${modelTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}`,
             colSpan: colSpan,
             styles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold' }
           }]);
 
-          visibleItems.forEach(item => {
-            const row = [item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name, item.quantity_final || 0];
+          visibleItems.forEach((item, idx) => {
+            const cleanName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
+            const row = [`${majorIndex}.${idx + 1} ${cleanName}`, item.quantity_final || 0];
+
+            if (pdfSettings.show_cost_column) {
+              row.push(`R$ ${Number(item.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+              row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.cost_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+            }
 
             if (pdfSettings.show_cost) {
               row.push(`R$ ${Number(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -831,13 +967,20 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         }, {} as Record<string, any[]>);
 
         (Object.entries(grouped) as [string, any[]][]).forEach(([kitName, kitItems]) => {
+          // Filter logic for Infra? Usually just checks if products hidden.
+          // Assuming infraItems already filtered in outer scope? No, filtering happens inside.
+          // Block from lines 807 already filtered: if (proposal.hide_products_pdf) return false;
+          // So infraItems are visible.
+
+          majorIndex++;
           let colSpan = 2;
           if (pdfSettings.show_cost) colSpan += 2;
           if (pdfSettings.show_cost_column) colSpan += 2;
-          tableBody.push([{ content: `INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: colSpan, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
-          kitItems.forEach(item => {
+          tableBody.push([{ content: `${majorIndex}. INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: colSpan, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
+
+          kitItems.forEach((item, idx) => {
             const cleanName = item.name.includes('[INFRA:') ? item.name.split('[INFRA:')[0].trim() : item.name;
-            const row = [cleanName, item.quantity_final || 0];
+            const row = [`${majorIndex}.${idx + 1} ${cleanName}`, item.quantity_final || 0];
             if (pdfSettings.show_cost_column) {
               row.push(`R$ ${Number(item.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
               row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.cost_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -1197,6 +1340,33 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     <p className="text-[10px] text-slate-500">Este nome aparecerá no cabeçalho e capa do PDF da Proposta Comercial.</p>
                   </div>
 
+                  <div className="lg:col-span-3 flex flex-col gap-3 pb-2 border-b border-white/5">
+                    <label className="text-xs font-bold text-primary uppercase tracking-wider">Imagem de Escopo / Projeto (Capa)</label>
+                    <div className="flex gap-4 items-center">
+                      <div className="flex-1">
+                        <label className="flex flex-col items-center justify-center w-full h-16 border border-white/10 border-dashed rounded-lg cursor-pointer hover:bg-white/5 transition-colors">
+                          <div className="flex items-center gap-2 text-slate-400">
+                            <span className="material-symbols-outlined text-[20px]">add_photo_alternate</span>
+                            <span className="text-xs font-bold uppercase">Selecionar Imagem</span>
+                          </div>
+                          <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload('scope_img', e.target.files[0])} />
+                        </label>
+                      </div>
+                      {pdfSettings.scope_img && (
+                        <div className="relative group">
+                          <img src={pdfSettings.scope_img} alt="Escopo" className="h-16 rounded border border-white/10" />
+                          <button
+                            onClick={() => savePdfSettings({ ...pdfSettings, scope_img: '' })}
+                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">close</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500">Esta imagem será exibida em destaque na página de escopo ou capa.</p>
+                  </div>
+
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-400 uppercase">Responsável / Assinatura</label>
@@ -1481,55 +1651,82 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
           {/* Project Selection */}
           <div className="bg-surface-dark p-6 rounded-xl border border-white/5 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-end gap-4">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-slate-400 mb-2">Selecione o Projeto para Proposta</label>
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => onSelectProject(e.target.value)}
-                  className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                >
-                  <option value="">Selecione...</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2 h-11 shrink-0">
-                {selectedProjectId && (
-                  <>
-                    <button
-                      onClick={() => {
-                        const project = projects.find(p => p.id === selectedProjectId);
-                        if (project) {
-                          setProjectToEdit(project);
-                          setIsNewProjectModalOpen(true);
-                        }
-                      }}
-                      className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all"
-                      title="Editar Projeto"
-                    >
-                      <span className="material-symbols-outlined text-[20px]">edit</span>
-                    </button>
-                    <button
-                      onClick={handleDeleteProject}
-                      className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all"
-                      title="Excluir Projeto"
-                    >
-                      <span className="material-symbols-outlined text-[20px]">delete</span>
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => {
-                    setProjectToEdit(null);
-                    setIsNewProjectModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium"
-                >
-                  <span className="material-symbols-outlined text-[20px] text-primary">add</span>
-                  Novo Projeto
-                </button>
+            <div className="flex flex-col gap-4">
+              <label className="block text-sm font-medium text-slate-400">Selecione o Projeto para Proposta</label>
+
+              <div className="flex flex-col md:flex-row md:items-end gap-4">
+                <div className="flex-1 flex flex-col gap-2">
+                  {/* Search Input */}
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[18px]">search</span>
+                    <input
+                      type="text"
+                      placeholder="Buscar projeto por nome ou cliente..."
+                      className="w-full bg-background-dark border border-white/10 rounded-lg pl-10 pr-4 py-2 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-sm"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+
+                  <select
+                    value={selectedProjectId}
+                    onChange={(e) => onSelectProject(e.target.value)}
+                    className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                  >
+                    <option value="">Selecione...</option>
+                    {filteredProjects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 h-11 shrink-0">
+                  {selectedProjectId && (
+                    <>
+                      <button
+                        onClick={() => {
+                          const project = projects.find(p => p.id === selectedProjectId);
+                          if (project) handleDuplicateProposal(project);
+                        }}
+                        className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all"
+                        title="Duplicar Projeto e Proposta"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">content_copy</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const project = projects.find(p => p.id === selectedProjectId);
+                          if (project) {
+                            setProjectToEdit(project);
+                            setIsNewProjectModalOpen(true);
+                          }
+                        }}
+                        className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                        title="Editar Projeto"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">edit</span>
+                      </button>
+                      <button
+                        onClick={handleDeleteProject}
+                        className="flex items-center justify-center w-11 h-11 rounded-lg bg-surface-dark border border-white/10 text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all"
+                        title="Excluir Projeto"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => {
+                      setProjectToEdit(null);
+                      setIsNewProjectModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 h-11 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all text-sm font-medium"
+                  >
+                    <span className="material-symbols-outlined text-[20px] text-primary">add</span>
+                    Novo Projeto
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1655,588 +1852,633 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
               </div>
 
 
-          {/* Items Table */}
-          <div className="bg-surface-dark border border-white/5 rounded-xl overflow-hidden shadow-sm">
-            <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-black/10">
-              <h3 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
-                <span className="material-symbols-outlined text-primary text-[20px]">list_alt</span>
-                Itens da Proposta
-              </h3>
-              <span className="text-[10px] text-slate-500 font-bold uppercase">{budgetItems.length} Itens</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-white/5 text-slate-400 font-medium uppercase text-[10px] tracking-wider">
-                  <tr>
-                    <th className="px-6 py-3">Descrição</th>
-                    <th className="px-6 py-3 text-center">Qtd</th>
-                    <th className="px-6 py-3 w-44">Custo Unit.</th>
-                    <th className="px-6 py-3 w-44">Venda Unit.</th>
-                    <th className="px-6 py-3 text-right">Total Venda</th>
-                    <th className="px-6 py-3 w-16"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {budgetItems.map(item => (
-                    <tr key={item.id} className="hover:bg-white/5 transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            {/* Icon indicating type */}
-                            {item.item_type === 'SERVICE' ? (
-                              <span className="material-symbols-outlined text-indigo-400">construction</span>
-                            ) : (
-                              <span className="material-symbols-outlined text-emerald-400">inventory_2</span>
-                            )}
-                            <button
-                              onClick={() => handleUpdateItem(item.id, { item_type: item.item_type === 'SERVICE' ? 'PRODUCT' : 'SERVICE' })}
-                              className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all shadow-sm ${item.item_type === 'SERVICE'
-                                ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/40 border border-indigo-500/30'
-                                : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40 border border-emerald-500/30'
-                                }`}
-                              title="Clique para alternar entre Produto e Serviço"
-                            >
-                              {item.item_type === 'SERVICE' ? 'Serviço' : 'Produto'}
-                            </button>
-                            <input
-                              type="text"
-                              className="bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5"
-                              value={item.name}
-                              onChange={(e) => handleUpdateItem(item.id, { name: e.target.value })}
-                            />
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
-                            {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-center">
-                          <input
-                            type="number"
-                            className="w-16 bg-background-dark border border-white/10 rounded px-2 py-1 text-white text-center font-bold text-xs outline-none focus:border-primary"
-                            value={item.quantity_final}
-                            onChange={(e) => handleUpdateItem(item.id, { quantity_final: Number(e.target.value) })}
-                          />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1 bg-background-dark/50 border border-white/5 rounded px-2 py-1.5 focus-within:border-primary/50 transition-colors">
-                          <span className="text-rose-500/60 text-[10px] font-bold">R$</span>
-                          <input
-                            type="number"
-                            className="w-full bg-transparent text-slate-400 outline-none text-right font-mono text-xs"
-                            value={item.cost_price || 0}
-                            onChange={(e) => { handleUpdateItem(item.id, { cost_price: Number(e.target.value) }); calculateValues(); }}
-                            step="any"
-                          />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1 bg-background-dark border border-white/10 rounded px-2 py-1.5 focus-within:border-primary transition-colors">
-                          <span className="text-slate-500 text-xs">R$</span>
-                          <input
-                            type="number"
-                            className="w-full bg-transparent text-white outline-none text-right font-mono text-xs font-bold"
-                            value={item.unit_price}
-                            onChange={(e) => handleUpdateItem(item.id, { unit_price: Number(e.target.value) })}
-                            step="any"
-                          />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right text-white font-bold">R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                          <button
-                            onClick={() => {
-                              setItemToReplace(item);
-                              setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price });
-                              setModalTab(item.item_type === 'SERVICE' ? 'service' : 'product');
-                              setModalSearchTerm('');
-                              setShowSearchList(false);
-                              setIsAddItemModalOpen(true);
-                            }}
-                            className="p-1.5 hover:bg-primary/10 rounded-lg text-primary"
-                            title="Substituir por Item do Catálogo"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
-                          </button>
-                          <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 hover:bg-rose-500/10 rounded-lg text-rose-500">
-                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {budgetItems.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-slate-500 italic">
-                        Nenhum item na proposta. Adicione itens acima ou finalize a composição na Fase B.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+              {/* Items Table */}
+              <div className="bg-surface-dark border border-white/5 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-black/10">
+                  <h3 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
+                    <span className="material-symbols-outlined text-primary text-[20px]">list_alt</span>
+                    Itens da Proposta
+                  </h3>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase">{budgetItems.length} Itens</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white/5 text-slate-400 font-medium uppercase text-[10px] tracking-wider">
+                      <tr>
+                        <th className="px-6 py-3">Descrição</th>
+                        <th className="px-6 py-3 text-center">Qtd</th>
+                        <th className="px-6 py-3 w-44">Custo Unit.</th>
+                        <th className="px-6 py-3 w-44">Venda Unit.</th>
+                        <th className="px-6 py-3 text-right">Total Venda</th>
+                        <th className="px-6 py-3 text-right text-indigo-400">BDI (Est.)</th>
+                        <th className="px-6 py-3 text-right text-emerald-400">Lucro (Est.)</th>
+                        <th className="px-6 py-3 w-16"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {budgetItems.map(item => {
+                        const bdiPctVal = Number(proposal.bdi_percent || 0) / 100;
+                        const profitPctVal = Number(proposal.profit_percent || 0) / 100;
+                        const bdiFact = 1 + bdiPctVal;
+                        const profitFact = 1 + profitPctVal;
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-              <div className="bg-surface-dark border border-white/5 rounded-xl p-6 mb-8">
-                <ProposalSections
-                  projectId={selectedProjectId}
-                  sections={sections}
-                  onUpdate={() => fetchSections(selectedProjectId)}
-                />
+                        // Calculate informative BDI and Profit values
+                        let costBase = Number(item.cost_price || 0);
+                        if (costBase <= 0 && Number(item.unit_price) > 0) {
+                          costBase = Number(item.unit_price) / (bdiFact * profitFact);
+                        }
+
+                        const qty = Number(item.quantity_final || 0);
+                        const bdiValUnit = costBase * bdiPctVal;
+                        const profitValUnit = (costBase + bdiValUnit) * profitPctVal;
+
+                        const bdiTotalLine = bdiValUnit * qty;
+                        const profitTotalLine = profitValUnit * qty;
+
+                        return (
+                          <tr key={item.id} className="hover:bg-white/5 transition-colors group">
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  {/* Icon indicating type */}
+                                  {item.item_type === 'SERVICE' ? (
+                                    <span className="material-symbols-outlined text-indigo-400">construction</span>
+                                  ) : (
+                                    <span className="material-symbols-outlined text-emerald-400">inventory_2</span>
+                                  )}
+                                  <button
+                                    onClick={() => handleUpdateItem(item.id, { item_type: item.item_type === 'SERVICE' ? 'PRODUCT' : 'SERVICE' })}
+                                    className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all shadow-sm ${item.item_type === 'SERVICE'
+                                      ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/40 border border-indigo-500/30'
+                                      : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40 border border-emerald-500/30'
+                                      }`}
+                                    title="Clique para alternar entre Produto e Serviço"
+                                  >
+                                    {item.item_type === 'SERVICE' ? 'Serviço' : 'Produto'}
+                                  </button>
+                                  <input
+                                    type="text"
+                                    className="bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5"
+                                    value={item.name}
+                                    onChange={(e) => handleUpdateItem(item.id, { name: e.target.value })}
+                                  />
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
+                                  {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex justify-center">
+                                <input
+                                  type="number"
+                                  className="w-16 bg-background-dark border border-white/10 rounded px-2 py-1 text-white text-center font-bold text-xs outline-none focus:border-primary"
+                                  value={item.quantity_final}
+                                  onChange={(e) => handleUpdateItem(item.id, { quantity_final: Number(e.target.value) })}
+                                />
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className={`flex items-center gap-1 bg-background-dark/30 border border-white/5 rounded px-2 py-1.5 transition-colors ${item.origin === 'MANUAL' ? 'focus-within:border-rose-500/30' : ''}`}>
+                                <span className={`text-[10px] font-bold ${item.origin === 'MANUAL' ? 'text-rose-500' : 'text-rose-500/60'}`}>R$</span>
+                                <input
+                                  type="number"
+                                  className={`w-full bg-transparent outline-none text-right font-mono text-xs ${item.origin === 'MANUAL' ? 'text-white' : 'text-slate-500 cursor-not-allowed'}`}
+                                  value={item.cost_price || 0}
+                                  onChange={(e) => {
+                                    if (item.origin === 'MANUAL') {
+                                      handleUpdateItem(item.id, { cost_price: Number(e.target.value) });
+                                    }
+                                  }}
+                                  readOnly={item.origin !== 'MANUAL'}
+                                  disabled={item.origin !== 'MANUAL'}
+                                  step="any"
+                                />
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-1 bg-background-dark border border-white/10 rounded px-2 py-1.5 focus-within:border-primary transition-colors">
+                                <span className="text-slate-500 text-xs">R$</span>
+                                <input
+                                  type="number"
+                                  className="w-full bg-transparent text-white outline-none text-right font-mono text-xs font-bold"
+                                  value={item.unit_price}
+                                  onChange={(e) => handleUpdateItem(item.id, { unit_price: Number(e.target.value) })}
+                                  step="any"
+                                />
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-right text-white font-bold">R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+
+                            {/* Informative Columns */}
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex flex-col items-end">
+                                <span className="text-xs font-mono text-indigo-400">R$ {bdiTotalLine.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-[9px] text-slate-600 font-bold uppercase">Total BDI</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex flex-col items-end">
+                                <span className="text-xs font-mono text-emerald-400">R$ {profitTotalLine.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-[9px] text-slate-600 font-bold uppercase">Total Lucro</span>
+                              </div>
+                            </td>
+
+                            <td className="px-6 py-4 text-right">
+
+                              <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                <button
+                                  onClick={() => {
+                                    setItemToReplace(item);
+                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price });
+                                    setModalTab(item.item_type === 'SERVICE' ? 'service' : 'product');
+                                    setModalSearchTerm('');
+                                    setShowSearchList(false);
+                                    setIsAddItemModalOpen(true);
+                                  }}
+                                  className="p-1.5 hover:bg-primary/10 rounded-lg text-primary"
+                                  title="Substituir por Item do Catálogo"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                                </button>
+                                <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 hover:bg-rose-500/10 rounded-lg text-rose-500">
+                                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {budgetItems.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-12 text-center text-slate-500 italic">
+                            Nenhum item na proposta. Adicione itens acima ou finalize a composição na Fase B.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              <div className="bg-surface-dark border border-white/5 rounded-xl p-6">
-                <h3 className="text-white text-lg font-bold mb-6 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-slate-400">gavel</span>
-                  Termos e Condições
-                </h3>
-                <div className="space-y-6">
-                  {/* Discount Section */}
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-background-dark/50 rounded-lg border border-white/5 border-l-4 border-l-red-500/50">
-                    <div>
-                      <label className="text-slate-400 text-xs font-bold uppercase block mb-2">Tipo Desconto</label>
-                      <select
-                        className="w-full bg-background-dark border border-white/10 rounded-lg py-2 px-3 text-white text-sm"
-                        value={proposal.discount_type}
-                        onChange={e => setProposal({ ...proposal, discount_type: e.target.value as any })}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2">
+                  <div className="bg-surface-dark border border-white/5 rounded-xl p-6 mb-8">
+                    <ProposalSections
+                      projectId={selectedProjectId}
+                      sections={sections}
+                      onUpdate={() => fetchSections(selectedProjectId)}
+                    />
+                  </div>
+
+                  <div className="bg-surface-dark border border-white/5 rounded-xl p-6">
+                    <h3 className="text-white text-lg font-bold mb-6 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-slate-400">gavel</span>
+                      Termos e Condições
+                    </h3>
+                    <div className="space-y-6">
+                      {/* Discount Section */}
+                      <div className="grid grid-cols-2 gap-4 p-4 bg-background-dark/50 rounded-lg border border-white/5 border-l-4 border-l-red-500/50">
+                        <div>
+                          <label className="text-slate-400 text-xs font-bold uppercase block mb-2">Tipo Desconto</label>
+                          <select
+                            className="w-full bg-background-dark border border-white/10 rounded-lg py-2 px-3 text-white text-sm"
+                            value={proposal.discount_type}
+                            onChange={e => setProposal({ ...proposal, discount_type: e.target.value as any })}
+                          >
+                            <option value="FIXED">Valor Fixo (R$)</option>
+                            <option value="PERCENTAGE">Percentual (%)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-slate-400 text-xs font-bold uppercase block mb-2">Valor Desconto</label>
+                          <input
+                            type="number"
+                            className="w-full bg-background-dark border border-white/10 rounded-lg py-2 px-3 text-white text-sm"
+                            value={proposal.discount_value}
+                            onChange={e => setProposal({ ...proposal, discount_value: Number(e.target.value) })}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-slate-400 text-sm font-medium block mb-3">Opções de Exibição (PDF)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <label className="flex items-center gap-3 cursor-pointer group bg-background-dark/50 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all">
+                            <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${proposal.hide_products_pdf ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                              {proposal.hide_products_pdf && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                            </div>
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={proposal.hide_products_pdf || false}
+                              onChange={e => handleHideProductsToggle(e.target.checked)}
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-white">Ocultar Produtos</span>
+                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Não listar materiais</span>
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-3 cursor-pointer group bg-background-dark/50 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all">
+                            <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${proposal.hide_services_pdf ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                              {proposal.hide_services_pdf && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                            </div>
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={proposal.hide_services_pdf || false}
+                              onChange={e => setProposal({ ...proposal, hide_services_pdf: e.target.checked })}
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-white">Ocultar Serviços</span>
+                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Não listar mão de obra</span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* New Option: Hide Values / Scope Correlation */}
+                      <div className="bg-background-dark/30 p-4 rounded-lg border border-white/5 mt-4">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${pdfSettings.hide_product_values ? 'bg-indigo-500 border-indigo-500' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                            {pdfSettings.hide_product_values && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                          </div>
+                          <input
+                            type="checkbox"
+                            className="hidden"
+                            checked={pdfSettings.hide_product_values || false}
+                            onChange={e => savePdfSettings({ ...pdfSettings, hide_product_values: e.target.checked })}
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-white">Ocultar Valores (Somente Texto)</span>
+                            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Remove preços e correlaciona escopo abaixo dos itens</span>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div>
+                        <label className="text-slate-400 text-sm font-medium block mb-2">Condições de Pagamento</label>
+                        <select
+                          className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
+                          value={proposal.payment_conditions}
+                          onChange={e => setProposal({ ...proposal, payment_conditions: e.target.value })}
+                        >
+                          <option value="">Selecione...</option>
+                          {paymentMethods.map(method => (
+                            <option key={method.id} value={method.label}>{method.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-6">
+                        <div>
+                          <label className="text-slate-400 text-sm font-medium block mb-2">Cronograma Estimado</label>
+                          <select
+                            className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
+                            value={proposal.execution_schedule}
+                            onChange={e => setProposal({ ...proposal, execution_schedule: e.target.value })}
+                          >
+                            <option value="">Selecione...</option>
+                            {executionSchedules.map(schedule => (
+                              <option key={schedule.id} value={schedule.label}>{schedule.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-slate-400 text-sm font-medium block mb-2">Validade (Dias)</label>
+                          <select
+                            className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
+                            value={proposal.validity_days}
+                            onChange={e => setProposal({ ...proposal, validity_days: Number(e.target.value) })}
+                          >
+                            <option value={5}>05 dias</option>
+                            <option value={10}>10 dias</option>
+                            <option value={15}>15 dias</option>
+                            <option value={20}>20 dias</option>
+                            <option value={30}>30 dias</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-slate-400 text-sm font-medium block mb-2">Observações / Escopo</label>
+                        <textarea
+                          className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white h-24 focus:border-primary outline-none transition-colors"
+                          placeholder="Detalhes adicionais..."
+                          value={proposal.observations || ''}
+                          onChange={e => setProposal({ ...proposal, observations: e.target.value })}
+                        ></textarea>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2"
+                  >
+                    <span className="material-symbols-outlined">save</span>
+                    {saving ? 'Salvando...' : 'Salvar Proposta'}
+                  </button>
+
+                  <div className="bg-surface-dark border border-white/5 rounded-xl p-6 shadow-lg">
+                    <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center mb-4">
+                      <span className="material-symbols-outlined text-primary text-2xl">picture_as_pdf</span>
+                    </div>
+                    <h3 className="text-white font-bold">Proposta Formal</h3>
+                    <p className="text-slate-400 text-sm mt-1 mb-4">Gera documento A4 completo com capa e termos técnicos.</p>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={() => generatePDF('preview')}
+                        className="w-full bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-lg border border-white/10 transition-all flex items-center justify-center gap-2"
                       >
-                        <option value="FIXED">Valor Fixo (R$)</option>
-                        <option value="PERCENTAGE">Percentual (%)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-slate-400 text-xs font-bold uppercase block mb-2">Valor Desconto</label>
-                      <input
-                        type="number"
-                        className="w-full bg-background-dark border border-white/10 rounded-lg py-2 px-3 text-white text-sm"
-                        value={proposal.discount_value}
-                        onChange={e => setProposal({ ...proposal, discount_value: Number(e.target.value) })}
-                      />
+                        <span className="material-symbols-outlined text-[20px]">visibility</span>
+                        Visualizar PDF
+                      </button>
+                      <button
+                        onClick={() => generatePDF('download')}
+                        className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-lg shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">download</span>
+                        Baixar PDF
+                      </button>
                     </div>
                   </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </main >
 
-                  <div>
-                    <label className="text-slate-400 text-sm font-medium block mb-3">Opções de Exibição (PDF)</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <label className="flex items-center gap-3 cursor-pointer group bg-background-dark/50 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all">
-                        <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${proposal.hide_products_pdf ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
-                          {proposal.hide_products_pdf && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
-                        </div>
-                        <input
-                          type="checkbox"
-                          className="hidden"
-                          checked={proposal.hide_products_pdf || false}
-                          onChange={e => handleHideProductsToggle(e.target.checked)}
-                        />
-                        <div className="flex flex-col">
-                          <span className="text-sm font-bold text-white">Ocultar Produtos</span>
-                          <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Não listar materiais</span>
-                        </div>
-                      </label>
-                      <label className="flex items-center gap-3 cursor-pointer group bg-background-dark/50 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all">
-                        <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${proposal.hide_services_pdf ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
-                          {proposal.hide_services_pdf && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
-                        </div>
-                        <input
-                          type="checkbox"
-                          className="hidden"
-                          checked={proposal.hide_services_pdf || false}
-                          onChange={e => setProposal({ ...proposal, hide_services_pdf: e.target.checked })}
-                        />
-                        <div className="flex flex-col">
-                          <span className="text-sm font-bold text-white">Ocultar Serviços</span>
-                          <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Não listar mão de obra</span>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
+      {/* Modal for Selecting Visibility of Custom Items */}
+      {
+        showVisibilityModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="bg-surface-dark border border-white/10 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+              <div className="p-6 border-b border-white/10">
+                <h3 className="text-xl font-bold text-white mb-2">Exibição de Itens Personalizados</h3>
+                <p className="text-sm text-slate-400">
+                  Você optou por <strong>Ocultar Produtos</strong>. Selecione quais destes itens manuais ou serviços você gostaria de <strong>MANTER VISÍVEIS</strong> no PDF.
+                </p>
+              </div>
 
-                  {/* New Option: Hide Values / Scope Correlation */}
-                  <div className="bg-background-dark/30 p-4 rounded-lg border border-white/5 mt-4">
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${pdfSettings.hide_product_values ? 'bg-indigo-500 border-indigo-500' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
-                        {pdfSettings.hide_product_values && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+              <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2">
+                {candidateItems.map((item, idx) => {
+                  const isSelected = tempVisibleItems.includes(item.name);
+                  return (
+                    <label key={idx} className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${isSelected ? 'bg-primary/20 border-primary' : 'bg-background-dark border-white/10 hover:border-white/20'}`}>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-white">{item.name}</span>
+                        <span className="text-xs text-slate-400">
+                          {item.origin === 'MANUAL' ? 'Item Manual' : 'Serviço Calculado'}
+                        </span>
                       </div>
                       <input
                         type="checkbox"
-                        className="hidden"
-                        checked={pdfSettings.hide_product_values || false}
-                        onChange={e => savePdfSettings({ ...pdfSettings, hide_product_values: e.target.checked })}
+                        className="w-5 h-5 rounded border-white/20 bg-background-dark checked:bg-primary"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setTempVisibleItems(prev => [...prev, item.name]);
+                          } else {
+                            setTempVisibleItems(prev => prev.filter(n => n !== item.name));
+                          }
+                        }}
                       />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-white">Ocultar Valores (Somente Texto)</span>
-                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Remove preços e correlaciona escopo abaixo dos itens</span>
-                      </div>
                     </label>
-                  </div>
+                  );
+                })}
+              </div>
 
-                  <div>
-                    <label className="text-slate-400 text-sm font-medium block mb-2">Condições de Pagamento</label>
-                    <select
-                      className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
-                      value={proposal.payment_conditions}
-                      onChange={e => setProposal({ ...proposal, payment_conditions: e.target.value })}
-                    >
-                      <option value="">Selecione...</option>
-                      {paymentMethods.map(method => (
-                        <option key={method.id} value={method.label}>{method.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="text-slate-400 text-sm font-medium block mb-2">Cronograma Estimado</label>
-                      <select
-                        className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
-                        value={proposal.execution_schedule}
-                        onChange={e => setProposal({ ...proposal, execution_schedule: e.target.value })}
-                      >
-                        <option value="">Selecione...</option>
-                        {executionSchedules.map(schedule => (
-                          <option key={schedule.id} value={schedule.label}>{schedule.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-slate-400 text-sm font-medium block mb-2">Validade (Dias)</label>
-                      <select
-                        className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
-                        value={proposal.validity_days}
-                        onChange={e => setProposal({ ...proposal, validity_days: Number(e.target.value) })}
-                      >
-                        <option value={5}>05 dias</option>
-                        <option value={10}>10 dias</option>
-                        <option value={15}>15 dias</option>
-                        <option value={30}>30 dias</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-slate-400 text-sm font-medium block mb-2">Observações / Escopo</label>
-                    <textarea
-                      className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white h-24 focus:border-primary outline-none transition-colors"
-                      placeholder="Detalhes adicionais..."
-                      value={proposal.observations || ''}
-                      onChange={e => setProposal({ ...proposal, observations: e.target.value })}
-                    ></textarea>
-                  </div>
-                </div>
+              <div className="p-6 border-t border-white/10 bg-background-dark/50 flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowVisibilityModal(false);
+                    setProposal({ ...proposal, hide_products_pdf: false });
+                  }}
+                  className="px-4 py-2 text-slate-300 hover:text-white font-bold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmVisibilitySelection}
+                  className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold shadow-lg shadow-primary/20"
+                >
+                  Confirmar Exibição
+                </button>
               </div>
             </div>
+          </div>
+        )
+      }
 
-            <div className="flex flex-col gap-4">
+      {/* Add/Replace Item Modal */}
+      {
+        isAddItemModalOpen && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl relative">
               <button
-                onClick={handleSave}
-                disabled={saving}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2"
+                onClick={() => {
+                  setIsAddItemModalOpen(false);
+                  setItemToReplace(null);
+                }}
+                className="absolute top-4 right-4 text-slate-500 hover:text-white"
               >
-                <span className="material-symbols-outlined">save</span>
-                {saving ? 'Salvando...' : 'Salvar Proposta'}
+                <span className="material-symbols-outlined">close</span>
               </button>
 
-              <div className="bg-surface-dark border border-white/5 rounded-xl p-6 shadow-lg">
-                <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center mb-4">
-                  <span className="material-symbols-outlined text-primary text-2xl">picture_as_pdf</span>
-                </div>
-                <h3 className="text-white font-bold">Proposta Formal</h3>
-                <p className="text-slate-400 text-sm mt-1 mb-4">Gera documento A4 completo com capa e termos técnicos.</p>
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => generatePDF('preview')}
-                    className="w-full bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-lg border border-white/10 transition-all flex items-center justify-center gap-2"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">visibility</span>
-                    Visualizar PDF
-                  </button>
-                  <button
-                    onClick={() => generatePDF('download')}
-                    className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-lg shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">download</span>
-                    Baixar PDF
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-          )}
-    </div>
-      </main >
+              <h3 className="text-xl font-bold text-white mb-6">
+                {itemToReplace ? 'Substituir Item' : 'Adicionar à Proposta'}
+              </h3>
 
-  {/* Modal for Selecting Visibility of Custom Items */ }
-{
-  showVisibilityModal && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-surface-dark border border-white/10 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-        <div className="p-6 border-b border-white/10">
-          <h3 className="text-xl font-bold text-white mb-2">Exibição de Itens Personalizados</h3>
-          <p className="text-sm text-slate-400">
-            Você optou por <strong>Ocultar Produtos</strong>. Selecione quais destes itens manuais ou serviços você gostaria de <strong>MANTER VISÍVEIS</strong> no PDF.
-          </p>
-        </div>
-
-        <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2">
-          {candidateItems.map((item, idx) => {
-            const isSelected = tempVisibleItems.includes(item.name);
-            return (
-              <label key={idx} className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${isSelected ? 'bg-primary/20 border-primary' : 'bg-background-dark border-white/10 hover:border-white/20'}`}>
-                <div className="flex flex-col">
-                  <span className="text-sm font-bold text-white">{item.name}</span>
-                  <span className="text-xs text-slate-400">
-                    {item.origin === 'MANUAL' ? 'Item Manual' : 'Serviço Calculado'}
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  className="w-5 h-5 rounded border-white/20 bg-background-dark checked:bg-primary"
-                  checked={isSelected}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setTempVisibleItems(prev => [...prev, item.name]);
-                    } else {
-                      setTempVisibleItems(prev => prev.filter(n => n !== item.name));
-                    }
-                  }}
-                />
-              </label>
-            );
-          })}
-        </div>
-
-        <div className="p-6 border-t border-white/10 bg-background-dark/50 flex justify-end gap-3">
-          <button
-            onClick={() => {
-              setShowVisibilityModal(false);
-              setProposal({ ...proposal, hide_products_pdf: false });
-            }}
-            className="px-4 py-2 text-slate-300 hover:text-white font-bold"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={confirmVisibilitySelection}
-            className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold shadow-lg shadow-primary/20"
-          >
-            Confirmar Exibição
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-{/* Add/Replace Item Modal */ }
-{
-  isAddItemModalOpen && (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl relative">
-        <button
-          onClick={() => {
-            setIsAddItemModalOpen(false);
-            setItemToReplace(null);
-          }}
-          className="absolute top-4 right-4 text-slate-500 hover:text-white"
-        >
-          <span className="material-symbols-outlined">close</span>
-        </button>
-
-        <h3 className="text-xl font-bold text-white mb-6">
-          {itemToReplace ? 'Substituir Item' : 'Adicionar à Proposta'}
-        </h3>
-
-        {itemToReplace && (
-          <div className="mb-6 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-            <p className="text-[10px] text-primary font-bold uppercase mb-1">Substituindo:</p>
-            <p className="text-sm text-white font-medium truncate">{itemToReplace.name}</p>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="flex bg-background-dark p-1 rounded-lg mb-6 border border-white/5">
-          {(['product', 'service', 'custom'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => {
-                setModalTab(tab);
-                setNewItem({ name: '', quantity: 1, price: 0 });
-                setModalSearchTerm('');
-                setShowSearchList(false);
-              }}
-              className={`flex-1 py-2 text-xs font-bold rounded-md transition-all uppercase ${modalTab === tab ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              {tab === 'product' ? 'Produto' : tab === 'service' ? 'Serviço' : 'Personalizado'}
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-4">
-          {modalTab === 'product' && (
-            <div className="relative">
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Buscar Produto</label>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">search</span>
-                <input
-                  type="text"
-                  className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
-                  placeholder="Pesquise por nome, marca ou modelo..."
-                  value={modalSearchTerm}
-                  onChange={e => {
-                    setModalSearchTerm(e.target.value);
-                    setShowSearchList(true);
-                  }}
-                  onFocus={() => setShowSearchList(true)}
-                />
-              </div>
-
-              {showSearchList && modalSearchTerm && (
-                <div className="absolute z-50 w-full mt-2 bg-[#2D2D39] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                  {catalogItems
-                    .filter(p => p.name.toLowerCase().includes(modalSearchTerm.toLowerCase()))
-                    .map(p => (
-                      <button
-                        key={p.name}
-                        onClick={() => {
-                          setNewItem({ ...newItem, name: p.name, price: p.price });
-                          setModalSearchTerm(p.name);
-                          setShowSearchList(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-indigo-600/20 text-sm border-b border-white/5 last:border-none group flex justify-between items-center"
-                      >
-                        <div className="flex flex-col">
-                          <span className="text-white font-medium group-hover:text-indigo-400 transition-colors uppercase text-[11px]">{p.name}</span>
-                          <span className="text-xs text-slate-400">Preço Base: R${p.price.toLocaleString('pt-BR')}</span>
-                        </div>
-                        <span className="material-symbols-outlined text-indigo-500 opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
-                      </button>
-                    ))}
-                  {catalogItems.filter(p => p.name.toLowerCase().includes(modalSearchTerm.toLowerCase())).length === 0 && (
-                    <div className="p-4 text-center text-slate-500 text-xs italic">Nenhum produto encontrado.</div>
-                  )}
+              {itemToReplace && (
+                <div className="mb-6 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                  <p className="text-[10px] text-primary font-bold uppercase mb-1">Substituindo:</p>
+                  <p className="text-sm text-white font-medium truncate">{itemToReplace.name}</p>
                 </div>
               )}
-            </div>
-          )}
 
-          {modalTab === 'service' && (
-            <div className="relative">
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Buscar Serviço</label>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">search</span>
-                <input
-                  type="text"
-                  className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
-                  placeholder="Pesquise o serviço..."
-                  value={modalSearchTerm}
-                  onChange={e => {
-                    setModalSearchTerm(e.target.value);
-                    setShowSearchList(true);
-                  }}
-                  onFocus={() => setShowSearchList(true)}
-                />
+              {/* Tabs */}
+              <div className="flex bg-background-dark p-1 rounded-lg mb-6 border border-white/5">
+                {(['product', 'service', 'custom'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      setModalTab(tab);
+                      setNewItem({ name: '', quantity: 1, price: 0 });
+                      setModalSearchTerm('');
+                      setShowSearchList(false);
+                    }}
+                    className={`flex-1 py-2 text-xs font-bold rounded-md transition-all uppercase ${modalTab === tab ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    {tab === 'product' ? 'Produto' : tab === 'service' ? 'Serviço' : 'Personalizado'}
+                  </button>
+                ))}
               </div>
 
-              {showSearchList && modalSearchTerm && (
-                <div className="absolute z-50 w-full mt-2 bg-[#2D2D39] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                  {serviceCatalog
-                    .filter(s => s.name.toLowerCase().includes(modalSearchTerm.toLowerCase()))
-                    .map(s => (
-                      <button
-                        key={s.name}
-                        onClick={() => {
-                          setNewItem({ ...newItem, name: s.name, price: 0 });
-                          setModalSearchTerm(s.name);
-                          setShowSearchList(false);
+              <div className="space-y-4">
+                {modalTab === 'product' && (
+                  <div className="relative">
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Buscar Produto</label>
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">search</span>
+                      <input
+                        type="text"
+                        className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
+                        placeholder="Pesquise por nome, marca ou modelo..."
+                        value={modalSearchTerm}
+                        onChange={e => {
+                          setModalSearchTerm(e.target.value);
+                          setShowSearchList(true);
                         }}
-                        className="w-full text-left px-4 py-3 hover:bg-indigo-600/20 text-sm border-b border-white/5 last:border-none group flex justify-between items-center"
-                      >
-                        <div className="flex flex-col">
-                          <span className="text-white font-medium group-hover:text-indigo-400 transition-colors uppercase text-[11px]">{s.name}</span>
-                          <span className="text-[10px] text-slate-500 truncate max-w-[300px]">{s.description}</span>
-                        </div>
-                        <span className="material-symbols-outlined text-indigo-500 opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
-                      </button>
-                    ))}
-                  {serviceCatalog.filter(s => s.name.toLowerCase().includes(modalSearchTerm.toLowerCase())).length === 0 && (
-                    <div className="p-4 text-center text-slate-500 text-xs italic">Nenhum serviço encontrado.</div>
-                  )}
+                        onFocus={() => setShowSearchList(true)}
+                      />
+                    </div>
+
+                    {showSearchList && modalSearchTerm && (
+                      <div className="absolute z-50 w-full mt-2 bg-[#2D2D39] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                        {catalogItems
+                          .filter(p => p.name.toLowerCase().includes(modalSearchTerm.toLowerCase()))
+                          .map(p => (
+                            <button
+                              key={p.name}
+                              onClick={() => {
+                                setNewItem({ ...newItem, name: p.name, price: p.price });
+                                setModalSearchTerm(p.name);
+                                setShowSearchList(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-indigo-600/20 text-sm border-b border-white/5 last:border-none group flex justify-between items-center"
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-white font-medium group-hover:text-indigo-400 transition-colors uppercase text-[11px]">{p.name}</span>
+                                <span className="text-xs text-slate-400">Preço Base: R${p.price.toLocaleString('pt-BR')}</span>
+                              </div>
+                              <span className="material-symbols-outlined text-indigo-500 opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
+                            </button>
+                          ))}
+                        {catalogItems.filter(p => p.name.toLowerCase().includes(modalSearchTerm.toLowerCase())).length === 0 && (
+                          <div className="p-4 text-center text-slate-500 text-xs italic">Nenhum produto encontrado.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {modalTab === 'service' && (
+                  <div className="relative">
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Buscar Serviço</label>
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">search</span>
+                      <input
+                        type="text"
+                        className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
+                        placeholder="Pesquise o serviço..."
+                        value={modalSearchTerm}
+                        onChange={e => {
+                          setModalSearchTerm(e.target.value);
+                          setShowSearchList(true);
+                        }}
+                        onFocus={() => setShowSearchList(true)}
+                      />
+                    </div>
+
+                    {showSearchList && modalSearchTerm && (
+                      <div className="absolute z-50 w-full mt-2 bg-[#2D2D39] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                        {serviceCatalog
+                          .filter(s => s.name.toLowerCase().includes(modalSearchTerm.toLowerCase()))
+                          .map(s => (
+                            <button
+                              key={s.name}
+                              onClick={() => {
+                                setNewItem({ ...newItem, name: s.name, price: 0 });
+                                setModalSearchTerm(s.name);
+                                setShowSearchList(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-indigo-600/20 text-sm border-b border-white/5 last:border-none group flex justify-between items-center"
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-white font-medium group-hover:text-indigo-400 transition-colors uppercase text-[11px]">{s.name}</span>
+                                <span className="text-[10px] text-slate-500 truncate max-w-[300px]">{s.description}</span>
+                              </div>
+                              <span className="material-symbols-outlined text-indigo-500 opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
+                            </button>
+                          ))}
+                        {serviceCatalog.filter(s => s.name.toLowerCase().includes(modalSearchTerm.toLowerCase())).length === 0 && (
+                          <div className="p-4 text-center text-slate-500 text-xs italic">Nenhum serviço encontrado.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {modalTab === 'custom' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Descrição da Proposta (Subjetiva)</label>
+                    <textarea
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 h-24 resize-none"
+                      placeholder="Ex: Fornecimento de uma ampliação de uma tubulação enterrada..."
+                      value={newItem.name}
+                      onChange={e => setNewItem({ ...newItem, name: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Quantidade</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                      value={newItem.quantity}
+                      onChange={e => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Preço Unitário (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                      value={newItem.price}
+                      onChange={e => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
+                    />
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
 
-          {modalTab === 'custom' && (
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Descrição da Proposta (Subjetiva)</label>
-              <textarea
-                className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 h-24 resize-none"
-                placeholder="Ex: Fornecimento de uma ampliação de uma tubulação enterrada..."
-                value={newItem.name}
-                onChange={e => setNewItem({ ...newItem, name: e.target.value })}
-              />
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Quantidade</label>
-              <input
-                type="number"
-                min="1"
-                className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
-                value={newItem.quantity}
-                onChange={e => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Preço Unitário (R$)</label>
-              <input
-                type="number"
-                step="0.01"
-                className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
-                value={newItem.price}
-                onChange={e => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
-              />
+              <div className="flex gap-4 mt-8">
+                <button
+                  onClick={() => setIsAddItemModalOpen(false)}
+                  className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddItem}
+                  disabled={!newItem.name || loading}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold shadow-lg shadow-indigo-900/20 disabled:opacity-50 transition-all"
+                >
+                  Adicionar
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="flex gap-4 mt-8">
-          <button
-            onClick={() => setIsAddItemModalOpen(false)}
-            className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleAddItem}
-            disabled={!newItem.name || loading}
-            className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold shadow-lg shadow-indigo-900/20 disabled:opacity-50 transition-all"
-          >
-            Adicionar
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-<NewProjectModal
-  isOpen={isNewProjectModalOpen}
-  onClose={() => {
-    setIsNewProjectModalOpen(false);
-    setProjectToEdit(null);
-  }}
-  projectToEdit={projectToEdit}
-  onSuccess={(id) => {
-    fetchProjects();
-    onSelectProject(id);
-  }}
-/>
+        )
+      }
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => {
+          setIsNewProjectModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        projectToEdit={projectToEdit}
+        onSuccess={(id) => {
+          fetchProjects();
+          onSelectProject(id);
+        }}
+      />
     </div >
   );
 };
