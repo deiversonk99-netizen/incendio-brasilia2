@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Project } from '../types';
 import { supabase } from '../lib/supabase';
+import { Modal, Button, Input } from './ui';
 
 interface ReportFilterModalProps {
     isOpen: boolean;
@@ -82,150 +82,114 @@ const ReportFilterModal: React.FC<ReportFilterModalProps> = ({
         onGenerate(filters);
     };
 
-    if (!isOpen) return null;
-
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-surface-dark border border-white/10 shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in duration-300">
-                <div className="flex items-center justify-between p-6 border-b border-white/5 bg-white/5">
-                    <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-sky-400">filter_list</span>
-                        <h2 className="text-xl font-black text-white italic tracking-tight">Configurar Relatório</h2>
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Configurar Relatório"
+            description="Defina os parâmetros para geração completa do PDF"
+            footer={
+                <div className="flex gap-4">
+                    <Button variant="secondary" onClick={onClose} className="flex-1">
+                        Cancelar
+                    </Button>
+                    <Button
+                        variant="primary"
+                        onClick={() => {
+                            const form = document.getElementById('report-filter-form') as HTMLFormElement;
+                            if (form.checkValidity()) {
+                                handleSubmit({ preventDefault: () => { } } as any);
+                            } else {
+                                form.reportValidity();
+                            }
+                        }}
+                        isLoading={isLoading}
+                        className="flex-1"
+                    >
+                        <span className="material-symbols-outlined mr-2">picture_as_pdf</span>
+                        Gerar PDF
+                    </Button>
+                </div>
+            }
+        >
+            <form id="report-filter-form" onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-4">
+                    <label className="ds-label">Período de Referência</label>
+                    <div className="grid grid-cols-2 gap-4">
+                        <Input
+                            label="De:"
+                            type="date"
+                            required
+                            value={filters.startDate}
+                            onChange={e => setFilters({ ...filters, startDate: e.target.value })}
+                        />
+                        <Input
+                            label="Até:"
+                            type="date"
+                            required
+                            value={filters.endDate}
+                            onChange={e => setFilters({ ...filters, endDate: e.target.value })}
+                        />
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-                        <span className="material-symbols-outlined">close</span>
-                    </button>
+
+                    <div className="flex flex-wrap gap-2 pt-1">
+                        {['thisMonth', 'lastMonth', 'last90'].map((type) => (
+                            <Button
+                                key={type}
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handlePreset(type as any)}
+                            >
+                                {type === 'thisMonth' ? 'Este Mês' : type === 'lastMonth' ? 'Mês Passado' : 'Últimos 90 dias'}
+                            </Button>
+                        ))}
+                    </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
-                    <div className="space-y-4">
-                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-widest">Período de Referência</label>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <span className="text-[10px] text-slate-400 font-medium">De:</span>
-                                <input
-                                    type="date"
-                                    required
-                                    value={filters.startDate}
-                                    onChange={e => setFilters({ ...filters, startDate: e.target.value })}
-                                    className="w-full rounded-xl bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-sky-500 outline-none text-sm transition-all"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <span className="text-[10px] text-slate-400 font-medium">Até:</span>
-                                <input
-                                    type="date"
-                                    required
-                                    value={filters.endDate}
-                                    onChange={e => setFilters({ ...filters, endDate: e.target.value })}
-                                    className="w-full rounded-xl bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-sky-500 outline-none text-sm transition-all"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 pt-1">
-                            <button
-                                type="button"
-                                onClick={() => handlePreset('thisMonth')}
-                                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-400 hover:text-white border border-white/5 transition-all"
-                            >
-                                Este Mês
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => handlePreset('lastMonth')}
-                                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-400 hover:text-white border border-white/5 transition-all"
-                            >
-                                Mês Passado
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => handlePreset('last90')}
-                                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-400 hover:text-white border border-white/5 transition-all"
-                            >
-                                Últimos 90 dias
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-widest">Categoria</label>
-                            <select
-                                value={filters.category}
-                                onChange={e => setFilters({ ...filters, category: e.target.value })}
-                                className="w-full rounded-xl bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-sky-500 outline-none text-sm transition-all appearance-none cursor-pointer"
-                            >
-                                <option value="ALL">Todas as Categorias</option>
-                                {categories.map(cat => (
-                                    <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-widest">Status</label>
-                            <select
-                                value={filters.status}
-                                onChange={e => setFilters({ ...filters, status: e.target.value as any })}
-                                className="w-full rounded-xl bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-sky-500 outline-none text-sm transition-all appearance-none cursor-pointer"
-                            >
-                                <option value="ALL">Todos os Status</option>
-                                <option value="PAID">Pago / Recebido</option>
-                                <option value="PENDING">Pendente</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-widest">Projeto / Cliente</label>
-                        <div className="relative">
-                            <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
-                            <input
-                                type="text"
-                                value={filters.search}
-                                onChange={e => setFilters({ ...filters, search: e.target.value })}
-                                className="w-full rounded-xl bg-background-dark border border-white/10 pl-12 pr-4 py-3 text-white focus:border-sky-500 outline-none text-sm transition-all"
-                                placeholder="Buscar por nome ou projeto..."
-                            />
-                        </div>
-                    </div>
-
-                    {error && (
-                        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-center gap-3 animate-pulse">
-                            <span className="material-symbols-outlined text-red-500">warning</span>
-                            <p className="text-xs text-red-400 font-bold">{error}</p>
-                        </div>
-                    )}
-
-                    <div className="pt-6 flex gap-4">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="flex-1 rounded-xl border border-white/10 py-4 font-black text-[11px] uppercase tracking-[2px] text-slate-400 hover:bg-white/5 hover:text-white transition-all shadow-lg"
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                        <label className="ds-label">Categoria</label>
+                        <select
+                            value={filters.category}
+                            onChange={e => setFilters({ ...filters, category: e.target.value })}
+                            className="ds-input cursor-pointer"
                         >
-                            Cancelar
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="flex-1 rounded-xl bg-sky-600 py-4 font-black text-[11px] uppercase tracking-[2px] text-white shadow-xl shadow-sky-600/20 hover:bg-sky-500 disabled:opacity-50 transition-all flex items-center justify-center gap-3 group"
-                        >
-                            {isLoading ? (
-                                <>
-                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                                    <span>Processando...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <span className="material-symbols-outlined text-[20px] transition-transform group-hover:scale-110">picture_as_pdf</span>
-                                    <span>Gerar PDF</span>
-                                </>
-                            )}
-                        </button>
+                            <option value="ALL">Todas as Categorias</option>
+                            {categories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                        </select>
                     </div>
-                </form>
-            </div>
-        </div>
+                    <div className="flex flex-col gap-1.5">
+                        <label className="ds-label">Status</label>
+                        <select
+                            value={filters.status}
+                            onChange={e => setFilters({ ...filters, status: e.target.value as any })}
+                            className="ds-input cursor-pointer"
+                        >
+                            <option value="ALL">Todos os Status</option>
+                            <option value="PAID">Pago / Recebido</option>
+                            <option value="PENDING">Pendente</option>
+                        </select>
+                    </div>
+                </div>
+
+                <Input
+                    label="Projeto / Cliente"
+                    placeholder="Buscar por nome ou projeto..."
+                    value={filters.search}
+                    onChange={e => setFilters({ ...filters, search: e.target.value })}
+                />
+
+                {error && (
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex items-center gap-3">
+                        <span className="material-symbols-outlined text-red-500">warning</span>
+                        <p className="text-[10px] text-red-400 font-bold uppercase">{error}</p>
+                    </div>
+                )}
+            </form>
+        </Modal>
     );
 };
 

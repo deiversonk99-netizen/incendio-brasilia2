@@ -5,7 +5,8 @@ import PageHeader from './PageHeader';
 import NewProjectModal from './NewProjectModal';
 import ProjectDetailsModal from './ProjectDetailsModal';
 import { supabase } from '../lib/supabase';
-import { Project } from '../types';
+import { Project, AppView } from '../types';
+import { Button, Card } from './ui';
 
 interface Task {
   id: string;
@@ -13,7 +14,12 @@ interface Task {
   completed: boolean;
 }
 
-const DashboardView: React.FC = () => {
+interface DashboardViewProps {
+  onViewChange: (view: AppView) => void;
+  onSelectProject: (id: string) => void;
+}
+
+const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectProject }) => {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -140,13 +146,21 @@ const DashboardView: React.FC = () => {
             title="Visão Geral"
             subtitle="Resumo de operações e desempenho da Incêndio Brasília"
             actions={
-              <button
-                onClick={() => setIsNewProjectModalOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all"
-              >
-                <span className="material-symbols-outlined text-[20px]">add</span>
-                <span>Novo Projeto</span>
-              </button>
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => onViewChange(AppView.ENGINEERING_PHASE_C)}
+                >
+                  <span className="material-symbols-outlined mr-2 text-sky-400">description</span>
+                  Fase C - Proposta
+                </Button>
+                <Button
+                  onClick={() => setIsNewProjectModalOpen(true)}
+                >
+                  <span className="material-symbols-outlined mr-2">add</span>
+                  Novo Projeto
+                </Button>
+              </div>
             }
           />
 
@@ -158,15 +172,15 @@ const DashboardView: React.FC = () => {
               { label: 'Valor Global', val: `R$ ${(totalValue / 1000).toFixed(1)}k`, trend: 'Total Acumulado', icon: 'payments', color: 'emerald' },
               { label: 'Lucro Projetado', val: 'R$ --', trend: 'Requer dados fin.', icon: 'insights', color: 'orange' },
             ].map((kpi, idx) => (
-              <div key={idx} className="relative overflow-hidden rounded-xl bg-surface-dark border border-white/5 p-6 hover:border-white/10 transition-colors group">
-                <div className="absolute right-0 top-0 p-4 opacity-50 group-hover:opacity-100 transition-opacity">
+              <div key={idx} className="ds-card p-6 relative overflow-hidden group">
+                <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-100 transition-opacity">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-primary">
                     <span className="material-symbols-outlined">{kpi.icon}</span>
                   </div>
                 </div>
-                <dt className="truncate text-sm font-medium text-slate-400">{kpi.label}</dt>
-                <dd className="mt-2 text-3xl font-bold text-white tracking-tight">{kpi.val}</dd>
-                <div className={`mt-2 flex items-center text-xs font-medium ${kpi.trend.includes('M') ? 'text-emerald-500' : 'text-slate-400'}`}>
+                <dt className="ds-label">{kpi.label}</dt>
+                <dd className="mt-2 text-3xl font-black text-white tracking-tight">{kpi.val}</dd>
+                <div className={`mt-2 flex items-center text-[10px] font-bold uppercase tracking-wider ${kpi.trend.includes('total') ? 'text-slate-400' : 'text-emerald-500'}`}>
                   {kpi.trend}
                 </div>
               </div>
@@ -175,80 +189,75 @@ const DashboardView: React.FC = () => {
 
           {/* Charts and Tasks Row */}
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-            {/* Chart Component - Functional */}
-            <div className="rounded-xl bg-surface-dark border border-white/5 p-6 lg:col-span-2 shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-base font-semibold text-white">Valor Global de Projetos (YTD)</h3>
-                  <p className="text-sm text-slate-400">Total acumulado de projetos criados por mês</p>
-                </div>
-              </div>
-              <div className="h-64 w-full">
+            <Card
+              className="lg:col-span-2"
+              title="Valor Global de Projetos (YTD)"
+              description="Total acumulado de projetos criados por mês"
+            >
+              <div className="h-64 w-full mt-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorReal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#e21d48" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#e21d48" stopOpacity={0} />
+                        <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff10" />
+                    <XAxis dataKey="name" stroke="var(--color-neutral-500)" fontSize={11} fontWeight="bold" tickLine={false} axisLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255, 255, 255, 0.05)" />
                     <Tooltip
-                      contentStyle={{ backgroundColor: '#2a171b', border: '1px solid #ffffff10', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
+                      contentStyle={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)' }}
+                      itemStyle={{ color: '#fff', fontWeight: 'bold' }}
                     />
-                    <Area type="monotone" dataKey="real" stroke="#e21d48" fillOpacity={1} fill="url(#colorReal)" strokeWidth={3} />
+                    <Area type="monotone" dataKey="real" stroke="var(--color-primary)" fillOpacity={1} fill="url(#colorReal)" strokeWidth={4} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </Card>
 
             {/* Micro Tasks - Functional */}
-            <div className="rounded-xl bg-surface-dark border border-white/5 p-6 shadow-sm flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-semibold text-white">Tarefas Rápidas</h3>
-                <span className="text-xs text-slate-400">{tasks.filter(t => !t.completed).length} pendentes</span>
-              </div>
-
-              <form onSubmit={handleAddTask} className="flex gap-2 mb-4">
+            <Card
+              title="Tarefas Rápidas"
+              description={`${tasks.filter(t => !t.completed).length} pendentes`}
+              className="flex flex-col"
+            >
+              <form onSubmit={handleAddTask} className="flex gap-2 mb-6 mt-4">
                 <input
-                  className="flex-1 bg-background-dark border border-white/10 rounded px-3 py-1.5 text-sm text-white focus:border-primary outline-none"
+                  className="ds-input flex-1 py-2"
                   placeholder="Adicionar tarefa..."
                   value={newTaskTitle}
                   onChange={e => setNewTaskTitle(e.target.value)}
                 />
-                <button type="submit" className="bg-primary/20 hover:bg-primary/30 text-primary rounded px-2 transition-colors">
-                  <span className="material-symbols-outlined text-[18px]">add</span>
-                </button>
+                <Button type="submit" size="sm" className="px-3">
+                  <span className="material-symbols-outlined">add</span>
+                </Button>
               </form>
 
-              <div className="flex-1 space-y-3 overflow-y-auto max-h-[250px] pr-1">
-                {tasks.length === 0 && <p className="text-slate-500 text-xs italic text-center py-4">Nenhuma tarefa criada.</p>}
-
+              <div className="flex-1 space-y-3 overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
+                {tasks.length === 0 && <p className="text-slate-500 text-[10px] uppercase font-bold italic text-center py-4">Nenhuma tarefa</p>}
                 {tasks.map(task => (
-                  <div key={task.id} className="flex items-center gap-3 group relative pl-1">
+                  <div key={task.id} className="flex items-center gap-3 group relative bg-white/[0.02] p-2 rounded-lg border border-white/5 hover:border-white/10 transition-all">
                     <input
                       type="checkbox"
                       checked={task.completed}
                       onChange={() => handleTaskToggle(task.id, task.completed)}
                       className="h-4 w-4 rounded border-slate-600 bg-white/5 text-primary accent-primary cursor-pointer"
                     />
-                    <div className="flex-1 overflow-hidden">
-                      <p className={`text-sm font-medium text-white truncate transition-all ${task.completed ? 'line-through opacity-40' : ''}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-bold text-white truncate transition-all ${task.completed ? 'line-through opacity-30 italic' : ''}`}>
                         {task.title}
                       </p>
                     </div>
                     <button
                       onClick={() => handleDeleteTask(task.id)}
-                      className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-opacity"
+                      className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-500 transition-all"
                     >
                       <span className="material-symbols-outlined text-[16px]">delete</span>
                     </button>
                   </div>
                 ))}
               </div>
-            </div>
+            </Card>
           </div>
 
           {/* Kanban Board */}
@@ -411,6 +420,8 @@ const DashboardView: React.FC = () => {
         onClose={() => setIsDetailsModalOpen(false)}
         project={selectedProject}
         onUpdate={() => fetchData()}
+        onViewChange={onViewChange}
+        onSelectProject={onSelectProject}
       />
     </>
   );

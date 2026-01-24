@@ -7,6 +7,7 @@ import NewTransactionModal from './NewTransactionModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ReportFilterModal, { ReportFilters } from './ReportFilterModal';
+import { Button, Card } from './ui';
 
 const FinanceView: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -415,34 +416,37 @@ const FinanceView: React.FC = () => {
             <p className="text-slate-400 text-base">Gestão de receitas, despesas e fluxo de caixa real</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button
+            <Button
+              variant={showFilters ? 'primary' : 'secondary'}
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-2 px-6 py-3 border border-white/10 rounded-xl transition-all text-sm font-bold shadow-lg ${showFilters ? 'bg-indigo-600 text-white' : 'bg-surface-dark text-slate-400 hover:bg-white/5'}`}
             >
-              <span className="material-symbols-outlined text-[20px]">{showFilters ? 'filter_list_off' : 'filter_list'}</span>
-              <span>Filtros Avançados</span>
-            </button>
-            <button
+              <span className="material-symbols-outlined mr-2">{showFilters ? 'filter_list_off' : 'filter_list'}</span>
+              Filtros Avançados
+            </Button>
+
+            <Button
+              variant="secondary"
               onClick={() => setIsReportModalOpen(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-surface-dark border border-white/10 hover:bg-white/5 text-white rounded-xl transition-all text-sm font-bold shadow-lg"
             >
-              <span className="material-symbols-outlined text-[20px] text-sky-400">picture_as_pdf</span>
-              <span>Gerar Relatório</span>
-            </button>
-            <button
+              <span className="material-symbols-outlined mr-2 text-sky-400">picture_as_pdf</span>
+              Gerar Relatório
+            </Button>
+
+            <Button
+              variant="secondary"
               onClick={() => openModal('EXPENSE')}
-              className="flex items-center gap-2 px-6 py-3 bg-surface-dark border border-white/10 hover:bg-white/5 text-white rounded-xl transition-all text-sm font-bold shadow-lg"
             >
-              <span className="material-symbols-outlined text-[20px] text-primary">remove_circle</span>
-              <span>Nova Despesa</span>
-            </button>
-            <button
+              <span className="material-symbols-outlined mr-2 text-primary">remove_circle</span>
+              Nova Despesa
+            </Button>
+
+            <Button
               onClick={() => openModal('INCOME')}
-              className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all text-sm font-bold shadow-lg shadow-emerald-500/20"
+              className="bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20"
             >
-              <span className="material-symbols-outlined text-[20px]">add_circle</span>
-              <span>Nova Venda</span>
-            </button>
+              <span className="material-symbols-outlined mr-2">add_circle</span>
+              Nova Venda
+            </Button>
           </div>
         </div>
 
@@ -453,18 +457,22 @@ const FinanceView: React.FC = () => {
             { label: 'Lucro Líquido', val: stats.netProfit, change: '+8%', color: 'sky', icon: 'payments' },
             { label: 'Pagamentos Pendentes', val: stats.pendingCount, change: 'Atenção', color: 'orange', icon: 'pending_actions', isCount: true },
           ].map((card, i) => (
-            <div key={i} className="bg-surface-dark border border-white/5 rounded-2xl p-6 flex flex-col gap-1 shadow-xl hover:border-white/10 transition-all relative overflow-hidden group">
-              <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity`}>
+            <div key={i} className="ds-card p-6 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                 <span className="material-symbols-outlined text-[64px]">{card.icon}</span>
               </div>
               <div className="flex justify-between items-start relative z-10">
-                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">{card.label}</p>
-                <span className={`bg-${card.color}-500/10 text-${card.color}-500 text-[10px] px-2 py-0.5 rounded-full font-bold border border-${card.color}-500/20`}>{card.change}</span>
+                <p className="ds-label">{card.label}</p>
+                <span className={`bg-${card.color}-500/10 text-${card.color}-500 text-[10px] px-2 py-0.5 rounded-full font-bold border border-${card.color}-500/20`}>
+                  {card.change}
+                </span>
               </div>
               <p className="text-3xl font-black text-white tracking-tight mt-2 relative z-10">
                 {card.isCount ? card.val : `R$ ${card.val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
               </p>
-              <p className="text-[10px] text-slate-500 mt-2 font-medium">{monthsList[selectedMonthIdx]} de {selectedYear}</p>
+              <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                {monthsList[selectedMonthIdx]} de {selectedYear}
+              </p>
             </div>
           ))}
         </div>
@@ -535,33 +543,24 @@ const FinanceView: React.FC = () => {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 bg-surface-dark border border-white/5 rounded-2xl p-8 shadow-2xl">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-black text-white italic">Lucro Real vs. Valor Global</h3>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-primary"></div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase">Realizado</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500"></div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase">Valor Global</span>
-                </div>
-              </div>
-            </div>
-            <div className="h-72 w-full">
+          <Card
+            className="lg:col-span-2"
+            title="Lucro Real vs. Valor Global"
+            description="Acompanhamento de fluxo de caixa realizado vs. previsto"
+          >
+            <div className="h-72 w-full mt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorReal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#e21d48" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#e21d48" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" vertical={false} />
                   <XAxis
                     dataKey="name"
-                    stroke="#64748b"
+                    stroke="var(--color-neutral-500)"
                     fontSize={10}
                     fontWeight="bold"
                     axisLine={false}
@@ -569,26 +568,34 @@ const FinanceView: React.FC = () => {
                     tick={{ dy: 10 }}
                   />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#1a0b0e', border: '1px solid #46252c', borderRadius: '12px' }}
-                    itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                    contentStyle={{
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-md)',
+                      fontSize: '12px'
+                    }}
+                    itemStyle={{ fontWeight: 'bold' }}
                   />
-                  <Area type="monotone" dataKey="previsto" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" fill="transparent" />
-                  <Area type="monotone" dataKey="real" stroke="#e21d48" strokeWidth={4} fillOpacity={1} fill="url(#colorReal)" />
+                  <Area type="monotone" dataKey="previsto" stroke="var(--color-success)" strokeWidth={2} strokeDasharray="5 5" fill="transparent" />
+                  <Area type="monotone" dataKey="real" stroke="var(--color-primary)" strokeWidth={4} fillOpacity={1} fill="url(#colorReal)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </Card>
 
-          <div className="lg:col-span-1 bg-surface-dark border border-white/5 rounded-2xl p-8 shadow-2xl flex flex-col">
-            <h3 className="text-xl font-black text-white italic mb-6">Entidades Frequentes</h3>
+          <Card
+            title="Entidades Frequentes"
+            description="Maiores parceiros comerciais no mês"
+            className="flex flex-col"
+          >
             <div className="flex-1 flex flex-col gap-4">
               {recentSuppliers.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-500 italic text-sm text-center">
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-500 italic text-sm text-center py-10">
                   <span className="material-symbols-outlined text-[48px] mb-2 opacity-20">inventory_2</span>
                   Nenhuma transação registrada
                 </div>
               ) : (
-                recentSuppliers.map((s, idx) => (
+                recentSuppliers.slice(0, 5).map((s: any, idx: number) => (
                   <div key={idx} className="flex items-center gap-4 p-4 rounded-xl bg-background-dark/50 border border-white/5 hover:border-primary/30 transition-all cursor-pointer group">
                     <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-lg group-hover:bg-primary group-hover:text-white transition-all">
                       {s.name.substring(0, 2).toUpperCase()}
@@ -602,62 +609,57 @@ const FinanceView: React.FC = () => {
                 ))
               )}
             </div>
-            <button className="mt-8 py-3 w-full rounded-xl border border-white/5 text-xs text-primary font-bold uppercase tracking-widest hover:bg-white/5 transition-all">
+            <Button variant="ghost" size="sm" className="mt-6 w-full opacity-60 hover:opacity-100">
               Gerenciar Entidades
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
 
-        <div className="bg-surface-dark border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
-          <div className="px-8 py-6 border-b border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-xl font-black text-white italic">Fluxo de Caixa</h3>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Detalhamento de lançamentos para {activeMonthLabel} / {selectedYear}</p>
+        <Card
+          title="Fluxo de Caixa"
+          description={`Detalhamento de lançamentos para ${activeMonthLabel} / ${selectedYear}`}
+        >
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div className="relative min-w-[300px] flex-1 max-w-md">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
+              <input
+                type="text"
+                placeholder="Pesquisar por descrição, entidade ou categoria..."
+                className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:border-primary outline-none transition-all placeholder:text-slate-600"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
 
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Search Field */}
-              <div className="relative min-w-[300px]">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
-                <input
-                  type="text"
-                  placeholder="Pesquisar por descrição, entidade ou categoria..."
-                  className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-primary outline-none transition-all placeholder:text-slate-600"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
+            <div className="flex items-center gap-2 bg-background-dark p-1 rounded-xl border border-white/5">
+              <button
+                onClick={() => setSelectedYear((y: number) => y - 1)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
+              >
+                <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+              </button>
+              <span className="text-sm font-black text-white px-2 italic">{selectedYear}</span>
+              <button
+                onClick={() => setSelectedYear((y: number) => y + 1)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
+              >
+                <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              </button>
+            </div>
 
-              <div className="flex items-center gap-2 bg-background-dark p-1 rounded-xl border border-white/5">
+            <div className="flex flex-wrap bg-background-dark p-1 rounded-xl border border-white/5 gap-1">
+              {monthsList.map((m, idx) => (
                 <button
-                  onClick={() => setSelectedYear((y: number) => y - 1)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
+                  key={idx}
+                  onClick={() => setSelectedMonthIdx(idx)}
+                  className={`px-3 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${selectedMonthIdx === idx
+                    ? 'bg-primary text-white shadow-lg'
+                    : 'text-slate-500 hover:text-white hover:bg-white/5'
+                    }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+                  {m.substring(0, 3)}
                 </button>
-                <span className="text-sm font-black text-white px-2 italic">{selectedYear}</span>
-                <button
-                  onClick={() => setSelectedYear((y: number) => y + 1)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
-                >
-                  <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-                </button>
-              </div>
-
-              <div className="flex flex-wrap bg-background-dark p-1 rounded-xl border border-white/5 gap-1">
-                {monthsList.map((m, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedMonthIdx(idx)}
-                    className={`px-3 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${selectedMonthIdx === idx
-                      ? 'bg-primary text-white shadow-lg'
-                      : 'text-slate-500 hover:text-white hover:bg-white/5'
-                      }`}
-                  >
-                    {m.substring(0, 3)}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -756,8 +758,8 @@ const FinanceView: React.FC = () => {
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
+        </Card>
+      </div >
 
       <NewTransactionModal
         isOpen={isModalOpen}
@@ -776,7 +778,7 @@ const FinanceView: React.FC = () => {
         onGenerate={handleGenerateReport}
         isLoading={isGeneratingReport}
       />
-    </div>
+    </div >
   );
 };
 

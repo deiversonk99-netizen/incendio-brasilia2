@@ -70,7 +70,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
                 }`}
             >
               <span className={`material-symbols-outlined ${isActive ? 'fill-1' : ''}`}>{item.icon}</span>
-              <span className="font-medium">{item.label}</span>
+              <span className="font-bold tracking-tight text-xs uppercase">{item.label}</span>
             </button>
           );
         })}

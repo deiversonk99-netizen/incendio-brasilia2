@@ -1,15 +1,24 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Project } from '../types';
+import { Project, AppView } from '../types';
 
 interface ProjectDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
     project: Project | null;
     onUpdate: () => void; // Refresh dashboard
+    onViewChange: (view: AppView) => void;
+    onSelectProject: (id: string) => void;
 }
 
-const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClose, project, onUpdate }) => {
+const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
+    isOpen,
+    onClose,
+    project,
+    onUpdate,
+    onViewChange,
+    onSelectProject
+}) => {
     const [updating, setUpdating] = useState(false);
     const [projectServices, setProjectServices] = useState<any[]>([]);
 
@@ -217,7 +226,16 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
                         <button className="px-4 py-2 bg-surface-dark border border-white/10 text-white rounded-lg font-bold text-sm hover:bg-white/5 transition-colors">
                             Editar Dados
                         </button>
-                        <button className="px-6 py-2 bg-primary text-white rounded-lg font-bold text-sm hover:bg-primary-dark shadow-lg shadow-primary/20 transition-all flex items-center gap-2">
+                        <button
+                            onClick={() => {
+                                if (project) {
+                                    onSelectProject(project.id);
+                                    onViewChange(AppView.ENGINEERING_PHASE_A);
+                                    onClose();
+                                }
+                            }}
+                            className="px-6 py-2 bg-primary text-white rounded-lg font-bold text-sm hover:bg-primary-dark shadow-lg shadow-primary/20 transition-all flex items-center gap-2"
+                        >
                             <span className="material-symbols-outlined text-[18px]">engineering</span>
                             Ir para Engenharia
                         </button>

@@ -54,7 +54,10 @@ const AppContent: React.FC = () => {
 
     switch (currentView) {
       case AppView.DASHBOARD:
-        return <DashboardView />;
+        return <DashboardView
+          onViewChange={(view) => setCurrentView(view)}
+          onSelectProject={(id) => setEngineeringProjectId(id)}
+        />;
       case AppView.PROJECTS:
         return <ProjectsView />;
       case AppView.FINANCE:
