@@ -49,15 +49,20 @@ const ProductsView: React.FC = () => {
 
         try {
             while (hasMore) {
+                console.log(`[Debugger] Fetching products page ${page}...`);
                 const { data, error } = await supabase
                     .from('product_catalog')
                     .select('*')
                     .order('name')
                     .range(page * pageSize, (page + 1) * pageSize - 1);
 
-                if (error) throw error;
+                if (error) {
+                    console.error('[Database Architect] Error fetching products:', error);
+                    throw error;
+                }
 
                 if (data) {
+                    console.log(`[Debugger] Received ${data.length} products on page ${page}`);
                     allProducts = [...allProducts, ...data];
                     if (data.length < pageSize) {
                         hasMore = false;
@@ -174,23 +179,42 @@ const ProductsView: React.FC = () => {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            // Data Sanitization: Convert empty strings to null/undefined for DB compatibility
+            const cleanedData = { ...formData };
+            if (!cleanedData.supplier_id) delete cleanedData.supplier_id;
+            if (!cleanedData.image) delete cleanedData.image;
+            if (!cleanedData.observation) delete cleanedData.observation;
+            if (!cleanedData.storage_location) delete cleanedData.storage_location;
+
             if (editingProduct) {
+                console.log('[Debugger] Updating product:', editingProduct.id);
                 const { error } = await supabase
                     .from('product_catalog')
-                    .update(formData)
+                    .update(cleanedData)
                     .eq('id', editingProduct.id);
                 if (error) throw error;
             } else {
-                const { error } = await supabase
+                console.log('[Debugger] Attempting to insert new product:', cleanedData);
+                const { data: insertData, error } = await supabase
                     .from('product_catalog')
-                    .insert([{ ...formData, user_id: user?.id }]);
-                if (error) throw error;
+                    .insert([{ ...cleanedData, user_id: user?.id }])
+                    .select();
+
+                if (error) {
+                    console.error('[Database Architect] Insert failed:', error);
+                    throw error;
+                }
+                console.log('[Backend Specialist] Insert successful:', insertData);
             }
-            fetchProducts();
+            console.log('[Debugger] Refreshing list...');
+            await fetchProducts();
             handleCloseModal();
-        } catch (error) {
-            console.error('Error saving product:', error);
-            alert('Erro ao salvar produto. Verifique o console.');
+        } catch (error: any) {
+            console.error('Error detail:', error);
+            const msg = error.code === '42501' || error.message?.includes('policy')
+                ? 'Permissão negada (RLS). O Database Architect precisa liberar inserções na tabela product_catalog no Dashboard do Supabase.'
+                : `Erro ao salvar: ${error.message || 'Verifique o console'}`;
+            alert(msg);
         }
     };
 
