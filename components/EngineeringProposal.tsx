@@ -463,8 +463,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       // Profit slice: (Cost * BDI_Factor) -> (Cost * BDI_Factor * Profit_Factor)
       const lineProfit = (totalLineCost * bdiFactor * profitFactor) - (totalLineCost * bdiFactor);
 
-      bdiTotal += lineBdi;
-      profitTotal += lineProfit;
+      bdiTotal += Number(lineBdi.toFixed(4));
+      profitTotal += Number(lineProfit.toFixed(4));
     });
 
     const totalVendaGlobal = budgetItems.reduce((acc, i) => acc + (Number(i.quantity_final || 0) * Number(i.unit_price || 0)), 0);
@@ -477,12 +477,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     }
 
     return {
-      productsBase: productsCostTotal,
-      servicesTotal: servicesCostTotal,
-      bdiVal: bdiTotal,
-      profitVal: profitTotal,
-      discountVal,
-      final: totalVendaGlobal - discountVal
+      productsBase: Number(productsCostTotal.toFixed(2)),
+      servicesTotal: Number(servicesCostTotal.toFixed(2)),
+      bdiVal: Number(bdiTotal.toFixed(2)),
+      profitVal: Number(profitTotal.toFixed(2)),
+      discountVal: Number(discountVal.toFixed(2)),
+      final: Number((totalVendaGlobal - discountVal).toFixed(2))
     };
   };
 

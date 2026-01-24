@@ -26,30 +26,50 @@ import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin } from './l
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [engineeringProjectId, setEngineeringProjectId] = useState<string>('');
-  const { session, user, loading } = useAuth(); // Added user
+  const { session, user, profile, loading } = useAuth(); // Added profile
 
   const renderContent = useCallback(() => {
     const userRoleCheck = (view: AppView) => {
       const email = user?.email;
+
+      // Special logic for FUNCIONARIO
+      if (profile?.role === 'FUNCIONARIO') {
+        return view === AppView.PLACAS || view === AppView.STOCK;
+      }
+
       if (view === AppView.SETTINGS) {
-        return isSuperAdmin(email);
+        return isSuperAdmin(email, profile);
       }
       if (view === AppView.FINANCE) {
-        return isFinanceAdmin(email);
+        return isFinanceAdmin(email, profile);
       }
       if (view === AppView.PLACAS || view === AppView.STOCK) {
-        return isStockAdmin(email);
+        return isStockAdmin(email, profile);
       }
       if (view === AppView.ENGINEERING_PHASE_A ||
         view === AppView.ENGINEERING_PHASE_B ||
         view === AppView.ENGINEERING_PHASE_C) {
-        return isProposalAdmin(email);
+        return isProposalAdmin(email, profile);
       }
       return true;
     };
 
     if (!userRoleCheck(currentView)) {
-      return <DashboardView />; // Redirect silent
+      return (
+        <div className="flex flex-col items-center justify-center h-full bg-background-dark text-white p-8">
+          <span className="material-symbols-outlined text-red-500 text-6xl mb-4">lock</span>
+          <h2 className="text-2xl font-bold mb-2">Acesso Negado</h2>
+          <p className="text-slate-400 text-center max-w-md mb-6">
+            Você não possui permissão para acessar este módulo. Caso ache que isso seja um erro, entre em contato com o administrador.
+          </p>
+          <button
+            onClick={() => setCurrentView(profile?.role === 'FUNCIONARIO' ? AppView.PLACAS : AppView.DASHBOARD)}
+            className="px-6 py-2 bg-primary hover:bg-primary-dark rounded-lg font-bold transition-all"
+          >
+            Voltar para Início
+          </button>
+        </div>
+      );
     }
 
     switch (currentView) {
@@ -105,6 +125,13 @@ const AppContent: React.FC = () => {
         return <DashboardView />;
     }
   }, [currentView, engineeringProjectId, user]);
+
+  // Initial Redirection for FUNCIONARIO
+  React.useEffect(() => {
+    if (session && profile?.role === 'FUNCIONARIO' && currentView === AppView.DASHBOARD) {
+      setCurrentView(AppView.PLACAS);
+    }
+  }, [session, profile, currentView]);
 
   if (loading) {
     return (

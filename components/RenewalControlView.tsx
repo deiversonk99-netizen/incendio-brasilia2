@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Task } from '../types';
 import PageHeader from './PageHeader';
 import TaskDetailsModal from './TaskDetailsModal';
+import { useAuth } from '../contexts/AuthContext';
 
 const RenewalControlView: React.FC = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -12,17 +13,26 @@ const RenewalControlView: React.FC = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
     const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+    const [isNewRenewalModalOpen, setIsNewRenewalModalOpen] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<string>('');
+    const [manualRenewals, setManualRenewals] = useState<any[]>([]);
 
     const fetchRenewals = async () => {
         setLoading(true);
-        const { data, error } = await supabase
+        const { data: tasksData } = await supabase
             .from('tasks')
             .select('*, projects(name), user_profiles(email)')
             .eq('is_annual', true)
             .not('expiration_date', 'is', null)
             .order('expiration_date', { ascending: true });
 
-        if (data) setTasks(data as any);
+        const { data: manualData } = await supabase
+            .from('contract_renewals')
+            .select('*, projects(name)')
+            .order('end_date', { ascending: true });
+
+        if (tasksData) setTasks(tasksData as any);
+        if (manualData) setManualRenewals(manualData);
         setLoading(false);
     };
 
@@ -79,6 +89,16 @@ const RenewalControlView: React.FC = () => {
                                 onChange={e => setSearchTerm(e.target.value)}
                             />
                         </div>
+                        <button
+                            onClick={() => {
+                                setSelectedDate('');
+                                setIsNewRenewalModalOpen(true);
+                            }}
+                            className="flex items-center justify-center gap-2 rounded-lg h-11 px-4 bg-primary hover:bg-red-600 text-white text-sm font-bold transition-all shadow-lg shadow-primary/20"
+                        >
+                            <span className="material-symbols-outlined">add_circle</span>
+                            <span>Novo Aditivo</span>
+                        </button>
                     </div>
                 }
             />
@@ -127,16 +147,15 @@ const RenewalControlView: React.FC = () => {
 
                                 const dayStr = day.toISOString().split('T')[0];
                                 const dayTasks = filteredTasks.filter(t => t.expiration_date?.startsWith(dayStr));
+                                const dayManuals = manualRenewals.filter(m => m.end_date === dayStr);
                                 const isToday = dayStr === new Date().toISOString().split('T')[0];
 
                                 return (
                                     <div
                                         key={idx}
                                         onClick={() => {
-                                            if (dayTasks.length === 1) {
-                                                setSelectedTask(dayTasks[0]);
-                                                setIsDetailsOpen(true);
-                                            }
+                                            setSelectedDate(dayStr);
+                                            setIsNewRenewalModalOpen(true);
                                         }}
                                         className={`min-h-[140px] aspect-square p-2 border border-white/5 rounded-xl transition-all relative group cursor-pointer
                                             ${isToday ? 'bg-primary/5 ring-1 ring-primary/30 border-primary/20' : 'bg-black/20 hover:bg-white/2 hover:border-white/10'}
@@ -165,6 +184,17 @@ const RenewalControlView: React.FC = () => {
                                                         {(task as any).projects?.name || 'Avulso'}
                                                     </div>
                                                     <div className="line-clamp-2">{task.title}</div>
+                                                </div>
+                                            ))}
+                                            {dayManuals.map(manual => (
+                                                <div
+                                                    key={manual.id}
+                                                    className="p-1.5 rounded-lg border border-primary/20 bg-primary/10 text-[9px] font-bold leading-tight transition-all shadow-sm text-primary"
+                                                >
+                                                    <div className="truncate opacity-75 text-[8px] uppercase font-black">
+                                                        {manual.projects?.name || 'Avulso'}
+                                                    </div>
+                                                    <div className="line-clamp-2">Aditivo: R$ {manual.value?.toLocaleString('pt-BR')}</div>
                                                 </div>
                                             ))}
                                         </div>
@@ -222,6 +252,112 @@ const RenewalControlView: React.FC = () => {
                 onClose={() => setIsDetailsOpen(false)}
                 task={selectedTask}
             />
+
+            {isNewRenewalModalOpen && (
+                <NewRenewalModal
+                    isOpen={isNewRenewalModalOpen}
+                    onClose={() => setIsNewRenewalModalOpen(false)}
+                    onSuccess={() => fetchRenewals()}
+                    defaultDate={selectedDate}
+                />
+            )}
+        </div>
+    );
+};
+
+interface NewRenewalModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSuccess: () => void;
+    defaultDate?: string;
+}
+
+const NewRenewalModal: React.FC<NewRenewalModalProps> = ({ isOpen, onClose, onSuccess, defaultDate }) => {
+    const { user } = useAuth();
+    const [loading, setLoading] = useState(false);
+    const [projects, setProjects] = useState<any[]>([]);
+    const [formData, setFormData] = useState({
+        project_id: '',
+        start_date: defaultDate || '',
+        end_date: defaultDate || '',
+        value: 0,
+        notes: ''
+    });
+
+    useEffect(() => {
+        if (defaultDate) {
+            setFormData(prev => ({
+                ...prev,
+                start_date: defaultDate,
+                end_date: defaultDate
+            }));
+        }
+    }, [defaultDate]);
+
+    useEffect(() => {
+        supabase.from('projects').select('id, name').order('name').then(({ data }) => {
+            if (data) setProjects(data);
+        });
+    }, []);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        const { error } = await supabase.from('contract_renewals').insert({
+            ...formData,
+            user_id: user?.id
+        });
+        if (error) alert('Erro: ' + error.message);
+        else {
+            onSuccess();
+            onClose();
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div className="fixed inset-0 z-[101] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-surface-dark border border-white/10 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4">
+                <h3 className="text-lg font-bold text-white uppercase tracking-widest">Novo Aditivo / Renovação</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-black text-slate-500 uppercase mb-1">Vincular Projeto</label>
+                        <select
+                            required
+                            className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-primary"
+                            value={formData.project_id}
+                            onChange={e => setFormData({ ...formData, project_id: e.target.value })}
+                        >
+                            <option value="">Selecione...</option>
+                            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-black text-slate-500 uppercase mb-1">Início</label>
+                            <input type="date" required className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-primary" value={formData.start_date} onChange={e => setFormData({ ...formData, start_date: e.target.value })} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-black text-slate-500 uppercase mb-1">Término</label>
+                            <input type="date" required className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-primary" value={formData.end_date} onChange={e => setFormData({ ...formData, end_date: e.target.value })} />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-black text-slate-500 uppercase mb-1">Valor do Contrato / Aditivo</label>
+                        <input type="number" step="0.01" required className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-primary" value={formData.value} onChange={e => setFormData({ ...formData, value: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-black text-slate-500 uppercase mb-1">Observações</label>
+                        <textarea className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-primary resize-none" rows={2} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} />
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                        <button type="button" onClick={onClose} className="flex-1 py-3 text-sm font-bold text-slate-400 hover:text-white">Cancelar</button>
+                        <button type="submit" disabled={loading} className="flex-1 bg-primary py-3 rounded-xl text-white font-black uppercase text-xs shadow-lg shadow-primary/20 hover:bg-red-600 transition-all">
+                            {loading ? 'Salvando...' : 'Salvar Aditivo'}
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     );
 };

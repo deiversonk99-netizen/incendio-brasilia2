@@ -21,7 +21,10 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
         name: '',
         client: '',
         type: 'business',
+        internal_observations: '',
     });
+    const [customType, setCustomType] = useState('');
+    const [isOtherType, setIsOtherType] = useState(false);
     const [availableServices, setAvailableServices] = useState<any[]>([]);
     const [selectedServices, setSelectedServices] = useState<string[]>([]);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -32,12 +35,25 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 setFormData({
                     name: projectToEdit.name,
                     client: projectToEdit.client,
-                    type: projectToEdit.type || 'business'
+                    type: projectToEdit.type || 'business',
+                    internal_observations: projectToEdit.internal_observations || ''
                 });
+
+                const standardTypes = ['business', 'factory', 'store', 'residential'];
+                if (projectToEdit.type && !standardTypes.includes(projectToEdit.type)) {
+                    setIsOtherType(true);
+                    setCustomType(projectToEdit.type);
+                } else {
+                    setIsOtherType(false);
+                    setCustomType('');
+                }
+
                 setClientSearch(projectToEdit.client);
                 fetchProjectServices(projectToEdit.id);
             } else {
-                setFormData({ name: '', client: '', type: 'business' });
+                setFormData({ name: '', client: '', type: 'business', internal_observations: '' });
+                setIsOtherType(false);
+                setCustomType('');
                 setClientSearch('');
                 setSelectedServices([]);
             }
@@ -138,8 +154,9 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                     .update({
                         name: formData.name,
                         client: formData.client,
-                        type: formData.type,
+                        type: isOtherType ? customType : formData.type,
                         blueprint_url: blueprint_url || null,
+                        internal_observations: formData.internal_observations
                     })
                     .eq('id', projectToEdit.id);
 
@@ -163,10 +180,11 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                     client: formData.client,
                     value: 0,
                     deadline: null,
-                    type: formData.type,
+                    type: isOtherType ? customType : formData.type,
                     status: 'ANALYSIS',
                     user_id: user.id,
                     blueprint_url: blueprint_url || null,
+                    internal_observations: formData.internal_observations
                 }).select().single();
 
                 if (error) throw error;
@@ -186,7 +204,9 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
             }
 
             onClose();
-            setFormData({ name: '', client: '', type: 'business' });
+            setFormData({ name: '', client: '', type: 'business', internal_observations: '' });
+            setIsOtherType(false);
+            setCustomType('');
             setSelectedFile(null);
             setClientSearch('');
             setSelectedServices([]);
@@ -278,14 +298,41 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Tipo</label>
                                 <select
                                     value={formData.type}
-                                    onChange={e => setFormData({ ...formData, type: e.target.value })}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setFormData({ ...formData, type: val });
+                                        setIsOtherType(val === 'other');
+                                    }}
                                     className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                                 >
                                     <option value="business">Comercial</option>
                                     <option value="factory">Industrial</option>
                                     <option value="store">Varejo</option>
+                                    <option value="residential">Residencial</option>
+                                    <option value="other">Outros...</option>
                                 </select>
+                                {isOtherType && (
+                                    <input
+                                        type="text"
+                                        value={customType}
+                                        onChange={e => setCustomType(e.target.value)}
+                                        placeholder="Especifique o tipo..."
+                                        className="mt-2 w-full rounded-lg bg-background-dark border border-white/10 px-4 py-2 text-xs text-white focus:border-primary focus:outline-none"
+                                        required
+                                    />
+                                )}
                             </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Observações Internas (Não saem no PDF)</label>
+                            <textarea
+                                rows={3}
+                                value={formData.internal_observations}
+                                onChange={e => setFormData({ ...formData, internal_observations: e.target.value })}
+                                className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                                placeholder="Notas técnicas, contatos internos ou detalhes que não devem aparecer para o cliente."
+                            />
                         </div>
 
                         <div className="space-y-2">

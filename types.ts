@@ -27,8 +27,9 @@ export interface Project {
   team: string[];
   value: number;
   deadline: string;
-  type: 'business' | 'factory' | 'store';
+  type: 'business' | 'factory' | 'store' | 'residential' | string;
   blueprint_url?: string;
+  internal_observations?: string;
 }
 
 export interface Task {

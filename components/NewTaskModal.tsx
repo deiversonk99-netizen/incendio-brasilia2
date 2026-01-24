@@ -9,6 +9,7 @@ interface NewTaskModalProps {
     onSuccess: () => void;
     defaultGroupId?: string;
     boardId?: string;
+    taskToEdit?: any;
 }
 
 interface TaskGroup {
@@ -16,7 +17,7 @@ interface TaskGroup {
     name: string;
 }
 
-const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess, defaultGroupId, boardId }) => {
+const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess, defaultGroupId, boardId, taskToEdit }) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [projects, setProjects] = useState<Project[]>([]);
@@ -36,9 +37,27 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
     useEffect(() => {
         if (isOpen) {
             fetchInitialData();
-            if (defaultGroupId) setGroupId(defaultGroupId);
+            if (taskToEdit) {
+                setTitle(taskToEdit.title || '');
+                setDescription(taskToEdit.description || '');
+                setGroupId(taskToEdit.group_id || '');
+                setLabelColor(taskToEdit.label_color || 'transparent');
+                setCategory(taskToEdit.category || 'Engenharia');
+                setProjectId(taskToEdit.project_id || '');
+                setIsAnnual(taskToEdit.is_annual || false);
+                setExpirationDate(taskToEdit.expiration_date || '');
+            } else {
+                setTitle('');
+                setDescription('');
+                setGroupId(defaultGroupId || '');
+                setLabelColor('transparent');
+                setCategory('Engenharia');
+                setProjectId('');
+                setIsAnnual(false);
+                setExpirationDate('');
+            }
         }
-    }, [isOpen, defaultGroupId, boardId]);
+    }, [isOpen, defaultGroupId, boardId, taskToEdit]);
 
     const fetchInitialData = async () => {
         let groupsQuery = supabase.from('task_groups').select('id, name').order('order_index');
@@ -87,18 +106,23 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 fileUrl = await handleUpload(file);
             }
 
-            const { error } = await supabase.from('tasks').insert({
+            const payload = {
                 title,
                 description,
                 group_id: groupId || null,
                 label_color: labelColor,
                 category,
                 project_id: projectId || null,
-                file_url: fileUrl,
+                file_url: fileUrl || (taskToEdit?.file_url || ''),
                 user_id: user?.id,
                 is_annual: isAnnual,
-                expiration_date: expirationDate || null
-            });
+                expiration_date: expirationDate || null,
+                order_index: taskToEdit ? (taskToEdit.order_index || 0) : 0 // Default to top for new tasks
+            };
+
+            const { error } = taskToEdit
+                ? await supabase.from('tasks').update(payload).eq('id', taskToEdit.id)
+                : await supabase.from('tasks').insert(payload);
 
             if (error) throw error;
 
@@ -122,7 +146,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
             <div className="bg-surface-dark border border-white/10 rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
                 <div className="p-6 border-b border-white/5 flex justify-between items-center">
-                    <h2 className="text-xl font-bold text-white">Nova Tarefa</h2>
+                    <h2 className="text-xl font-bold text-white">{taskToEdit ? 'Editar Tarefa' : 'Nova Tarefa'}</h2>
                     <button onClick={onClose} className="text-slate-400 hover:text-white">
                         <span className="material-symbols-outlined">close</span>
                     </button>
@@ -237,7 +261,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                         disabled={loading}
                         className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-primary/20 disabled:opacity-50 mt-4"
                     >
-                        {loading ? 'Criando...' : 'Criar Tarefa'}
+                        {loading ? (taskToEdit ? 'Salvando...' : 'Criando...') : (taskToEdit ? 'Salvar Alterações' : 'Criar Tarefa')}
                     </button>
                 </form>
             </div>

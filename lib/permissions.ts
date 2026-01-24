@@ -54,6 +54,11 @@ export const canViewTab = (viewId: string, email?: string, profile?: any) => {
     // Default RBAC fallbacks
     const role = profile?.role || 'USER';
 
+    // SPECIAL ROLE: FUNCIONARIO (Restricted to Field Ops)
+    if (role === 'FUNCIONARIO') {
+        return viewId === 'PLACAS' || viewId === 'STOCK';
+    }
+
     // Groups logic
     if (viewId === 'FINANCE') {
         if (FINANCE_ADMINS.includes(email.toLowerCase())) return true;
@@ -70,7 +75,11 @@ export const canViewTab = (viewId: string, email?: string, profile?: any) => {
         return role === 'ADMIN' || role === 'MANAGER';
     }
 
-    // Default public tabs (DASHBOARD, CLIENTS, TASKS, etc.)
+    // Restricted for normal users but visible to Admin/Manager
+    if (viewId === 'DASHBOARD' || viewId === 'CLIENTS' || viewId === 'TASKS' || viewId === 'KITS' || viewId === 'CATALOG' || viewId === 'SERVICES' || viewId === 'SERVICE_MODELS' || viewId === 'RENEWALS') {
+        return role !== 'USER'; // Assuming USER is also restricted or needs specific permissions
+    }
+
     return true;
 };
 

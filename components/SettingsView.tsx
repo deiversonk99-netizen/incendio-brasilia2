@@ -7,7 +7,7 @@ import PageHeader from './PageHeader';
 interface UserProfile {
     id: string | null;
     email: string;
-    role: 'ADMIN' | 'MANAGER' | 'USER';
+    role: 'ADMIN' | 'MANAGER' | 'USER' | 'FUNCIONARIO';
     permissions: any;
 }
 
@@ -29,17 +29,19 @@ const SettingsView: React.FC = () => {
         { id: 'DASHBOARD', label: 'Dashboard' },
         { id: 'CLIENTS', label: 'Clientes' },
         { id: 'TASKS', label: 'Tarefas' },
-        { id: 'KITS', label: 'Infraestruturas' },
+        { id: 'KITS', label: 'Config. Infra (Kits)' },
         { id: 'CATALOG', label: 'Catálogo Produtos' },
         { id: 'SUPPLIERS', label: 'Fornecedores' },
         { id: 'PLACAS', label: 'Gestão de Placas' },
-        { id: 'STOCK', label: 'Controle de Depósito' },
+        { id: 'STOCK', label: 'Gestão de Depósito' },
         { id: 'SERVICES', label: 'Catálogo Serviços' },
         { id: 'SERVICE_MODELS', label: 'Kits & Composições' },
         { id: 'ENG_A', label: 'Fase A - Levantamento' },
         { id: 'ENG_B', label: 'Fase B - Composição' },
         { id: 'ENG_C', label: 'Fase C - Proposta' },
-        { id: 'FINANCE', label: 'Financeiro' },
+        { id: 'RENEWALS', label: 'Controle de Renovação' },
+        { id: 'FINANCE', label: 'Financeiro (Global)' },
+        { id: 'SETTINGS', label: 'Configurações do Sistema' }
     ];
 
     useEffect(() => {
@@ -165,7 +167,8 @@ const SettingsView: React.FC = () => {
                                                             className="bg-background-dark border border-white/10 rounded px-2 py-1 text-xs outline-none focus:border-primary"
                                                         >
                                                             <option value="USER">Usuário Comum</option>
-                                                            <option value="MANAGER">Gerente</option>
+                                                            <option value="FUNCIONARIO">Operação/Funcionário</option>
+                                                            <option value="MANAGER">Gerente de Projetos</option>
                                                             <option value="ADMIN">Administrador Central</option>
                                                         </select>
                                                     </td>
