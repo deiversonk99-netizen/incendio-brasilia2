@@ -143,84 +143,122 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-surface-dark border border-white/10 rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
-                <div className="p-6 border-b border-white/5 flex justify-between items-center">
-                    <h2 className="text-xl font-bold text-white">{taskToEdit ? 'Editar Tarefa' : 'Nova Tarefa'}</h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+            <div className="bg-surface-dark border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in duration-200">
+                <div className="px-8 py-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+                    <div className="flex items-center gap-3">
+                        <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 text-primary">
+                            <span className="material-symbols-outlined text-[24px]">{taskToEdit ? 'edit_square' : 'add_task'}</span>
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-black text-white tracking-tight">{taskToEdit ? 'Editar Tarefa' : 'Nova Tarefa'}</h2>
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{taskToEdit ? 'Ajuste os detalhes abaixo' : 'Preencha os dados do novo card'}</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="size-10 flex items-center justify-center rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-400 mb-1">Título</label>
-                        <input
-                            required
-                            className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none"
-                            value={title}
-                            onChange={e => setTitle(e.target.value)}
-                            placeholder="O que precisa ser feito?"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-slate-400 mb-1">Descrição</label>
-                        <textarea
-                            className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none h-24 resize-none"
-                            value={description}
-                            onChange={e => setDescription(e.target.value)}
-                            placeholder="Detalhes adicionais..."
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
+                <form onSubmit={handleSubmit} className="p-8 overflow-y-auto space-y-6 custom-scrollbar-minimal">
+                    <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-slate-400 mb-1">Grupo (Coluna)</label>
-                            <select
-                                className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none"
-                                value={groupId}
-                                onChange={e => setGroupId(e.target.value)}
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Título da Tarefa</label>
+                            <input
                                 required
-                            >
-                                <option value="" disabled>Selecione...</option>
-                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                            </select>
+                                className="w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all font-medium text-sm"
+                                value={title}
+                                onChange={e => setTitle(e.target.value)}
+                                placeholder="Ex: Vistoria técnica no Bloco A"
+                            />
                         </div>
+
                         <div>
-                            <label className="block text-sm font-medium text-slate-400 mb-1">Cor de Sinalização</label>
-                            <select
-                                className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none"
-                                value={labelColor}
-                                onChange={e => setLabelColor(e.target.value)}
-                            >
-                                <option value="transparent">Nenhuma</option>
-                                <option value="bg-red-500">Urgente (Vermelho)</option>
-                                <option value="bg-yellow-500">Atenção (Amarelo)</option>
-                                <option value="bg-blue-500">Informativo (Azul)</option>
-                                <option value="bg-green-500">OK (Verde)</option>
-                            </select>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Descrição Detalhada</label>
+                            <textarea
+                                className="w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none h-28 resize-none transition-all text-sm font-medium"
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                placeholder="Descreva os detalhes e observações importantes..."
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-6">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Estágio (Coluna)</label>
+                                <div className="relative group">
+                                    <select
+                                        className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10"
+                                        value={groupId}
+                                        onChange={e => setGroupId(e.target.value)}
+                                        required
+                                    >
+                                        <option value="" disabled className="bg-surface-dark">Selecione o estágio...</option>
+                                        {groups.map(g => <option key={g.id} value={g.id} className="bg-surface-dark">{g.name}</option>)}
+                                    </select>
+                                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none group-focus-within:text-primary transition-colors">expand_more</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Sinalização Visual</label>
+                                <div className="relative group">
+                                    <select
+                                        className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10"
+                                        value={labelColor}
+                                        onChange={e => setLabelColor(e.target.value)}
+                                    >
+                                        <option value="transparent" className="bg-surface-dark">Nenhuma</option>
+                                        <option value="bg-red-500" className="bg-surface-dark">🔴 Crítico / Urgente</option>
+                                        <option value="bg-yellow-500" className="bg-surface-dark">🟡 Atenção</option>
+                                        <option value="bg-blue-500" className="bg-surface-dark">🔵 Informativo</option>
+                                        <option value="bg-green-500" className="bg-surface-dark">🟢 Concluído / OK</option>
+                                    </select>
+                                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none group-focus-within:text-primary transition-colors">palette</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-6">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Categoria</label>
+                                <div className="relative group">
+                                    <select
+                                        className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10"
+                                        value={category}
+                                        onChange={e => setCategory(e.target.value)}
+                                    >
+                                        <option value="Engenharia" className="bg-surface-dark">Engenharia</option>
+                                        <option value="Vendas" className="bg-surface-dark">Vendas</option>
+                                        <option value="Operacional" className="bg-surface-dark">Operacional</option>
+                                        <option value="Administrativo" className="bg-surface-dark">Administrativo</option>
+                                        <option value="Financeiro" className="bg-surface-dark">Financeiro</option>
+                                    </select>
+                                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none group-focus-within:text-primary transition-colors">category</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Vincular Projeto</label>
+                                <div className="relative group">
+                                    <select
+                                        className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10"
+                                        value={projectId}
+                                        onChange={e => setProjectId(e.target.value)}
+                                    >
+                                        <option value="" className="bg-surface-dark">Nenhum Projeto</option>
+                                        {projects.map(p => (
+                                            <option key={p.id} value={p.id} className="bg-surface-dark">{p.name}</option>
+                                        ))}
+                                    </select>
+                                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none group-focus-within:text-primary transition-colors">folder_open</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-slate-400 mb-1">Vincular Projeto (Opcional)</label>
-                        <select
-                            className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none"
-                            value={projectId}
-                            onChange={e => setProjectId(e.target.value)}
-                        >
-                            <option value="">Nenhum</option>
-                            {projects.map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="bg-primary/5 p-4 rounded-xl border border-primary/20 space-y-4 shadow-sm">
-                        <label className="flex items-center gap-3 cursor-pointer group">
-                            <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${isAnnual ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
-                                {isAnnual && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                    <div className="bg-primary/5 p-6 rounded-2xl border border-primary/20 space-y-6 shadow-xl shadow-black/20">
+                        <label className="flex items-center gap-4 cursor-pointer group">
+                            <div className={`size-7 rounded-lg flex items-center justify-center border-2 transition-all ${isAnnual ? 'bg-primary border-primary shadow-lg shadow-primary/20 scale-110' : 'bg-white/5 border-white/10 group-hover:border-white/20'}`}>
+                                {isAnnual && <span className="material-symbols-outlined text-white text-[20px] font-bold">check</span>}
                             </div>
                             <input
                                 type="checkbox"
@@ -229,40 +267,68 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                                 onChange={e => setIsAnnual(e.target.checked)}
                             />
                             <div className="flex flex-col">
-                                <span className="text-sm font-bold text-white">Aditivo de Renovação Anual</span>
-                                <span className="text-[10px] text-slate-500 uppercase font-black">Tarefa recorrente para controle de contratos</span>
+                                <span className="text-[13px] font-black text-white uppercase tracking-wider">Aditivo de Renovação Anual</span>
+                                <p className="text-[10px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">Ativar controle recorrente para este contrato</p>
                             </div>
                         </label>
 
                         {isAnnual && (
-                            <div className="animate-in slide-in-from-top-2 duration-200">
-                                <label className="block text-[10px] font-black text-primary uppercase mb-1">Vencimento do Contrato / Renovação</label>
-                                <input
-                                    type="date"
-                                    className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none text-sm"
-                                    value={expirationDate}
-                                    onChange={e => setExpirationDate(e.target.value)}
-                                />
+                            <div className="animate-in slide-in-from-top-4 duration-300 pt-2 grid grid-cols-1 gap-4">
+                                <div>
+                                    <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-2 block">Vencimento do Contrato / Renovação</label>
+                                    <div className="relative group">
+                                        <input
+                                            type="date"
+                                            className="w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 outline-none text-sm transition-all"
+                                            value={expirationDate}
+                                            onChange={e => setExpirationDate(e.target.value)}
+                                        />
+                                        <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[18px] text-primary/40 pointer-events-none">event</span>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-slate-400 mb-1">Anexo (Arquivo / Aditivo)</label>
-                        <input
-                            type="file"
-                            className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                            onChange={e => setFile(e.target.files?.[0] || null)}
-                        />
+                    <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block">Documentação / Anexos</label>
+                        <div className="relative group h-14">
+                            <input
+                                type="file"
+                                className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
+                                onChange={e => setFile(e.target.files?.[0] || null)}
+                            />
+                            <div className="absolute inset-0 bg-white/5 border border-dashed border-white/10 rounded-xl flex items-center px-5 gap-3 group-hover:bg-white/10 group-hover:border-primary/30 transition-all">
+                                <span className="material-symbols-outlined text-slate-400 group-hover:text-primary">upload_file</span>
+                                <span className="text-sm font-medium text-slate-400 truncate flex-1">
+                                    {file ? file.name : 'Selecionar arquivo ou soltar aqui...'}
+                                </span>
+                                {file && (
+                                    <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFile(null); }} className="size-6 flex items-center justify-center hover:bg-red-500/10 rounded-full text-red-500 transition-all relative z-20">
+                                        <span className="material-symbols-outlined text-[16px]">close</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-primary/20 disabled:opacity-50 mt-4"
-                    >
-                        {loading ? (taskToEdit ? 'Salvando...' : 'Criando...') : (taskToEdit ? 'Salvar Alterações' : 'Criar Tarefa')}
-                    </button>
+                    <div className="pt-4 flex gap-4">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="flex-1 px-6 py-4 rounded-xl border border-white/5 text-slate-400 font-black text-[11px] uppercase tracking-[0.15em] hover:bg-white/5 transition-all active:scale-95"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="flex-[2] bg-primary hover:bg-primary-dark text-white font-black py-4 rounded-xl transition-all shadow-xl shadow-primary/20 active:scale-95 disabled:opacity-50 text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-2"
+                        >
+                            {loading && <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
+                            <span>{loading ? (taskToEdit ? 'Salvando...' : 'Criando...') : (taskToEdit ? 'Salvar Alterações' : 'Criar Tarefa')}</span>
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
