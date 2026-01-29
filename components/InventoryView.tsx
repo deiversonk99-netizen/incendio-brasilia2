@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import PageHeader from './PageHeader';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const InventoryView: React.FC = () => {
     const { user } = useAuth();
@@ -30,6 +32,10 @@ const InventoryView: React.FC = () => {
     const [orderItems, setOrderItems] = useState<{ signage_id: string; quantity: number; signage_name: string }[]>([]);
     const [itemToAdd, setItemToAdd] = useState({ signage_id: '', quantity: 1 });
     const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+    // Smart Search State
+    const [itemSearchTerm, setItemSearchTerm] = useState('');
+    const [showSearchList, setShowSearchList] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -138,6 +144,8 @@ const InventoryView: React.FC = () => {
             signage_name: item.signage?.name || 'Unknown'
         })));
         setIsOrderModalOpen(true);
+        setItemSearchTerm('');
+        setShowSearchList(false);
     };
 
     const handleDeleteOrder = async (orderId: string) => {
@@ -254,6 +262,54 @@ const InventoryView: React.FC = () => {
         }
     };
 
+    const generateOrderPDF = (order: any) => {
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
+
+        // Header
+        doc.setFillColor(0, 0, 0);
+        doc.rect(0, 0, pageWidth, 40, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 25);
+
+        // Order Info
+        doc.setTextColor(40, 40, 40);
+        doc.setFontSize(16);
+        doc.text('PEDIDO DE PLACAS', 20, 55);
+
+        doc.setDrawColor(239, 68, 68);
+        doc.setLineWidth(1);
+        doc.line(20, 58, 60, 58);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Fornecedor: ${order.supplier}`, 20, 70);
+        doc.text(`Data do Pedido: ${new Date(order.created_at).toLocaleDateString('pt-BR')}`, 20, 76);
+        doc.text(`Previsão de Entrega: ${order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('pt-BR') : 'N/A'}`, 20, 82);
+        doc.text(`Status: ${order.status === 'COMPLETED' ? 'Concluído' : order.status === 'PARTIAL' ? 'Parcial' : 'Pendente'}`, 20, 88);
+
+        // Table
+        const tableData = order.items.map((item: any) => [
+            item.signage?.name || 'N/A',
+            item.quantity,
+            item.status === 'RECEIVED' ? `Recebido (${item.received_quantity})` : 'Pendente'
+        ]);
+
+        autoTable(doc, {
+            startY: 95,
+            head: [['Descrição da Placa', 'Quantidade', 'Status']],
+            body: tableData,
+            headStyles: { fillColor: [0, 0, 0], textColor: [255, 255, 255], fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [245, 245, 245] },
+            margin: { left: 20, right: 20 }
+        });
+
+        doc.save(`Pedido_Placas_${order.supplier.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
+    };
+
     const filteredItems = signageItems.filter((item) =>
         item.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -280,6 +336,8 @@ const InventoryView: React.FC = () => {
                                     setNewOrder({ supplier: '', delivery_date: '' });
                                     setOrderItems([]);
                                     setIsOrderModalOpen(true);
+                                    setItemSearchTerm('');
+                                    setShowSearchList(false);
                                 }}
                                 className="flex items-center gap-2 h-10 px-4 rounded-lg bg-primary hover:bg-primary-dark text-white shadow-lg shadow-primary/20 transition-all font-bold text-sm"
                             >
@@ -400,6 +458,16 @@ const InventoryView: React.FC = () => {
                                         >
                                             expand_more
                                         </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 pr-4" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                            onClick={() => generateOrderPDF(order)}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all"
+                                            title="Gerar PDF do Pedido"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                                            PDF
+                                        </button>
                                     </div>
                                 </div>
 
@@ -543,20 +611,49 @@ const InventoryView: React.FC = () => {
                         <div className="bg-background-dark/50 p-4 rounded-xl border border-white/5 mb-6">
                             <h3 className="text-sm font-bold text-white mb-4">Adicionar Itens</h3>
                             <div className="flex gap-3 mb-4 items-end">
-                                <div className="flex-1">
+                                <div className="flex-1 relative">
                                     <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Placa</label>
-                                    <select
-                                        className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-primary text-sm"
-                                        value={itemToAdd.signage_id}
-                                        onChange={e => setItemToAdd({ ...itemToAdd, signage_id: e.target.value })}
-                                    >
-                                        <option value="">Selecione...</option>
-                                        {signageItems.map(item => (
-                                            <option key={item.id} value={item.id}>
-                                                {item.name} (Estoque: {computeQuantity(item.id)})
-                                            </option>
-                                        ))}
-                                    </select>
+                                    <div className="relative">
+                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">search</span>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-primary text-sm transition-all"
+                                            placeholder="Pesquise a placa..."
+                                            value={itemSearchTerm}
+                                            onChange={e => {
+                                                setItemSearchTerm(e.target.value);
+                                                setShowSearchList(true);
+                                            }}
+                                            onFocus={() => setShowSearchList(true)}
+                                        />
+                                    </div>
+
+                                    {showSearchList && itemSearchTerm && (
+                                        <div className="absolute z-[60] w-full mt-2 bg-[#2D2D39] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                            {signageItems
+                                                .filter(item => item.name.toLowerCase().includes(itemSearchTerm.toLowerCase()))
+                                                .map(item => (
+                                                    <button
+                                                        key={item.id}
+                                                        onClick={() => {
+                                                            setItemToAdd({ ...itemToAdd, signage_id: item.id });
+                                                            setItemSearchTerm(item.name);
+                                                            setShowSearchList(false);
+                                                        }}
+                                                        className="w-full text-left px-4 py-3 hover:bg-primary/20 text-sm border-b border-white/5 last:border-none group flex justify-between items-center"
+                                                    >
+                                                        <div className="flex flex-col">
+                                                            <span className="text-white font-medium group-hover:text-primary transition-colors text-[11px] uppercase">{item.name}</span>
+                                                            <span className="text-xs text-slate-400">Estoque: {computeQuantity(item.id)}</span>
+                                                        </div>
+                                                        <span className="material-symbols-outlined text-primary opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
+                                                    </button>
+                                                ))}
+                                            {signageItems.filter(item => item.name.toLowerCase().includes(itemSearchTerm.toLowerCase())).length === 0 && (
+                                                <div className="p-4 text-center text-slate-500 text-xs italic">Nenhuma placa encontrada.</div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="w-24">
                                     <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Qtd</label>
@@ -569,7 +666,10 @@ const InventoryView: React.FC = () => {
                                     />
                                 </div>
                                 <button
-                                    onClick={handleAddOrderItem}
+                                    onClick={() => {
+                                        handleAddOrderItem();
+                                        setItemSearchTerm('');
+                                    }}
                                     disabled={!itemToAdd.signage_id}
                                     className="h-[46px] px-6 bg-primary hover:bg-primary-dark rounded-xl text-white font-bold shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:bg-white/10 flex items-center gap-2 active:scale-95"
                                 >

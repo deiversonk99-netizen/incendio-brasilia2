@@ -23,6 +23,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -33,6 +34,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [chartData, setChartData] = useState<{ name: string, real: number }[]>([]);
+  const [projectsWithProposals, setProjectsWithProposals] = useState<Set<string>>(new Set());
 
   const highlightText = (text: string, highlight: string) => {
     if (!highlight.trim()) return <span>{text}</span>;
@@ -82,12 +84,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       setChartData(formattedChartData);
     }
 
-    // 2. Tasks
-    const { data: taskData } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
-    if (taskData) setTasks(taskData);
-    else {
-      // Fallback/Seed if table empty/not exists yet just for UI stability initially? 
-      // No, let's assume migration ran. If not, array is empty.
+    // 3. Proposals (to check which projects have them)
+    const { data: proposalData } = await supabase.from('proposals').select('project_id');
+    if (proposalData) {
+      setProjectsWithProposals(new Set(proposalData.map(p => p.project_id)));
     }
 
     setLoading(false);
@@ -363,9 +363,17 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                                 {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
                               </span>
                             </div>
-                            <h4 className="text-white font-bold text-base mb-1 truncate">
+                            <h4 className="text-white font-bold text-base mb-1 truncate flex items-center gap-2">
                               {highlightText(proj.name, searchTerm)}
+                              {proj.internal_observations && (
+                                <span className="material-symbols-outlined text-amber-500 text-[16px]" title="Dica: Possui observações internas">info</span>
+                              )}
                             </h4>
+                            {proj.internal_observations && (
+                              <p className="text-[10px] text-amber-500/80 italic mb-2 line-clamp-1 border-l border-amber-500/30 pl-2">
+                                {proj.internal_observations}
+                              </p>
+                            )}
                             <div className="flex items-center gap-1.5 mb-3">
                               <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
                               <p className="text-text-muted text-xs font-medium truncate">
@@ -374,10 +382,26 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                             </div>
                             <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
                             <div className="flex justify-between items-center">
-                              <div className="text-right w-full">
-                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
-                                <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
+                              <div className="text-right w-full flex justify-between items-center">
+                                <div className="text-left">
+                                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
+                                  <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
+                                </div>
+                                {projectsWithProposals.has(proj.id) && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectProject(proj.id);
+                                      onViewChange(AppView.ENGINEERING_PHASE_C);
+                                    }}
+                                    className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-lg border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[10px] font-black uppercase"
+                                    title="Ir para a Proposta"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">description</span>
+                                    Proposta
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -411,8 +435,16 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
       <NewProjectModal
         isOpen={isNewProjectModalOpen}
-        onClose={() => setIsNewProjectModalOpen(false)}
-        onSuccess={() => fetchData()}
+        onClose={() => {
+          setIsNewProjectModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        onSuccess={() => {
+          fetchData();
+          setIsNewProjectModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        projectToEdit={projectToEdit}
       />
 
       <ProjectDetailsModal
@@ -422,6 +454,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
         onUpdate={() => fetchData()}
         onViewChange={onViewChange}
         onSelectProject={onSelectProject}
+        hasProposal={selectedProject ? projectsWithProposals.has(selectedProject.id) : false}
+        onEdit={(project) => {
+          setProjectToEdit(project);
+          setIsNewProjectModalOpen(true);
+          setIsDetailsModalOpen(false);
+        }}
       />
     </>
   );

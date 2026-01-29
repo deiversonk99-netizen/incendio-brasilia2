@@ -246,6 +246,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [showSearchList, setShowSearchList] = useState(false);
   const [itemToReplace, setItemToReplace] = useState<any | null>(null);
+  const [itemToEdit, setItemToEdit] = useState<any | null>(null);
 
   useEffect(() => {
     fetchProjects();
@@ -579,21 +580,23 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       item_type: modalTab === 'service' ? 'SERVICE' : 'PRODUCT'
     };
 
-    if (itemToReplace) {
+    if (itemToReplace || itemToEdit) {
       // Update existing item
+      const activeId = itemToReplace?.id || itemToEdit?.id;
       const { data, error } = await supabase
         .from('budget_items')
         .update(newItemData)
-        .eq('id', itemToReplace.id)
+        .eq('id', activeId)
         .select();
 
       if (error) {
-        alert('Erro ao substituir item: ' + error.message);
+        alert('Erro ao atualizar item: ' + error.message);
       } else {
-        setBudgetItems(prev => prev.map(item => item.id === itemToReplace.id ? data?.[0] : item));
+        setBudgetItems(prev => prev.map(item => item.id === activeId ? data?.[0] : item));
         setIsAddItemModalOpen(false);
         setNewItem({ name: '', quantity: 1, price: 0 });
         setItemToReplace(null);
+        setItemToEdit(null);
       }
     } else {
       // Insert new item
@@ -1989,6 +1992,24 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                               <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
                                 <button
                                   onClick={() => {
+                                    setItemToEdit(item);
+                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price });
+                                    // Determine tab
+                                    if (item.origin === 'MANUAL' && item.item_type === 'PRODUCT') setModalTab('custom');
+                                    else if (item.item_type === 'SERVICE') setModalTab('service');
+                                    else setModalTab('product');
+
+                                    setModalSearchTerm('');
+                                    setShowSearchList(false);
+                                    setIsAddItemModalOpen(true);
+                                  }}
+                                  className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"
+                                  title="Editar Item Detalhado"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                                </button>
+                                <button
+                                  onClick={() => {
                                     setItemToReplace(item);
                                     setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price });
                                     setModalTab(item.item_type === 'SERVICE' ? 'service' : 'product');
@@ -2282,6 +2303,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                 onClick={() => {
                   setIsAddItemModalOpen(false);
                   setItemToReplace(null);
+                  setItemToEdit(null);
                 }}
                 className="absolute top-4 right-4 text-slate-500 hover:text-white"
               >
@@ -2289,13 +2311,20 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
               </button>
 
               <h3 className="text-xl font-bold text-white mb-6">
-                {itemToReplace ? 'Substituir Item' : 'Adicionar à Proposta'}
+                {itemToEdit ? 'Editar Item' : itemToReplace ? 'Substituir Item' : 'Adicionar à Proposta'}
               </h3>
 
               {itemToReplace && (
                 <div className="mb-6 p-3 bg-primary/5 border border-primary/20 rounded-lg">
                   <p className="text-[10px] text-primary font-bold uppercase mb-1">Substituindo:</p>
                   <p className="text-sm text-white font-medium truncate">{itemToReplace.name}</p>
+                </div>
+              )}
+
+              {itemToEdit && (
+                <div className="mb-6 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+                  <p className="text-[10px] text-indigo-400 font-bold uppercase mb-1">Editando Item:</p>
+                  <p className="text-sm text-white font-medium truncate">{itemToEdit.name}</p>
                 </div>
               )}
 
@@ -2450,7 +2479,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
               <div className="flex gap-4 mt-8">
                 <button
-                  onClick={() => setIsAddItemModalOpen(false)}
+                  onClick={() => {
+                    setIsAddItemModalOpen(false);
+                    setItemToReplace(null);
+                    setItemToEdit(null);
+                  }}
                   className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all"
                 >
                   Cancelar
@@ -2460,7 +2493,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                   disabled={!newItem.name || loading}
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold shadow-lg shadow-indigo-900/20 disabled:opacity-50 transition-all"
                 >
-                  Adicionar
+                  {itemToEdit || itemToReplace ? 'Salvar Alterações' : 'Adicionar'}
                 </button>
               </div>
             </div>

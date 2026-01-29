@@ -22,6 +22,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
         client: '',
         type: 'business',
         internal_observations: '',
+        value: 0,
+        deadline: ''
     });
     const [customType, setCustomType] = useState('');
     const [isOtherType, setIsOtherType] = useState(false);
@@ -36,7 +38,9 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                     name: projectToEdit.name,
                     client: projectToEdit.client,
                     type: projectToEdit.type || 'business',
-                    internal_observations: projectToEdit.internal_observations || ''
+                    internal_observations: projectToEdit.internal_observations || '',
+                    value: projectToEdit.value || 0,
+                    deadline: projectToEdit.deadline || ''
                 });
 
                 const standardTypes = ['business', 'factory', 'store', 'residential'];
@@ -51,7 +55,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 setClientSearch(projectToEdit.client);
                 fetchProjectServices(projectToEdit.id);
             } else {
-                setFormData({ name: '', client: '', type: 'business', internal_observations: '' });
+                setFormData({ name: '', client: '', type: 'business', internal_observations: '', value: 0, deadline: '' });
                 setIsOtherType(false);
                 setCustomType('');
                 setClientSearch('');
@@ -113,13 +117,14 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
         setLoading(true);
         try {
             // Check if client exists, if not, create it
-            const { data: existingClient } = await supabase
+            const { data: existingClients } = await supabase
                 .from('clients')
                 .select('id')
-                .eq('name', formData.client)
-                .single();
+                .eq('name', formData.client);
 
-            if (!existingClient && formData.client) {
+            const clientExists = existingClients && existingClients.length > 0;
+
+            if (!clientExists && formData.client) {
                 await supabase.from('clients').insert({
                     name: formData.client,
                     user_id: user.id
@@ -155,8 +160,10 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                         name: formData.name,
                         client: formData.client,
                         type: isOtherType ? customType : formData.type,
-                        blueprint_url: blueprint_url || null,
-                        internal_observations: formData.internal_observations
+                        blueprint_url: blueprint_url || projectToEdit.blueprint_url,
+                        internal_observations: formData.internal_observations,
+                        value: Number(formData.value),
+                        deadline: formData.deadline
                     })
                     .eq('id', projectToEdit.id);
 
@@ -169,7 +176,11 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                         project_id: projectToEdit.id,
                         service_id: serviceId
                     }));
-                    await supabase.from('project_services').insert(serviceAssociations);
+                    const { error: serviceError } = await supabase.from('project_services').insert(serviceAssociations);
+                    if (serviceError) {
+                        console.error('Error saving project services:', serviceError);
+                        alert('Erro ao salvar serviços do projeto');
+                    }
                 }
 
                 onSuccess(projectToEdit.id);
@@ -178,13 +189,13 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 const { data: newProject, error } = await supabase.from('projects').insert({
                     name: formData.name,
                     client: formData.client,
-                    value: 0,
-                    deadline: null,
                     type: isOtherType ? customType : formData.type,
                     status: 'ANALYSIS',
                     user_id: user.id,
                     blueprint_url: blueprint_url || null,
-                    internal_observations: formData.internal_observations
+                    internal_observations: formData.internal_observations,
+                    value: Number(formData.value),
+                    deadline: formData.deadline
                 }).select().single();
 
                 if (error) throw error;
@@ -204,12 +215,6 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
             }
 
             onClose();
-            setFormData({ name: '', client: '', type: 'business', internal_observations: '' });
-            setIsOtherType(false);
-            setCustomType('');
-            setSelectedFile(null);
-            setClientSearch('');
-            setSelectedServices([]);
         } catch (error) {
             console.error('Error saving project:', error);
             alert('Erro ao salvar projeto');
@@ -321,6 +326,30 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                                         required
                                     />
                                 )}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Valor Global (R$)</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    value={formData.value}
+                                    onChange={e => setFormData({ ...formData, value: Number(e.target.value) })}
+                                    className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                    placeholder="0.00"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Prazo Estimado</label>
+                                <input
+                                    type="text"
+                                    value={formData.deadline}
+                                    onChange={e => setFormData({ ...formData, deadline: e.target.value })}
+                                    className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                    placeholder="Ex: 30 dias"
+                                />
                             </div>
                         </div>
 

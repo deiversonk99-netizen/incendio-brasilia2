@@ -4,23 +4,34 @@ import { MOCK_PROJECTS } from '../constants';
 import PageHeader from './PageHeader';
 import NewProjectModal from './NewProjectModal';
 import { supabase } from '../lib/supabase';
+import { Project, AppView } from '../types';
+import ProjectDetailsModal from './ProjectDetailsModal';
 
 const ProjectsView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [projects, setProjects] = React.useState<any[]>([]); // Initialize empty, fetch real data
+  const [projects, setProjects] = React.useState<Project[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = React.useState(false);
+  const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
+  const [projectToEdit, setProjectToEdit] = React.useState<Project | null>(null);
+  const [projectsWithProposals, setProjectsWithProposals] = React.useState<Set<string>>(new Set());
 
-  const fetchProjects = async () => {
+  const fetchData = async () => {
     setLoading(true);
     const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
     if (data) {
-      setProjects(data);
+      setProjects(data as Project[]);
+    }
+
+    const { data: proposalData } = await supabase.from('proposals').select('project_id');
+    if (proposalData) {
+      setProjectsWithProposals(new Set(proposalData.map(p => p.project_id)));
     }
     setLoading(false);
   };
 
   React.useEffect(() => {
-    fetchProjects();
+    fetchData();
   }, []);
 
   const columns = [
@@ -83,7 +94,14 @@ const ProjectsView: React.FC = () => {
                     <div className="text-center text-slate-500 text-sm py-4">Carregando...</div>
                   ) : (
                     projects.filter(p => p.status === col.id).map(proj => (
-                      <div key={proj.id} className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px]">
+                      <div
+                        key={proj.id}
+                        onClick={() => {
+                          setSelectedProject(proj);
+                          setIsDetailsModalOpen(true);
+                        }}
+                        className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98]"
+                      >
                         <div className="flex justify-between items-start mb-2">
                           <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide border ${proj.status === 'ANALYSIS' ? 'bg-blue-900/40 text-blue-300 border-blue-900/50' :
                             'bg-orange-900/40 text-orange-300 border-orange-900/50'
@@ -124,8 +142,29 @@ const ProjectsView: React.FC = () => {
 
       <NewProjectModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={() => fetchProjects()}
+        onClose={() => {
+          setIsModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        onSuccess={() => {
+          fetchData();
+          setIsModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        projectToEdit={projectToEdit}
+      />
+
+      <ProjectDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={() => setIsDetailsModalOpen(false)}
+        project={selectedProject}
+        onUpdate={() => fetchData()}
+        hasProposal={selectedProject ? projectsWithProposals.has(selectedProject.id) : false}
+        onEdit={(project) => {
+          setProjectToEdit(project);
+          setIsModalOpen(true);
+          setIsDetailsModalOpen(false);
+        }}
       />
     </>
   );

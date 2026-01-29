@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Project, AppView } from '../types';
 
@@ -6,9 +6,11 @@ interface ProjectDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
     project: Project | null;
-    onUpdate: () => void; // Refresh dashboard
+    onUpdate: () => void;
     onViewChange: (view: AppView) => void;
     onSelectProject: (id: string) => void;
+    onEdit?: (project: Project) => void;
+    hasProposal?: boolean;
 }
 
 const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
@@ -17,19 +19,23 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
     project,
     onUpdate,
     onViewChange,
-    onSelectProject
+    onSelectProject,
+    onEdit,
+    hasProposal
 }) => {
     const [updating, setUpdating] = useState(false);
     const [projectServices, setProjectServices] = useState<any[]>([]);
+    const [showEditChoice, setShowEditChoice] = useState(false);
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (isOpen && project) {
             fetchProjectServices();
         }
     }, [isOpen, project]);
 
     const fetchProjectServices = async () => {
-        const { data, error } = await supabase
+        if (!project) return;
+        const { data } = await supabase
             .from('project_services')
             .select(`
                 service_id,
@@ -37,10 +43,10 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                     name
                 )
             `)
-            .eq('project_id', project?.id);
+            .eq('project_id', project.id);
 
         if (data) {
-            setProjectServices(data.map((ps: any) => ps.services_catalog.name));
+            setProjectServices(data.map((ps: any) => ps.services_catalog?.name).filter(Boolean));
         }
     };
 
@@ -49,7 +55,6 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
     const handleStatusChange = async (newStatus: 'ANALYSIS' | 'APPROVED' | 'EXECUTION' | 'DONE') => {
         setUpdating(true);
         try {
-            // Update project status
             const { error: updateError } = await supabase
                 .from('projects')
                 .update({ status: newStatus })
@@ -57,19 +62,17 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
 
             if (updateError) throw updateError;
 
-            // If marked as DONE, create financial entry if it doesn't exist
             if (newStatus === 'DONE') {
                 const { data: existingEntry } = await supabase
                     .from('financial_transactions')
                     .select('id')
                     .eq('project_id', project.id)
                     .eq('type', 'INCOME')
-                    .limit(1)
                     .maybeSingle();
 
                 if (!existingEntry) {
                     await supabase.from('financial_transactions').insert({
-                        user_id: project.user_id, // Ensure we use the project's user_id or current user
+                        user_id: project.user_id,
                         description: `Venda de Projeto: ${project.name}`,
                         value: project.value,
                         type: 'INCOME',
@@ -93,18 +96,30 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
     };
 
     const handleDelete = async () => {
-        if (!confirm('Tem certeza que deseja excluir este projeto? Essa ação não pode ser desfeita e apagará todos os itens e propostas associados.')) return;
+        if (!confirm('Tem certeza que deseja excluir este projeto? Essa ação não pode ser desfeita e apagará todos os itens, propostas, tarefas e outros dados associados.')) return;
 
         setUpdating(true);
-        const { error } = await supabase.from('projects').delete().eq('id', project.id);
+        try {
+            // Delete related items manually since DB might not have CASCADE
+            await supabase.from('project_services').delete().eq('project_id', project.id);
+            await supabase.from('budget_items').delete().eq('project_id', project.id);
+            await supabase.from('floors').delete().eq('project_id', project.id);
+            await supabase.from('tasks').delete().eq('project_id', project.id);
+            await supabase.from('pdf_settings').delete().eq('project_id', project.id);
+            await supabase.from('proposal_sections').delete().eq('project_id', project.id);
+            await supabase.from('proposals').delete().eq('project_id', project.id);
 
-        setUpdating(false);
-        if (error) {
-            console.error(error);
-            alert('Erro ao excluir projeto.');
-        } else {
+            const { error } = await supabase.from('projects').delete().eq('id', project.id);
+
+            if (error) throw error;
+
             onUpdate();
             onClose();
+        } catch (error: any) {
+            console.error(error);
+            alert('Erro ao excluir projeto: ' + (error.message || 'Verifique as dependências.'));
+        } finally {
+            setUpdating(false);
         }
     };
 
@@ -188,6 +203,18 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                         </div>
                     </div>
 
+                    {project.internal_observations && (
+                        <div className="mt-8 bg-amber-500/5 border border-amber-500/20 p-4 rounded-xl">
+                            <label className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2 block flex items-center gap-2">
+                                <span className="material-symbols-outlined text-[16px]">info</span>
+                                Observações Internas (Não saem no PDF)
+                            </label>
+                            <p className="text-sm text-slate-300 italic leading-relaxed">
+                                "{project.internal_observations}"
+                            </p>
+                        </div>
+                    )}
+
                     {project.blueprint_url && (
                         <div className="mt-6">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Arquivos do Projeto</label>
@@ -223,14 +250,123 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                     </button>
 
                     <div className="flex gap-3">
-                        <button className="px-4 py-2 bg-surface-dark border border-white/10 text-white rounded-lg font-bold text-sm hover:bg-white/5 transition-colors">
-                            Editar Dados
-                        </button>
+                        <div className="relative group">
+                            <button
+                                onClick={() => setShowEditChoice(!showEditChoice)}
+                                className={`px-4 py-2 border rounded-lg font-bold text-sm transition-all flex items-center gap-2 ${showEditChoice ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' : 'bg-surface-dark border-white/10 text-white hover:bg-white/5'}`}
+                            >
+                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                                {showEditChoice ? 'Sair da Edição' : 'Editar Projeto'}
+                            </button>
+
+                            {showEditChoice && (
+                                <div className="absolute bottom-full right-0 mb-2 w-64 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-2 z-[60] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                    <div className="text-[10px] font-bold text-slate-500 uppercase px-3 py-2 border-b border-white/5 mb-1">
+                                        Selecione o que editar
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            onEdit?.(project);
+                                            setShowEditChoice(false);
+                                        }}
+                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
+                                    >
+                                        <div className="h-8 w-8 rounded bg-blue-500/10 flex items-center justify-center text-blue-500 group-hover/item:scale-110 transition-transform">
+                                            <span className="material-symbols-outlined text-[18px]">info</span>
+                                        </div>
+                                        <div>
+                                            <div className="text-white text-[13px] font-bold">Informações Básicas</div>
+                                            <div className="text-[10px] text-slate-500">Nome, cliente, tipo e obs.</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            onSelectProject(project.id);
+                                            onViewChange(AppView.ENGINEERING_PHASE_A);
+                                            onClose();
+                                        }}
+                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
+                                    >
+                                        <div className="h-8 w-8 rounded bg-yellow-500/10 flex items-center justify-center text-yellow-500 group-hover/item:scale-110 transition-transform">
+                                            <span className="material-symbols-outlined text-[18px]">architecture</span>
+                                        </div>
+                                        <div>
+                                            <div className="text-white text-[13px] font-bold">Levantamento (Fase A)</div>
+                                            <div className="text-[10px] text-slate-500">Pavimentos e especificações</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            onSelectProject(project.id);
+                                            onViewChange(AppView.ENGINEERING_PHASE_B);
+                                            onClose();
+                                        }}
+                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
+                                    >
+                                        <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-primary group-hover/item:scale-110 transition-transform">
+                                            <span className="material-symbols-outlined text-[18px]">engineering</span>
+                                        </div>
+                                        <div>
+                                            <div className="text-white text-[13px] font-bold">Composição (Fase B)</div>
+                                            <div className="text-[10px] text-slate-500">Cálculos e dimensionamento</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            onSelectProject(project.id);
+                                            onViewChange(AppView.ENGINEERING_PHASE_C);
+                                            onClose();
+                                        }}
+                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
+                                    >
+                                        <div className="h-8 w-8 rounded bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover/item:scale-110 transition-transform">
+                                            <span className="material-symbols-outlined text-[18px]">description</span>
+                                        </div>
+                                        <div>
+                                            <div className="text-white text-[13px] font-bold">Proposta (Fase C)</div>
+                                            <div className="text-[10px] text-slate-500">Itens, valores e PDF final</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                         <button
                             onClick={() => {
                                 if (project) {
                                     onSelectProject(project.id);
                                     onViewChange(AppView.ENGINEERING_PHASE_A);
+                                    onClose();
+                                }
+                            }}
+                            className="px-4 py-2 bg-surface-dark border border-white/10 text-white rounded-lg font-bold text-sm hover:bg-white/5 transition-colors"
+                        >
+                            Ver Levantamento
+                        </button>
+
+                        {hasProposal && (
+                            <button
+                                onClick={() => {
+                                    if (project) {
+                                        onSelectProject(project.id);
+                                        onViewChange(AppView.ENGINEERING_PHASE_C);
+                                        onClose();
+                                    }
+                                }}
+                                className="px-4 py-2 bg-emerald-600 border border-emerald-500/20 text-white rounded-lg font-bold text-sm hover:bg-emerald-500 transition-colors flex items-center gap-2"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">description</span>
+                                Ver Proposta
+                            </button>
+                        )}
+
+                        <button
+                            onClick={() => {
+                                if (project) {
+                                    onSelectProject(project.id);
+                                    onViewChange(AppView.ENGINEERING_PHASE_B);
                                     onClose();
                                 }
                             }}
