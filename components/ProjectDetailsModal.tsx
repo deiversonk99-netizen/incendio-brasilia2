@@ -166,7 +166,7 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                 <div className="flex items-center justify-between p-6 border-b border-white/5">
                     <div>
                         <h2 className="text-xl font-bold text-white">{project.name}</h2>
-                        <p className="text-sm text-slate-400 mt-1">{project.client} • {project.address}</p>
+                        <p className="text-sm text-slate-400 mt-1">{project.client}</p>
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
                         <span className="material-symbols-outlined">close</span>
