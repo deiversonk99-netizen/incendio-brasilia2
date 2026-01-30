@@ -242,7 +242,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [modalTab, setModalTab] = useState<'product' | 'service' | 'custom'>('product');
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
-  const [newItem, setNewItem] = useState({ name: '', quantity: 1, price: 0 });
+  const [newItem, setNewItem] = useState({ name: '', quantity: 1, price: 0, cost_price: 0 });
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [showSearchList, setShowSearchList] = useState(false);
   const [itemToReplace, setItemToReplace] = useState<any | null>(null);
@@ -256,7 +256,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   }, []);
 
   const fetchCatalogs = async () => {
-    const { data: products } = await supabase.from('product_catalog').select('name, price').order('name');
+    const { data: products } = await supabase.from('product_catalog').select('name, price, cost_price').order('name');
     const { data: services } = await supabase.from('services_catalog').select('name, description').order('name');
     if (products) setCatalogItems(products);
     if (services) setServiceCatalog(services);
@@ -576,6 +576,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       quantity_calculated: 0,
       quantity_final: newItem.quantity,
       unit_price: newItem.price,
+      cost_price: newItem.cost_price,
       origin: 'MANUAL' as const,
       item_type: modalTab === 'service' ? 'SERVICE' : 'PRODUCT'
     };
@@ -594,7 +595,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       } else {
         setBudgetItems(prev => prev.map(item => item.id === activeId ? data?.[0] : item));
         setIsAddItemModalOpen(false);
-        setNewItem({ name: '', quantity: 1, price: 0 });
+        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0 });
         setItemToReplace(null);
         setItemToEdit(null);
       }
@@ -607,7 +608,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       } else {
         setBudgetItems(prev => [...prev, data?.[0]]);
         setIsAddItemModalOpen(false);
-        setNewItem({ name: '', quantity: 1, price: 0 });
+        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0 });
       }
     }
     setLoading(false);
@@ -1993,7 +1994,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 <button
                                   onClick={() => {
                                     setItemToEdit(item);
-                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price });
+                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0 });
                                     // Determine tab
                                     if (item.origin === 'MANUAL' && item.item_type === 'PRODUCT') setModalTab('custom');
                                     else if (item.item_type === 'SERVICE') setModalTab('service');
@@ -2011,7 +2012,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 <button
                                   onClick={() => {
                                     setItemToReplace(item);
-                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price });
+                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0 });
                                     setModalTab(item.item_type === 'SERVICE' ? 'service' : 'product');
                                     setModalSearchTerm('');
                                     setShowSearchList(false);
@@ -2335,7 +2336,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     key={tab}
                     onClick={() => {
                       setModalTab(tab);
-                      setNewItem({ name: '', quantity: 1, price: 0 });
+                      setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0 });
                       setModalSearchTerm('');
                       setShowSearchList(false);
                     }}
@@ -2373,7 +2374,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             <button
                               key={p.name}
                               onClick={() => {
-                                setNewItem({ ...newItem, name: p.name, price: p.price });
+                                setNewItem({ ...newItem, name: p.name, price: p.price, cost_price: p.cost_price || 0 });
                                 setModalSearchTerm(p.name);
                                 setShowSearchList(false);
                               }}
@@ -2474,6 +2475,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       onChange={e => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Custo Unitário (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                    placeholder="Opcional - Valor de custo do item"
+                    value={newItem.cost_price}
+                    onChange={e => setNewItem({ ...newItem, cost_price: parseFloat(e.target.value) })}
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1 italic">Este valor é usado para calcular o lucro real da proposta.</p>
                 </div>
               </div>
 

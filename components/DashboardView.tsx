@@ -29,12 +29,15 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('ALL');
   const [filterClient, setFilterClient] = useState('ALL');
+  const [viewMode, setViewMode] = useState<'STATUS' | 'PHASE'>('STATUS');
 
   // Real Data States
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [chartData, setChartData] = useState<{ name: string, real: number }[]>([]);
   const [projectsWithProposals, setProjectsWithProposals] = useState<Set<string>>(new Set());
+  const [projectsWithFloors, setProjectsWithFloors] = useState<Set<string>>(new Set());
+  const [projectsWithCalculatedItems, setProjectsWithCalculatedItems] = useState<Set<string>>(new Set());
 
   const highlightText = (text: string, highlight: string) => {
     if (!highlight.trim()) return <span>{text}</span>;
@@ -90,6 +93,18 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       setProjectsWithProposals(new Set(proposalData.map(p => p.project_id)));
     }
 
+    // 4. Floors (Phase A)
+    const { data: floorsData } = await supabase.from('floors').select('project_id');
+    if (floorsData) {
+      setProjectsWithFloors(new Set(floorsData.map(f => f.project_id)));
+    }
+
+    // 5. Calculated Items (Phase B)
+    const { data: itemsData } = await supabase.from('budget_items').select('project_id').eq('origin', 'CALCULATED');
+    if (itemsData) {
+      setProjectsWithCalculatedItems(new Set(itemsData.map(i => i.project_id)));
+    }
+
     setLoading(false);
   };
 
@@ -137,6 +152,22 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   ];
 
   const uniqueClients = Array.from(new Set(projects.map(p => p.client))).sort();
+
+  const phaseColumns = [
+    { id: 'PHASE_A', label: 'Levantamento (A)', color: 'bg-blue-400', shadow: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]' },
+    { id: 'PHASE_B', label: 'Composição (B)', color: 'bg-yellow-400', shadow: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]' },
+    { id: 'PHASE_C', label: 'Proposta (C)', color: 'bg-primary', shadow: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]' },
+    { id: 'NEW', label: 'Não Iniciado', color: 'bg-slate-400', shadow: 'shadow-[0_0_8px_rgba(148,163,184,0.6)]' },
+  ];
+
+  const getProjectPhase = (p: Project) => {
+    if (projectsWithProposals.has(p.id)) return 'PHASE_C';
+    if (projectsWithCalculatedItems.has(p.id)) return 'PHASE_B';
+    if (projectsWithFloors.has(p.id)) return 'PHASE_A';
+    return 'NEW';
+  };
+
+  const activeColumns = viewMode === 'STATUS' ? columns : phaseColumns;
 
   return (
     <>
@@ -285,6 +316,21 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                   )}
                 </div>
 
+                <div className="flex bg-surface-dark border border-white/10 rounded-xl p-1 gap-1">
+                  <button
+                    onClick={() => setViewMode('STATUS')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'STATUS' ? 'bg-primary text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                  >
+                    Status
+                  </button>
+                  <button
+                    onClick={() => setViewMode('PHASE')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'PHASE' ? 'bg-primary text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                  >
+                    Fases
+                  </button>
+                </div>
+
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <select
@@ -317,14 +363,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
               </div>
             </div>
             <div className="flex h-[500px] gap-6 min-w-[1200px]">
-              {columns.map(col => (
+              {activeColumns.map(col => (
                 <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <span className={`w-2.5 h-2.5 rounded-full ${col.color} ${col.shadow}`}></span>
                       <h3 className="text-white font-bold text-sm uppercase tracking-wider">{col.label}</h3>
                       <span className="bg-[#46252c] text-text-muted text-xs font-bold px-2 py-0.5 rounded-full">
-                        {projects.filter(p => p.status === col.id).length}
+                        {projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length}
                       </span>
                     </div>
                   </div>
@@ -334,7 +380,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                       <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
                     ) : (
                       projects
-                        .filter(p => p.status === col.id)
+                        .filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id)
                         .filter(p => {
                           // Filter by Type
                           if (filterType !== 'ALL' && p.type !== filterType) return false;
@@ -407,8 +453,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                           </div>
                         ))
                     )}
-                    {!loading && projects.filter(p => p.status === col.id).length > 0 &&
-                      projects.filter(p => p.status === col.id).filter(p => {
+                    {!loading && projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length > 0 &&
+                      projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).filter(p => {
                         if (filterType !== 'ALL' && p.type !== filterType) return false;
                         if (filterClient !== 'ALL' && p.client !== filterClient) return false;
 

@@ -26,6 +26,7 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
     const [updating, setUpdating] = useState(false);
     const [projectServices, setProjectServices] = useState<any[]>([]);
     const [showEditChoice, setShowEditChoice] = useState(false);
+    const [showDeleteChoice, setShowDeleteChoice] = useState(false);
 
     useEffect(() => {
         if (isOpen && project) {
@@ -95,33 +96,53 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
         }
     };
 
-    const handleDelete = async () => {
-        if (!confirm('Tem certeza que deseja excluir este projeto? Essa ação não pode ser desfeita e apagará todos os itens, propostas, tarefas e outros dados associados.')) return;
+    const handleDeletePhase = async (phase: 'A' | 'B' | 'C' | 'ALL') => {
+        let message = '';
+        switch (phase) {
+            case 'A': message = 'Tem certeza que deseja limpar o Levantamento (Fase A)? Isso apagará todos os pavimentos.'; break;
+            case 'B': message = 'Tem certeza que deseja limpar a Composição (Fase B)? Isso apagará todos os itens calculados.'; break;
+            case 'C': message = 'Tem certeza que deseja limpar a Proposta (Fase C)? Isso apagará a proposta e itens manuais.'; break;
+            case 'ALL': message = 'Tem certeza que deseja excluir ESTE PROJETO INTEIRO? Essa ação não pode ser desfeita.'; break;
+        }
+
+        if (!confirm(message)) return;
 
         setUpdating(true);
         try {
-            // Delete related items manually since DB might not have CASCADE
-            await supabase.from('project_services').delete().eq('project_id', project.id);
-            await supabase.from('budget_items').delete().eq('project_id', project.id);
-            await supabase.from('floors').delete().eq('project_id', project.id);
-            await supabase.from('tasks').delete().eq('project_id', project.id);
-            await supabase.from('pdf_settings').delete().eq('project_id', project.id);
-            await supabase.from('proposal_sections').delete().eq('project_id', project.id);
-            await supabase.from('proposals').delete().eq('project_id', project.id);
+            if (phase === 'A' || phase === 'ALL') {
+                await supabase.from('floors').delete().eq('project_id', project.id);
+            }
+            if (phase === 'B' || phase === 'ALL') {
+                await supabase.from('budget_items').delete().eq('project_id', project.id).eq('origin', 'CALCULATED');
+            }
+            if (phase === 'C' || phase === 'ALL') {
+                await supabase.from('proposals').delete().eq('project_id', project.id);
+                await supabase.from('proposal_sections').delete().eq('project_id', project.id);
+                await supabase.from('pdf_settings').delete().eq('project_id', project.id);
+                await supabase.from('budget_items').delete().eq('project_id', project.id).eq('origin', 'MANUAL');
+            }
 
-            const { error } = await supabase.from('projects').delete().eq('id', project.id);
-
-            if (error) throw error;
-
-            onUpdate();
-            onClose();
+            if (phase === 'ALL') {
+                await supabase.from('project_services').delete().eq('project_id', project.id);
+                await supabase.from('tasks').delete().eq('project_id', project.id);
+                const { error } = await supabase.from('projects').delete().eq('id', project.id);
+                if (error) throw error;
+                onUpdate();
+                onClose();
+            } else {
+                alert('Fase limpa com sucesso!');
+                onUpdate();
+                setShowDeleteChoice(false);
+            }
         } catch (error: any) {
             console.error(error);
-            alert('Erro ao excluir projeto: ' + (error.message || 'Verifique as dependências.'));
+            alert('Erro ao realizar ação: ' + (error.message || 'Verifique as dependências.'));
         } finally {
             setUpdating(false);
         }
     };
+
+    const handleDelete = () => setShowDeleteChoice(!showDeleteChoice);
 
     const statusColors = {
         ANALYSIS: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -240,14 +261,77 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
 
                 {/* Actions Footer */}
                 <div className="p-6 border-t border-white/5 bg-background-dark/50 rounded-b-xl flex justify-between items-center">
-                    <button
-                        onClick={handleDelete}
-                        disabled={updating}
-                        className="text-red-400 hover:text-red-300 text-sm font-medium flex items-center gap-2 px-3 py-2 rounded hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                    >
-                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                        Excluir Projeto
-                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={handleDelete}
+                            disabled={updating}
+                            className={`text-sm font-medium flex items-center gap-2 px-3 py-2 rounded transition-all disabled:opacity-50 ${showDeleteChoice ? 'bg-red-500 text-white shadow-lg' : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                            {showDeleteChoice ? 'Sair da Exclusão' : 'Excluir Projeto'}
+                        </button>
+
+                        {showDeleteChoice && (
+                            <div className="absolute bottom-full left-0 mb-2 w-64 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-2 z-[60] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                <div className="text-[10px] font-bold text-slate-500 uppercase px-3 py-2 border-b border-white/5 mb-1">
+                                    O que deseja limpar?
+                                </div>
+                                <button
+                                    onClick={() => handleDeletePhase('A')}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
+                                >
+                                    <div className="h-8 w-8 rounded bg-yellow-500/10 flex items-center justify-center text-yellow-500 group-hover/item:scale-110 transition-transform">
+                                        <span className="material-symbols-outlined text-[18px]">architecture</span>
+                                    </div>
+                                    <div>
+                                        <div className="text-white text-[13px] font-bold">Limpar Levantamento</div>
+                                        <div className="text-[10px] text-slate-500">Remove todos os pavimentos</div>
+                                    </div>
+                                </button>
+
+                                <button
+                                    onClick={() => handleDeletePhase('B')}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
+                                >
+                                    <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-primary group-hover/item:scale-110 transition-transform">
+                                        <span className="material-symbols-outlined text-[18px]">engineering</span>
+                                    </div>
+                                    <div>
+                                        <div className="text-white text-[13px] font-bold">Limpar Composição</div>
+                                        <div className="text-[10px] text-slate-500">Remove itens calculados</div>
+                                    </div>
+                                </button>
+
+                                <button
+                                    onClick={() => handleDeletePhase('C')}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
+                                >
+                                    <div className="h-8 w-8 rounded bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover/item:scale-110 transition-transform">
+                                        <span className="material-symbols-outlined text-[18px]">description</span>
+                                    </div>
+                                    <div>
+                                        <div className="text-white text-[13px] font-bold">Limpar Proposta</div>
+                                        <div className="text-[10px] text-slate-500">Remove settings e itens manuais</div>
+                                    </div>
+                                </button>
+
+                                <div className="border-t border-white/5 my-1"></div>
+
+                                <button
+                                    onClick={() => handleDeletePhase('ALL')}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-red-500/20 transition-colors text-left group/item text-red-500"
+                                >
+                                    <div className="h-8 w-8 rounded bg-red-500/10 flex items-center justify-center group-hover/item:scale-110 transition-transform">
+                                        <span className="material-symbols-outlined text-[18px]">delete_forever</span>
+                                    </div>
+                                    <div>
+                                        <div className="text-[13px] font-bold">Excluir Tudo</div>
+                                        <div className="text-[10px] text-red-500/60 font-bold uppercase">Ação Irreversível</div>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="flex gap-3">
                         <div className="relative group">
