@@ -81,17 +81,38 @@ const TasksView: React.FC = () => {
 
     // Special Sync Board Handling
     if (selectedBoardId === SYNC_BOARD_ID) {
-      const { data: syncData } = await supabase
-        .from('tasks')
-        .select(`
-          *, 
-          projects(name), 
-          user_profiles:user_id(email)
-        `)
-        .eq('status', 'PENDING')
-        .order('created_at', { ascending: false });
+      const [{ data: syncData }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
+        supabase
+          .from('tasks')
+          .select(`
+            *, 
+            projects(name)
+          `)
+          .eq('status', 'PENDING')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('user_profiles')
+          .select('id, email'),
+        supabase
+          .from('task_checklist_items')
+          .select('task_id, is_completed')
+      ]);
 
-      if (syncData) setTasks(syncData as any);
+      if (syncData) {
+        const enrichedSyncData = syncData.map((t: any) => {
+          const taskChecklist = checklistsData?.filter((c: any) => c.task_id === t.id) || [];
+          const completedCount = taskChecklist.filter((c: any) => c.is_completed).length;
+          const totalCount = taskChecklist.length;
+
+          return {
+            ...t,
+            user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
+            checklist_progress: totalCount > 0 ? `${completedCount}/${totalCount}` : null,
+            checklist_percentage: totalCount > 0 ? (completedCount / totalCount) * 100 : 0
+          };
+        });
+        setTasks(enrichedSyncData as any);
+      }
 
       setGroups([{
         id: 'sync-group-all',
@@ -120,18 +141,38 @@ const TasksView: React.FC = () => {
     const groupIds = groupsData?.map(g => g.id) || [];
     console.log('Group IDs:', groupIds);
 
-    let query = supabase
-      .from('tasks')
-      .select('*, projects(name), user_profiles:user_id(email)')
-      .in('group_id', groupIds) // Only tasks in current board columns
-      .order('order_index', { ascending: true });
-
-    const { data: tasksData, error: tasksError } = await query;
+    const [{ data: tasksData, error: tasksError }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
+      supabase
+        .from('tasks')
+        .select('*, projects(name)')
+        .in('group_id', groupIds)
+        .order('order_index', { ascending: true }),
+      supabase
+        .from('user_profiles')
+        .select('id, email'),
+      supabase
+        .from('task_checklist_items')
+        .select('task_id, is_completed')
+    ]);
 
     if (tasksError) console.error('Tasks Fetch Error:', tasksError);
     console.log('Tasks Data:', tasksData);
 
-    if (tasksData) setTasks(tasksData as any);
+    if (tasksData) {
+      const enrichedTasks = tasksData.map((t: any) => {
+        const taskChecklist = checklistsData?.filter((c: any) => c.task_id === t.id) || [];
+        const completedCount = taskChecklist.filter((c: any) => c.is_completed).length;
+        const totalCount = taskChecklist.length;
+
+        return {
+          ...t,
+          user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
+          checklist_progress: totalCount > 0 ? `${completedCount}/${totalCount}` : null,
+          checklist_percentage: totalCount > 0 ? (completedCount / totalCount) * 100 : 0
+        };
+      });
+      setTasks(enrichedTasks as any);
+    }
 
     setLoading(false);
   };
@@ -516,11 +557,25 @@ const TasksView: React.FC = () => {
                             </div>
 
                             <div className="flex items-center gap-2">
+                              {/* Checklist Indicator */}
+                              {(task as any).checklist_progress && (
+                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 text-[9px] font-bold text-slate-400" title="Checklist">
+                                  <span className="material-symbols-outlined text-[12px]">check_box</span>
+                                  <span>{(task as any).checklist_progress}</span>
+                                </div>
+                              )}
+
                               {task.file_url && (
                                 <a href={task.file_url} target="_blank" rel="noreferrer" className="size-6 flex items-center justify-center bg-primary/10 border border-primary/20 rounded-lg text-primary hover:bg-primary/20 transition-all">
                                   <span className="material-symbols-outlined text-[14px]">attachment</span>
+                                  <span>Ver Detalhes?</span>
+                                  {/* Just attachment for now, but user asked for "Ver Detalhes" button in card. 
+                                      Maybe the edit button assumes that role? 
+                                      Or I should add a specific button. 
+                                  */}
                                 </a>
                               )}
+
                               <div className="flex gap-1">
                                 {['bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'].map(c => (
                                   <button
@@ -529,6 +584,50 @@ const TasksView: React.FC = () => {
                                     className={`w-2 h-2 rounded-full ${c} ${task.label_color === c ? 'ring-2 ring-white scale-110 shadow-lg shadow-black/40' : 'opacity-20 hover:opacity-100 transition-all hover:scale-125'}`}
                                   />
                                 ))}
+                              </div>
+
+                              {/* Move Action (Quick Menu) - Simplified to just Edit triggers modal which allows move, 
+                                  User asked for "change status" action in card.
+                                  Let's add a small dropdown/popover or just a 'Move' button that cycles? 
+                                  Or a small select? A select might be too cramped.
+                                  Let's add a "Quick Move" button that opens a mini-menu or just relies on Drag/Drop/Edit.
+                                  User specified: "trocar o status do cardo, ver os detalhes do card"
+                                  "Status" usually maps to Column.
+                                  "Ver Detalhes" maps to opening the modal.
+                              */}
+                              <div className="relative group/move ml-1">
+                                <button className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
+                                  <span className="material-symbols-outlined text-[16px]">more_vert</span>
+                                </button>
+                                {/* Dropdown Menu */}
+                                <div className="absolute right-0 bottom-full mb-2 w-40 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-1 opacity-0 group-hover/move:opacity-100 pointer-events-none group-hover/move:pointer-events-auto transition-all z-50 flex flex-col gap-1">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingTask(task);
+                                      setIsModalOpen(true);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-300 hover:text-white text-left uppercase tracking-wider"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">visibility</span>
+                                    Ver Detalhes
+                                  </button>
+                                  <div className="h-px bg-white/5 my-0.5"></div>
+                                  <span className="text-[9px] font-black text-slate-600 px-3 py-1 uppercase tracking-widest">Mover para:</span>
+                                  {groups.filter(g => g.id !== group.id).map(g => (
+                                    <button
+                                      key={g.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateTaskGroup(task.id, g.id);
+                                      }}
+                                      className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left truncate"
+                                    >
+                                      <span className="size-2 rounded-full bg-slate-500"></span>
+                                      {g.name}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
                             </div>
                           </div>

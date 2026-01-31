@@ -21,6 +21,13 @@ interface TaskGroup {
     };
 }
 
+interface ChecklistItem {
+    id?: string;
+    task_id?: string;
+    content: string;
+    is_completed: boolean;
+}
+
 const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess, defaultGroupId, boardId, taskToEdit }) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
@@ -38,6 +45,10 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
     const [isAnnual, setIsAnnual] = useState(false);
     const [expirationDate, setExpirationDate] = useState('');
 
+    // Checklist State
+    const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+    const [newChecklistItem, setNewChecklistItem] = useState('');
+
     useEffect(() => {
         if (isOpen) {
             fetchInitialData();
@@ -50,6 +61,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 setProjectId(taskToEdit.project_id || '');
                 setIsAnnual(taskToEdit.is_annual || false);
                 setExpirationDate(taskToEdit.expiration_date || '');
+                fetchChecklist(taskToEdit.id);
             } else {
                 setTitle('');
                 setDescription('');
@@ -60,6 +72,8 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 setProjectId('');
                 setIsAnnual(false);
                 setExpirationDate('');
+                setChecklistItems([]);
+                setNewChecklistItem('');
             }
         }
     }, [isOpen, defaultGroupId, boardId, taskToEdit]);
@@ -154,11 +168,53 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 status: taskToEdit ? (taskToEdit.status || 'PENDING') : 'PENDING'
             };
 
-            const { error } = taskToEdit
-                ? await supabase.from('tasks').update(payload).eq('id', taskToEdit.id)
-                : await supabase.from('tasks').insert(payload);
+            const { data: taskData, error } = taskToEdit
+                ? await supabase.from('tasks').update(payload).eq('id', taskToEdit.id).select().single()
+                : await supabase.from('tasks').insert(payload).select().single();
 
             if (error) throw error;
+
+            // Handle Checklist
+            if (taskData) {
+                // We delete all existing items for this task to sync state (simplest approach for now)
+                // Or better: Upsert/Delete differential.
+                // For simplicity, let's just delete all and insert current state? 
+                // No, that changes IDs. Better to just handle inserts/updates. 
+                // But for "offline-first" feel, let's just process the list.
+
+                // Strategy: 
+                // 1. Delete items not in current list (if they have ID)
+                // 2. Upsert items in current list
+
+                const currentIds = checklistItems.filter(i => i.id).map(i => i.id);
+                if (taskToEdit) {
+                    await supabase.from('task_checklist_items').delete().eq('task_id', taskToEdit.id).not('id', 'in', `(${currentIds.join(',')})`);
+                    // Note: Supabase not syntax for IN might be tricky with empty array.
+                    // If empty, delete all.
+                    if (currentIds.length === 0) {
+                        await supabase.from('task_checklist_items').delete().eq('task_id', taskToEdit.id);
+                    } else {
+                        await supabase.from('task_checklist_items').delete().eq('task_id', taskToEdit.id).not('id', 'in', `(${currentIds.join(',')})`);
+                    }
+                }
+
+                const itemsToUpsert = checklistItems.map(item => ({
+                    id: item.id, // If undefined, Supabase will generate new UUID if we don't pass it? No, upsert needs PK.
+                    // Actually, for new items, id is undefined. 
+                    // Let's separate new vs existing.
+                    task_id: taskData.id,
+                    content: item.content,
+                    is_completed: item.is_completed
+                }));
+
+                for (const item of itemsToUpsert) {
+                    if (item.id) {
+                        await supabase.from('task_checklist_items').update({ content: item.content, is_completed: item.is_completed }).eq('id', item.id);
+                    } else {
+                        await supabase.from('task_checklist_items').insert({ task_id: taskData.id, content: item.content, is_completed: item.is_completed });
+                    }
+                }
+            }
 
             onSuccess();
             onClose();
@@ -327,6 +383,71 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                                 </div>
                             </div>
                         )}
+                    </div>
+
+                    {/* Checklist Section */}
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em]">Checklist / Sub-tarefas</label>
+                            <span className="text-[10px] font-bold text-slate-600 bg-white/5 px-2 py-0.5 rounded-lg">
+                                {checklistItems.filter(i => i.is_completed).length}/{checklistItems.length}
+                            </span>
+                        </div>
+
+                        <div className="space-y-2">
+                            {checklistItems.map((item, index) => (
+                                <div key={index} className="flex items-center gap-3 group">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const newItems = [...checklistItems];
+                                            newItems[index].is_completed = !newItems[index].is_completed;
+                                            setChecklistItems(newItems);
+                                        }}
+                                        className={`size-5 rounded border flex items-center justify-center transition-all ${item.is_completed ? 'bg-green-500 border-green-500 text-white' : 'bg-transparent border-slate-600 hover:border-primary'}`}
+                                    >
+                                        {item.is_completed && <span className="material-symbols-outlined text-[14px] font-bold">check</span>}
+                                    </button>
+                                    <input
+                                        value={item.content}
+                                        onChange={(e) => {
+                                            const newItems = [...checklistItems];
+                                            newItems[index].content = e.target.value;
+                                            setChecklistItems(newItems);
+                                        }}
+                                        className={`flex-1 bg-transparent border-b border-transparent focus:border-primary/50 outline-none text-sm transition-all ${item.is_completed ? 'text-slate-500 line-through decoration-slate-600' : 'text-white'}`}
+                                        placeholder="Item da checklist..."
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setChecklistItems(checklistItems.filter((_, i) => i !== index))}
+                                        className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-500 transition-all"
+                                    >
+                                        <span className="material-symbols-outlined text-[18px]">close</span>
+                                    </button>
+                                </div>
+                            ))}
+
+                            <div className="flex items-center gap-2 mt-2">
+                                <span className="material-symbols-outlined text-slate-500 text-[18px]">add</span>
+                                <input
+                                    value={newChecklistItem}
+                                    onChange={(e) => setNewChecklistItem(e.target.value)}
+                                    // Add on Enter
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            if (newChecklistItem.trim()) {
+                                                setChecklistItems([...checklistItems, { content: newChecklistItem, is_completed: false }]);
+                                                setNewChecklistItem('');
+                                            }
+                                        }
+                                    }}
+                                    className="flex-1 bg-transparent border-none outline-none text-sm text-slate-300 placeholder:text-slate-600"
+                                    placeholder="Adicionar item (Pressione Enter)"
+                                />
+                            </div>
+                        </div>
                     </div>
 
                     <div className="space-y-4">
