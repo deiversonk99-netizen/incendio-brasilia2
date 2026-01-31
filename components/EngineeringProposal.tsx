@@ -67,6 +67,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [candidateItems, setCandidateItems] = useState<any[]>([]);
   const [tempVisibleItems, setTempVisibleItems] = useState<string[]>([]);
   const [sections, setSections] = useState<any[]>([]); // Dynamic Sections State
+  const [itemDescriptions, setItemDescriptions] = useState<Record<string, string>>({}); // Description lookup map
 
   const loadPdfSettings = async (projectId: string) => {
     try {
@@ -256,10 +257,25 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   }, []);
 
   const fetchCatalogs = async () => {
-    const { data: products } = await supabase.from('product_catalog').select('name, price, cost_price').order('name');
+    const { data: products } = await supabase.from('product_catalog').select('name, price, cost_price, observation').order('name');
     const { data: services } = await supabase.from('services_catalog').select('name, description').order('name');
+
     if (products) setCatalogItems(products);
     if (services) setServiceCatalog(services);
+
+    // Build descriptions map
+    const map: Record<string, string> = {};
+    if (products) {
+      products.forEach((p: any) => {
+        if (p.observation) map[p.name] = p.observation;
+      });
+    }
+    if (services) {
+      services.forEach((s: any) => {
+        if (s.description) map[s.name] = s.description;
+      });
+    }
+    setItemDescriptions(map);
   };
 
   const fetchSections = async (projectId: string) => {
@@ -559,9 +575,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       alert('Proposta salva com sucesso! O Valor Global do projeto foi atualizado.');
       fetchProjects(); // Refresh project list to reflect new value
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Erro ao salvar proposta.');
+      alert('Erro ao salvar proposta: ' + (error.message || 'Erro desconhecido'));
     }
     setSaving(false);
   };
@@ -1930,6 +1946,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
                                   {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
                                 </div>
+                                {itemDescriptions[item.name] && (
+                                  <div className="text-[10px] text-slate-400 mt-1 italic leading-tight max-w-md">
+                                    {itemDescriptions[item.name]}
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td className="px-6 py-4">

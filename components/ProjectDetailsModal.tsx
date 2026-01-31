@@ -123,10 +123,36 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
             }
 
             if (phase === 'ALL') {
+                // Delete ALL budget items regardless of origin to ensure nothing is left
+                const { error: budgetError } = await supabase.from('budget_items').delete().eq('project_id', project.id);
+                if (budgetError) {
+                    console.error('Error deleting budget items:', budgetError);
+                }
+
+                // Delete remaining dependencies not covered by phases
                 await supabase.from('project_services').delete().eq('project_id', project.id);
                 await supabase.from('tasks').delete().eq('project_id', project.id);
-                const { error } = await supabase.from('projects').delete().eq('id', project.id);
-                if (error) throw error;
+                await supabase.from('financial_transactions').delete().eq('project_id', project.id);
+                await supabase.from('contract_renewals').delete().eq('project_id', project.id);
+
+                // Finally delete the project itself with count verification
+                const { error, count } = await supabase
+                    .from('projects')
+                    .delete({ count: 'exact' })
+                    .eq('id', project.id);
+
+                if (error) {
+                    console.error('Error deleting project:', error);
+                    throw error;
+                }
+
+                // Verify deletion succeeded
+                if (count === 0) {
+                    throw new Error('Nenhum projeto foi excluído. Verifique se você tem permissão para excluir este projeto.');
+                }
+
+                console.log(`Successfully deleted ${count} project(s)`);
+                alert('Projeto excluído com sucesso!');
                 onUpdate();
                 onClose();
             } else {
@@ -137,6 +163,7 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
         } catch (error: any) {
             console.error(error);
             alert('Erro ao realizar ação: ' + (error.message || 'Verifique as dependências.'));
+            console.error('Delete error:', error);
         } finally {
             setUpdating(false);
         }

@@ -214,10 +214,16 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                 onSuccess(newProject.id);
             }
 
+            if (projectToEdit) {
+                alert('Projeto atualizado com sucesso!');
+            } else {
+                alert('Projeto criado com sucesso!');
+            }
+
             onClose();
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error saving project:', error);
-            alert('Erro ao salvar projeto');
+            alert('Erro ao salvar projeto: ' + (error.message || JSON.stringify(error)));
         } finally {
             setLoading(false);
         }

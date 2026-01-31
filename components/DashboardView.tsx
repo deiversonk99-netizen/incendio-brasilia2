@@ -7,6 +7,7 @@ import ProjectDetailsModal from './ProjectDetailsModal';
 import { supabase } from '../lib/supabase';
 import { Project, AppView } from '../types';
 import { Button, Card } from './ui';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Task {
   id: string;
@@ -38,6 +39,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [projectsWithProposals, setProjectsWithProposals] = useState<Set<string>>(new Set());
   const [projectsWithFloors, setProjectsWithFloors] = useState<Set<string>>(new Set());
   const [projectsWithCalculatedItems, setProjectsWithCalculatedItems] = useState<Set<string>>(new Set());
+
+  // Color Label States
+  const [labelDefinitions, setLabelDefinitions] = useState<{ color: string, label: string }[]>([]);
+  const [showLabelSettings, setShowLabelSettings] = useState(false);
+  const [editingLabels, setEditingLabels] = useState<{ color: string, label: string }[]>([]);
+  const { user } = useAuth();
 
   const highlightText = (text: string, highlight: string) => {
     if (!highlight.trim()) return <span>{text}</span>;
@@ -105,6 +112,31 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       setProjectsWithCalculatedItems(new Set(itemsData.map(i => i.project_id)));
     }
 
+    // 6. Load Label Definitions
+    if (user) {
+      const { data: labelsData } = await supabase
+        .from('project_label_definitions')
+        .select('color, label')
+        .eq('user_id', user.id);
+
+      if (labelsData && labelsData.length > 0) {
+        setLabelDefinitions(labelsData);
+      } else {
+        // Initialize default labels
+        const defaultLabels = [
+          { color: 'bg-red-500', label: 'Crítico / Urgente' },
+          { color: 'bg-yellow-500', label: 'Atenção' },
+          { color: 'bg-blue-500', label: 'Informativo' },
+          { color: 'bg-green-500', label: 'Concluído / OK' }
+        ];
+        setLabelDefinitions(defaultLabels);
+
+        // Save defaults to database
+        const inserts = defaultLabels.map(d => ({ ...d, user_id: user.id }));
+        await supabase.from('project_label_definitions').insert(inserts);
+      }
+    }
+
     setLoading(false);
   };
 
@@ -137,6 +169,33 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const handleProjectClick = (project: Project) => {
     setSelectedProject(project);
     setIsDetailsModalOpen(true);
+  };
+
+  const handleUpdateProjectColor = async (projectId: string, color: string) => {
+    // Optimistic update
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, label_color: color } as Project : p));
+    // Persist to database
+    await supabase.from('projects').update({ label_color: color }).eq('id', projectId);
+  };
+
+  const handleSaveLabelDefinitions = async () => {
+    if (!user) return;
+
+    try {
+      // Delete existing definitions
+      await supabase.from('project_label_definitions').delete().eq('user_id', user.id);
+
+      // Insert new definitions
+      const inserts = editingLabels.map(d => ({ ...d, user_id: user.id }));
+      await supabase.from('project_label_definitions').insert(inserts);
+
+      setLabelDefinitions(editingLabels);
+      setShowLabelSettings(false);
+      alert('Configurações de sinalização salvas com sucesso!');
+    } catch (error: any) {
+      console.error('Error saving label definitions:', error);
+      alert('Erro ao salvar configurações: ' + error.message);
+    }
   };
 
   // KPI Calculations
@@ -359,6 +418,18 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                     </select>
                     <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-[18px]">expand_more</span>
                   </div>
+
+                  <button
+                    onClick={() => {
+                      setEditingLabels([...labelDefinitions]);
+                      setShowLabelSettings(true);
+                    }}
+                    className="flex items-center gap-2 bg-surface-dark border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-400 hover:text-white hover:border-primary/30 transition-all"
+                    title="Configurar Sinalização Visual"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">palette</span>
+                    <span className="hidden lg:inline">Sinalização</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -402,12 +473,60 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                           <div
                             key={proj.id}
                             onClick={() => handleProjectClick(proj)}
-                            className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98]"
+                            className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative"
                           >
+                            {/* Color Label Indicator */}
+                            {(proj as any).label_color && (proj as any).label_color !== 'transparent' && (
+                              <div
+                                className={`absolute top-0 right-0 w-1.5 h-full ${(proj as any).label_color} rounded-r-xl`}
+                                title={labelDefinitions.find(l => l.color === (proj as any).label_color)?.label || ''}
+                              ></div>
+                            )}
+
                             <div className="flex justify-between items-start mb-2">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
-                                {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
+                                  {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
+                                </span>
+                              </div>
+
+                              {/* Color Label Selector */}
+                              <div className="relative group/label opacity-0 group-hover:opacity-100 transition-all">
+                                <button
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">label</span>
+                                </button>
+
+                                {/* Dropdown */}
+                                <div className="absolute right-0 top-full mt-1 w-48 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-2 opacity-0 group-hover/label:opacity-100 pointer-events-none group-hover/label:pointer-events-auto transition-all z-50 flex flex-col gap-1">
+                                  <span className="text-[9px] font-black text-slate-600 px-2 py-1 uppercase tracking-widest">Sinalização Visual</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateProjectColor(proj.id, 'transparent');
+                                    }}
+                                    className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left"
+                                  >
+                                    <span className="size-3 rounded-full bg-transparent border border-white/20"></span>
+                                    Nenhuma
+                                  </button>
+                                  {labelDefinitions.map(def => (
+                                    <button
+                                      key={def.color}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateProjectColor(proj.id, def.color);
+                                      }}
+                                      className={`flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-left ${(proj as any).label_color === def.color ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
+                                    >
+                                      <span className={`size-3 rounded-full ${def.color} ${(proj as any).label_color === def.color ? 'ring-2 ring-white scale-110' : ''}`}></span>
+                                      {def.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
                             </div>
                             <h4 className="text-white font-bold text-base mb-1 truncate flex items-center gap-2">
                               {highlightText(proj.name, searchTerm)}
@@ -507,6 +626,65 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
           setIsDetailsModalOpen(false);
         }}
       />
+
+      {/* Label Settings Modal */}
+      {showLabelSettings && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                  <span className="material-symbols-outlined text-primary text-[24px]">palette</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Sinalização Visual</h3>
+                  <p className="text-xs text-slate-500">Personalize o significado das cores</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLabelSettings(false)}
+                className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              {editingLabels.map((def, index) => (
+                <div key={def.color} className="flex items-center gap-3">
+                  <div className={`size-6 rounded-full ${def.color} shrink-0 shadow-lg`}></div>
+                  <input
+                    type="text"
+                    value={def.label}
+                    onChange={(e) => {
+                      const newLabels = [...editingLabels];
+                      newLabels[index].label = e.target.value;
+                      setEditingLabels(newLabels);
+                    }}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-primary outline-none transition-all"
+                    placeholder="Ex: Crítico / Urgente"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLabelSettings(false)}
+                className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveLabelDefinitions}
+                className="flex-1 px-4 py-2.5 bg-primary hover:bg-red-600 rounded-xl text-sm font-bold text-white transition-all shadow-lg shadow-primary/20"
+              >
+                Salvar Configurações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
