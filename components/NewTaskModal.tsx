@@ -150,7 +150,8 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 user_id: user?.id,
                 is_annual: isAnnual,
                 expiration_date: expirationDate || null,
-                order_index: taskToEdit ? (taskToEdit.order_index || 0) : 0 // Default to top for new tasks
+                order_index: taskToEdit ? (taskToEdit.order_index || 0) : 0, // Default to top for new tasks
+                status: taskToEdit ? (taskToEdit.status || 'PENDING') : 'PENDING'
             };
 
             const { error } = taskToEdit
@@ -166,12 +167,13 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             setDescription('');
             setFile(null);
         } catch (error: any) {
-            console.error(error);
-            alert('Erro ao criar tarefa: ' + (error.message || 'Verifique se o bucket "task-attachments" existe no Supabase.'));
+            console.error('Error creating task:', error);
+            alert('Erro ao criar tarefa: ' + (error.message || 'Erro desconhecido.'));
         } finally {
             setLoading(false);
         }
     };
+
 
     if (!isOpen) return null;
 

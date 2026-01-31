@@ -112,10 +112,13 @@ const TasksView: React.FC = () => {
       .eq('board_id', selectedBoardId)
       .order('order_index', { ascending: true });
 
+    console.log('Groups Data:', groupsData);
+
     if (groupsData) setGroups(groupsData);
 
     // 3. Fetch Tasks
     const groupIds = groupsData?.map(g => g.id) || [];
+    console.log('Group IDs:', groupIds);
 
     let query = supabase
       .from('tasks')
@@ -123,7 +126,11 @@ const TasksView: React.FC = () => {
       .in('group_id', groupIds) // Only tasks in current board columns
       .order('order_index', { ascending: true });
 
-    const { data: tasksData } = await query;
+    const { data: tasksData, error: tasksError } = await query;
+
+    if (tasksError) console.error('Tasks Fetch Error:', tasksError);
+    console.log('Tasks Data:', tasksData);
+
     if (tasksData) setTasks(tasksData as any);
 
     setLoading(false);
