@@ -48,6 +48,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+  const [clientDetails, setClientDetails] = useState<any>(null);
 
   // Form State
   const [editingFloorId, setEditingFloorId] = useState<string | null>(null);
@@ -210,11 +211,26 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     if (selectedProjectId) {
       fetchFloors();
       loadPdfSettings(selectedProjectId);
+      fetchClientDetails();
     } else {
       setFloors([]);
       resetForm();
+      setClientDetails(null);
     }
   }, [selectedProjectId]);
+
+  const fetchClientDetails = async () => {
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!project || !project.client) return;
+
+    const { data } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('name', project.client)
+      .single();
+
+    if (data) setClientDetails(data);
+  };
 
   const fetchProjects = async () => {
     const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
@@ -657,7 +673,23 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <PageHeader
-        title="Levantamento de Dados"
+        title={
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span>Levantamento de Dados</span>
+              {projects.find(p => p.id === selectedProjectId)?.project_number && (
+                <span className="bg-primary/20 text-primary text-[10px] font-black px-2 py-0.5 rounded border border-primary/30 ml-2">
+                  PR{String(projects.find(p => p.id === selectedProjectId)?.project_number).padStart(3, '0')}
+                </span>
+              )}
+            </div>
+            {clientDetails?.fantasy_name && (
+              <span className="text-primary text-xs font-bold uppercase tracking-widest mt-1 italic">
+                {clientDetails.fantasy_name}
+              </span>
+            )}
+          </div>
+        }
         subtitle="Definição de pavimentos, dimensões e equipamentos básicos."
         breadcrumbs={
           <div className="flex items-center gap-2 text-sm">
@@ -839,7 +871,9 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                 >
                   <option value="">Selecione...</option>
                   {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
+                    <option key={p.id} value={p.id}>
+                      {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} - ` : ''}{p.name} - {p.client}
+                    </option>
                   ))}
                 </select>
               </div>

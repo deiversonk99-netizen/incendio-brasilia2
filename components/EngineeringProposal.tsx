@@ -266,6 +266,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [showSearchList, setShowSearchList] = useState(false);
   const [itemToReplace, setItemToReplace] = useState<any | null>(null);
   const [itemToEdit, setItemToEdit] = useState<any | null>(null);
+  const [clientDetails, setClientDetails] = useState<any>(null);
 
   useEffect(() => {
     fetchProjects();
@@ -310,8 +311,24 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       loadProposalData(selectedProjectId);
       loadPdfSettings(selectedProjectId);
       fetchSections(selectedProjectId);
+      fetchClientDetails();
+    } else {
+      setClientDetails(null);
     }
   }, [selectedProjectId]);
+
+  const fetchClientDetails = async () => {
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!project || !project.client) return;
+
+    const { data } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('name', project.client)
+      .single();
+
+    if (data) setClientDetails(data);
+  };
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -327,11 +344,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const profitFactor = 1 + (profitPct / 100);
 
     setBudgetItems(prev => prev.map(item => {
-      // Only recalculate if we have a valid cost price. 
-      // If it's a service/manual item without strict cost, we might want to keep it or apply differently?
-      // Requirement: "Custo Unitário deve vir do banco... Venda Unitário ... recalcular automaticamente"
-      // Usually applies to items where we start from Cost.
-      if (item.item_type !== 'SERVICE' && item.cost_price > 0) {
+      if (item.cost_price > 0) {
         return {
           ...item,
           unit_price: item.cost_price * bdiFactor * profitFactor
@@ -463,15 +476,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const bdiPct = Number(proposal.bdi_percent) || 0;
     const profitPct = Number(proposal.profit_percent) || 0;
 
-    // We use a Multiplicative approach for the "Target" prices: Cost * BDI * Profit
     const bdiFactor = 1 + (bdiPct / 100);
     const profitFactor = 1 + (profitPct / 100);
     const combinedFactor = bdiFactor * profitFactor;
 
     let totalProductsCost = 0;
     let totalServicesCost = 0;
-
-    // Live Predicted Sum vs Actual Sum
     let predictedVendaGlobal = 0;
     let actualVendaGlobal = 0;
 
@@ -480,12 +490,21 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       let cost = Number(item.cost_price || 0);
       const currentSale = Number(item.unit_price || 0);
 
-      // Fallback for visual base calculation if cost is 0
-      if (cost <= 0 && currentSale > 0) {
-        // If it's zero, we assume the current sale IS the cost for calculation purposes
-        // OR we can try to guess what the cost was.
-        // Let's assume the user entered the current sale as their baseline if cost is 0.
-        cost = currentSale / combinedFactor;
+      // FALLBACK: If cost is 0, we try to LOOKUP from catalog first instead of back-calculating
+      if (cost <= 0) {
+        const cleanName = item.name.includes('[') && item.name.includes(']')
+          ? item.name.split(']')[1]?.trim() || item.name
+          : item.name.trim();
+
+        const catalogItem = catalogItems.find(p => p.name.trim().toLowerCase() === cleanName.toLowerCase());
+        if (catalogItem && catalogItem.cost_price > 0) {
+          cost = catalogItem.cost_price;
+        } else if (currentSale > 0) {
+          // Absolute last resort: back-calculate from currentSale
+          // BUT we use a fixed factor of 1 if combinedFactor is weird, 
+          // and we don't let this update the 'cost' permanently unless handleRecalculate is called.
+          cost = currentSale / (combinedFactor || 1);
+        }
       }
 
       const lineCostTotal = cost * q;
@@ -499,7 +518,6 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       actualVendaGlobal += currentSale * q;
     });
 
-    // Slices for the visual cards (Based on PREDICTED values)
     const totalCostBase = totalProductsCost + totalServicesCost;
     const bdiVal = (totalCostBase * bdiFactor) - totalCostBase;
     const profitVal = (totalCostBase * bdiFactor * profitFactor) - (totalCostBase * bdiFactor);
@@ -508,7 +526,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     if (proposal.discount_type === 'FIXED') {
       discountVal = Number(proposal.discount_value) || 0;
     } else {
-      discountVal = predictedVendaGlobal * ((Number(proposal.discount_value) || 0) / 100);
+      // Discount applies to the Actual Global Sale
+      discountVal = actualVendaGlobal * ((Number(proposal.discount_value) || 0) / 100);
     }
 
     return {
@@ -518,7 +537,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       profitVal: Number(profitVal.toFixed(2)),
       discountVal: Number(discountVal.toFixed(2)),
       final: Number((predictedVendaGlobal - discountVal).toFixed(2)),
-      actualFinal: Number((actualVendaGlobal - (proposal.discount_type === 'FIXED' ? discountVal : (actualVendaGlobal * (Number(proposal.discount_value || 0) / 100)))).toFixed(2))
+      actualFinal: Number((actualVendaGlobal - discountVal).toFixed(2))
     };
   };
 
@@ -529,14 +548,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     setLoading(true);
     const bdiPct = Number(proposal.bdi_percent) || 0;
     const profitPct = Number(proposal.profit_percent) || 0;
-    const bdiFactor = 1 + (bdiPct / 100);
-    const profitFactor = 1 + (profitPct / 100);
-    const combinedFactor = bdiFactor * profitFactor;
+    const combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
 
     const updatedItems = budgetItems.map(item => {
       let cost = Number(item.cost_price || 0);
 
-      // Healing / Fallback
+      // Healing / Fallback from Catalog
       if (cost <= 0) {
         const cleanName = item.name.includes('[') && item.name.includes(']')
           ? item.name.split(']')[1]?.trim() || item.name
@@ -546,7 +563,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         if (catalogProd && catalogProd.cost_price > 0) {
           cost = catalogProd.cost_price;
         } else {
-          // If still 0, use current unit_price as the base cost
+          // If still 0, we use current unit_price but with a STATIC assumption (e.g. current combined factor)
+          // to break the circular reduction. Or we keep it 0 if combinedFactor is 0.
           cost = Number(item.unit_price || 0) / (combinedFactor || 1);
         }
       }
@@ -1343,7 +1361,23 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <PageHeader
-        title="Proposta Comercial"
+        title={
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span>Proposta Comercial</span>
+              {projects.find(p => p.id === selectedProjectId)?.project_number && (
+                <span className="bg-primary/20 text-primary text-[10px] font-black px-2 py-0.5 rounded border border-primary/30 ml-2">
+                  PR{String(projects.find(p => p.id === selectedProjectId)?.project_number).padStart(3, '0')}
+                </span>
+              )}
+            </div>
+            {clientDetails?.fantasy_name && (
+              <span className="text-primary text-xs font-bold uppercase tracking-widest mt-1 italic">
+                {clientDetails.fantasy_name}
+              </span>
+            )}
+          </div>
+        }
         subtitle="Formação de preço e exportação de documentos"
         breadcrumbs={
           <div className="flex items-center gap-2 text-sm">
@@ -1738,7 +1772,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                   >
                     <option value="">Selecione...</option>
                     {filteredProjects.map(p => (
-                      <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
+                      <option key={p.id} value={p.id}>
+                        {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} - ` : ''}{p.name} - {p.client}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1953,8 +1989,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
                         // Calculate informative BDI and Profit values
                         let costBase = Number(item.cost_price || 0);
-                        if (costBase <= 0 && Number(item.unit_price) > 0) {
-                          costBase = Number(item.unit_price) / (bdiFact * profitFact);
+                        if (costBase <= 0) {
+                          const cleanName = item.name.includes('[') && item.name.includes(']')
+                            ? item.name.split(']')[1]?.trim() || item.name
+                            : item.name.trim();
+                          const catalogItem = catalogItems.find(p => p.name.trim().toLowerCase() === cleanName.toLowerCase());
+                          if (catalogItem && catalogItem.cost_price > 0) {
+                            costBase = catalogItem.cost_price;
+                          } else if (Number(item.unit_price) > 0) {
+                            costBase = Number(item.unit_price) / (bdiFact * profitFact);
+                          }
                         }
 
                         const qty = Number(item.quantity_final || 0);

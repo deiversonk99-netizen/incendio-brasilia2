@@ -30,6 +30,7 @@ export interface Project {
   type: 'business' | 'factory' | 'store' | 'residential' | string;
   blueprint_url?: string;
   internal_observations?: string;
+  project_number?: number;
 }
 
 export interface Task {

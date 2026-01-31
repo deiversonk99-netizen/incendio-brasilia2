@@ -10,6 +10,7 @@ interface ClientEntry {
     email?: string;
     phone?: string;
     client_type?: string;
+    fantasy_name?: string;
 }
 
 interface ClientStats {
@@ -181,25 +182,41 @@ const ClientsView: React.FC = () => {
                         filteredClients.map((client) => (
                             <div key={client.clientName} className="bg-surface-dark border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-all group shadow-xl flex flex-col relative overflow-hidden">
                                 <div className="absolute top-4 right-4 flex gap-2 z-10">
-                                    <button
-                                        onClick={() => client.details && handleEditClient(client.details)}
-                                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-all border border-white/5"
-                                        title="Editar Cliente"
-                                    >
-                                        <span className="material-symbols-outlined text-[18px]">edit</span>
-                                    </button>
-                                    <button
-                                        onClick={() => client.details && handleDeleteClient(client.details.id, client.details.name)}
-                                        className="w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 flex items-center justify-center transition-all border border-red-500/10"
-                                        title="Excluir Cliente"
-                                    >
-                                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                                    </button>
+                                    {client.details ? (
+                                        <>
+                                            <button
+                                                onClick={() => handleEditClient(client.details!)}
+                                                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-all border border-white/5"
+                                                title="Editar Cliente"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteClient(client.details!.id, client.details!.name)}
+                                                className="w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 flex items-center justify-center transition-all border border-red-500/10"
+                                                title="Excluir Cliente"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div
+                                            className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[8px] font-black uppercase tracking-widest"
+                                            title="Este cliente existe apenas em projetos e não possui um cadastro completo."
+                                        >
+                                            Sem Cadastro
+                                        </div>
+                                    )}
                                 </div>
 
                                 <h3 className="text-lg font-black text-white mb-1 group-hover:text-primary transition-colors truncate italic pr-20">
                                     {client.clientName}
                                 </h3>
+                                {client.details?.fantasy_name && (
+                                    <p className="text-[11px] text-primary font-bold italic mb-1 uppercase tracking-tight">
+                                        {client.details.fantasy_name}
+                                    </p>
+                                )}
 
                                 <div className="flex items-center gap-2 mb-4 flex-wrap">
                                     {client.details?.client_type && (

@@ -62,7 +62,7 @@ const TasksView: React.FC = () => {
     if (boardsData) {
       let finalBoards = [...boardsData];
       if (isCentral) {
-        finalBoards.push({ id: SYNC_BOARD_ID, name: '🔄 Sincronização - Todos os Usuários' });
+        finalBoards.push({ id: SYNC_BOARD_ID, name: '🔄 Monitoramento de Pendências (Equipe)' });
       }
       setBoards(finalBoards);
 
@@ -551,9 +551,16 @@ const TasksView: React.FC = () => {
 
                           <div className="flex items-center justify-between pt-3 border-t border-white/5">
                             <div className="flex items-center gap-2">
-                              {/* User Avatar Initial */}
-                              <div className="size-6 rounded-lg bg-surface-dark border border-white/10 flex items-center justify-center text-[10px] font-black text-slate-400 shadow-inner" title={(task as any).user_profiles?.email}>
-                                {initials}
+                              {/* User Avatar Initial & Email Label */}
+                              <div className="flex items-center gap-1.5">
+                                <div className="size-6 rounded-lg bg-surface-dark border border-white/10 flex items-center justify-center text-[10px] font-black text-slate-400 shadow-inner" title={(task as any).user_profiles?.email}>
+                                  {initials}
+                                </div>
+                                {selectedBoardId === SYNC_BOARD_ID && (
+                                  <span className="text-[9px] font-bold text-slate-500 truncate max-w-[80px]" title={(task as any).user_profiles?.email}>
+                                    {(task as any).user_profiles?.email?.split('@')[0]}
+                                  </span>
+                                )}
                               </div>
                               <span className="text-[9px] font-black uppercase tracking-widest text-[#c7949f] opacity-40">
                                 {task.category}

@@ -162,8 +162,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                         type: isOtherType ? customType : formData.type,
                         blueprint_url: blueprint_url || projectToEdit.blueprint_url,
                         internal_observations: formData.internal_observations,
-                        value: Number(formData.value),
-                        deadline: formData.deadline
+                        value: Number(formData.value) || 0,
+                        deadline: formData.deadline || null
                     })
                     .eq('id', projectToEdit.id);
 
@@ -194,8 +194,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
                     user_id: user.id,
                     blueprint_url: blueprint_url || null,
                     internal_observations: formData.internal_observations,
-                    value: Number(formData.value),
-                    deadline: formData.deadline
+                    value: Number(formData.value) || 0,
+                    deadline: formData.deadline || null
                 }).select().single();
 
                 if (error) throw error;
@@ -247,16 +247,26 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
 
                 <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
                     <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
-                        <div>
-                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Nome do Projeto</label>
-                            <input
-                                type="text"
-                                required
-                                value={formData.name}
-                                onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                placeholder="Ex: Reforma Shopping Norte"
-                            />
+                        <div className="flex gap-4">
+                            {projectToEdit?.project_number && (
+                                <div className="w-24">
+                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Nº Projeto</label>
+                                    <div className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-3 text-primary font-black flex items-center justify-center">
+                                        PR{String(projectToEdit.project_number).padStart(3, '0')}
+                                    </div>
+                                </div>
+                            )}
+                            <div className="flex-1">
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Nome do Projeto</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.name}
+                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                    className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                    placeholder="Ex: Reforma Shopping Norte"
+                                />
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">

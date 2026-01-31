@@ -44,10 +44,11 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         if (isOpen) {
             fetchInitialData();
             if (editingTransaction) {
+                const totalVal = editingTransaction.value * (editingTransaction.total_installments || 1);
                 setFormData({
                     description: editingTransaction.description,
-                    value: editingTransaction.value.toString(),
-                    installmentValue: (editingTransaction.value / (editingTransaction.total_installments || 1)).toFixed(2),
+                    value: totalVal.toString(),
+                    installmentValue: editingTransaction.value.toString(),
                     type: editingTransaction.type,
                     entity: editingTransaction.entity || '',
                     date: editingTransaction.date,
@@ -159,7 +160,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                     .from('financial_transactions')
                     .update({
                         description: formData.description,
-                        value: totalValue,
+                        value: installmentValue,
                         type: formData.type,
                         entity: formData.entity,
                         date: formData.date,

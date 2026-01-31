@@ -35,6 +35,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+  const [clientDetails, setClientDetails] = useState<any>(null);
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState(0);
@@ -214,10 +215,25 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     if (selectedProjectId) {
       loadBudgetItems();
       loadPdfSettings(selectedProjectId);
+      fetchClientDetails();
     } else {
       setItems([]);
+      setClientDetails(null);
     }
   }, [selectedProjectId]);
+
+  const fetchClientDetails = async () => {
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!project || !project.client) return;
+
+    const { data } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('name', project.client)
+      .single();
+
+    if (data) setClientDetails(data);
+  };
 
   const fetchProjects = async () => {
     const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
@@ -907,7 +923,23 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <PageHeader
-        title="Composição de Materiais"
+        title={
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span>Composição de Materiais</span>
+              {projects.find(p => p.id === selectedProjectId)?.project_number && (
+                <span className="bg-primary/20 text-primary text-[10px] font-black px-2 py-0.5 rounded border border-primary/30 ml-2">
+                  PR{String(projects.find(p => p.id === selectedProjectId)?.project_number).padStart(3, '0')}
+                </span>
+              )}
+            </div>
+            {clientDetails?.fantasy_name && (
+              <span className="text-primary text-xs font-bold uppercase tracking-widest mt-1 italic">
+                {clientDetails.fantasy_name}
+              </span>
+            )}
+          </div>
+        }
         subtitle="Revisão de itens agregados e ajuste de quantidades finais."
         breadcrumbs={
           <div className="flex items-center gap-2 text-sm">
@@ -1116,7 +1148,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                 >
                   <option value="">Selecione...</option>
                   {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} - {p.client}</option>
+                    <option key={p.id} value={p.id}>
+                      {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} - ` : ''}{p.name} - {p.client}
+                    </option>
                   ))}
                 </select>
               </div>

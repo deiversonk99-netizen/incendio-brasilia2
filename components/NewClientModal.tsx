@@ -9,6 +9,7 @@ interface Client {
     phone?: string;
     notes?: string;
     client_type?: string;
+    fantasy_name?: string;
 }
 
 interface NewClientModalProps {
@@ -26,7 +27,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
         email: '',
         phone: '',
         notes: '',
-        client_type: ''
+        client_type: '',
+        fantasy_name: ''
     });
 
     React.useEffect(() => {
@@ -36,10 +38,11 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                 email: client.email || '',
                 phone: client.phone || '',
                 notes: client.notes || '',
-                client_type: client.client_type || ''
+                client_type: client.client_type || '',
+                fantasy_name: client.fantasy_name || ''
             });
         } else {
-            setFormData({ name: '', email: '', phone: '', notes: '', client_type: 'Condomínio' }); // Default to Condomínio? Or empty.
+            setFormData({ name: '', email: '', phone: '', notes: '', client_type: 'Condomínio', fantasy_name: '' }); // Default to Condomínio? Or empty.
         }
     }, [client, isOpen]);
 
@@ -69,7 +72,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
 
             onSuccess();
             onClose();
-            setFormData({ name: '', email: '', phone: '', notes: '', client_type: '' });
+            setFormData({ name: '', email: '', phone: '', notes: '', client_type: '', fantasy_name: '' });
         } catch (error: any) {
             console.error('Error saving client:', error);
             alert('Erro ao salvar cliente: ' + error.message);
@@ -100,6 +103,17 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                             onChange={e => setFormData({ ...formData, name: e.target.value })}
                             className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none transition-all"
                             placeholder="Ex: Construtora Alfa"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1.5 tracking-widest">Nome Fantasia (Opcional)</label>
+                        <input
+                            type="text"
+                            value={formData.fantasy_name}
+                            onChange={e => setFormData({ ...formData, fantasy_name: e.target.value })}
+                            className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none transition-all"
+                            placeholder="Ex: Alfa Construções"
                         />
                     </div>
 

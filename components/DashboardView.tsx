@@ -485,6 +485,11 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-2">
+                                {proj.project_number && (
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-primary text-white border border-primary/20">
+                                    PR{String(proj.project_number).padStart(3, '0')}
+                                  </span>
+                                )}
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
                                   {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
                                 </span>
