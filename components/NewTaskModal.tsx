@@ -12,9 +12,13 @@ interface NewTaskModalProps {
     taskToEdit?: any;
 }
 
+// Update interface
 interface TaskGroup {
     id: string;
     name: string;
+    task_boards?: {
+        name: string;
+    };
 }
 
 const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess, defaultGroupId, boardId, taskToEdit }) => {
@@ -49,6 +53,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             } else {
                 setTitle('');
                 setDescription('');
+                // If defaultGroupId is passed, use it, otherwise validation will force selection
                 setGroupId(defaultGroupId || '');
                 setLabelColor('transparent');
                 setCategory('Engenharia');
@@ -60,8 +65,14 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
     }, [isOpen, defaultGroupId, boardId, taskToEdit]);
 
     const fetchInitialData = async () => {
-        let groupsQuery = supabase.from('task_groups').select('id, name').order('order_index');
-        if (boardId) {
+        // Fetch groups with their board info
+        let groupsQuery = supabase
+            .from('task_groups')
+            .select('id, name, board_id, task_boards(name)')
+            .order('order_index');
+
+        // Only filter by board if it's a valid ID and NOT the virtual sync board
+        if (boardId && boardId !== 'central-sync') {
             groupsQuery = groupsQuery.eq('board_id', boardId);
         }
 
@@ -69,8 +80,24 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             supabase.from('projects').select('*').order('name'),
             groupsQuery
         ]);
+
         if (pData) setProjects(pData);
-        if (gData) setGroups(gData);
+        if (gData) {
+            setGroups(gData as any);
+
+            // If currently selected groupId is not in the fetched groups (and we are not editing), clear it
+            // This prevents "ghost" selections if switching contexts
+            // However, if we are editing, we trust the task's current group
+
+            // If no group is selected, select the first one automatically if available
+            if (!groupId && !taskToEdit && gData.length > 0) {
+                // Try to respect defaultGroupId if it exists in the new list
+                const hasDefault = gData.some((g: any) => g.id === defaultGroupId);
+                if (!hasDefault) {
+                    setGroupId(gData[0].id);
+                }
+            }
+        }
     };
 
     const handleUpload = async (file: File) => {
@@ -98,6 +125,12 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (!groupId) {
+            alert('Por favor, selecione um estágio (grupo) para a tarefa.');
+            return;
+        }
+
         setLoading(true);
 
         try {
@@ -109,7 +142,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             const payload = {
                 title,
                 description,
-                group_id: groupId || null,
+                group_id: groupId,
                 label_color: labelColor,
                 category,
                 project_id: projectId || null,
@@ -194,7 +227,11 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                                         required
                                     >
                                         <option value="" disabled className="bg-surface-dark">Selecione o estágio...</option>
-                                        {groups.map(g => <option key={g.id} value={g.id} className="bg-surface-dark">{g.name}</option>)}
+                                        {groups.map(g => (
+                                            <option key={g.id} value={g.id} className="bg-surface-dark">
+                                                {g.task_boards?.name ? `${g.task_boards.name} > ${g.name}` : g.name}
+                                            </option>
+                                        ))}
                                     </select>
                                     <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none group-focus-within:text-primary transition-colors">expand_more</span>
                                 </div>
