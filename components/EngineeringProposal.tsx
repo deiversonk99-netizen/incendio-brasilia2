@@ -158,9 +158,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   const savePdfSettings = async (newSettings: any) => {
     setPdfSettings(newSettings);
-    if (!selectedProjectId) return;
+    if (!selectedProjectId || !user) return;
 
     try {
+      // 1. Save to project-specific settings
       await supabase
         .from('pdf_settings')
         .upsert({
@@ -169,6 +170,23 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           variables: newSettings,
           updated_at: new Date().toISOString()
         }, { onConflict: 'project_id, phase' });
+
+      // 2. Save global defaults to user profile (signature, CRQ, credentials, stamps)
+      const globalFields = {
+        assinatura: newSettings.assinatura,
+        crq: newSettings.crq,
+        credentials: newSettings.credentials,
+        credentials_img: newSettings.credentials_img,
+        carimbo: newSettings.carimbo,
+        carimbo_img: newSettings.carimbo_img,
+        updated_at: new Date().toISOString()
+      };
+
+      await supabase
+        .from('user_profiles')
+        .update(globalFields)
+        .eq('id', user.id);
+
     } catch (e) {
       console.error('Error saving PDF settings:', e);
     }
@@ -442,84 +460,99 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   };
 
   const calculateValues = () => {
-    const bdiPctNum = Number(proposal.bdi_percent) || 0;
-    const profitPctNum = Number(proposal.profit_percent) || 0;
+    const bdiPct = Number(proposal.bdi_percent) || 0;
+    const profitPct = Number(proposal.profit_percent) || 0;
 
-    // Factors for calculations
-    const bdiFactor = 1 + (bdiPctNum / 100);
-    const profitFactor = 1 + (profitPctNum / 100);
+    // We use a Multiplicative approach for the "Target" prices: Cost * BDI * Profit
+    const bdiFactor = 1 + (bdiPct / 100);
+    const profitFactor = 1 + (profitPct / 100);
     const combinedFactor = bdiFactor * profitFactor;
 
-    let productsCostTotal = 0;
-    let servicesCostTotal = 0;
-    let bdiTotal = 0;
-    let profitTotal = 0;
+    let totalProductsCost = 0;
+    let totalServicesCost = 0;
+
+    // Live Predicted Sum vs Actual Sum
+    let predictedVendaGlobal = 0;
+    let actualVendaGlobal = 0;
 
     budgetItems.forEach(item => {
       const q = Number(item.quantity_final || 0);
-      const sale = Number(item.unit_price || 0);
       let cost = Number(item.cost_price || 0);
+      const currentSale = Number(item.unit_price || 0);
 
-      // Reverse calculate cost base if missing but sale price exists
-      if (cost <= 0 && sale > 0) {
-        cost = sale / (combinedFactor || 1);
+      // Fallback for visual base calculation if cost is 0
+      if (cost <= 0 && currentSale > 0) {
+        // If it's zero, we assume the current sale IS the cost for calculation purposes
+        // OR we can try to guess what the cost was.
+        // Let's assume the user entered the current sale as their baseline if cost is 0.
+        cost = currentSale / combinedFactor;
       }
 
-      const totalLineCost = cost * q;
-      const totalLineVenda = sale * q;
-
+      const lineCostTotal = cost * q;
       if (item.item_type === 'SERVICE') {
-        servicesCostTotal += totalLineCost;
+        totalServicesCost += lineCostTotal;
       } else {
-        productsCostTotal += totalLineCost;
+        totalProductsCost += lineCostTotal;
       }
 
-      // Proportional slices for this specific row
-      // BDI slice: Cost -> Cost * BDI_Factor
-      const lineBdi = (totalLineCost * bdiFactor) - totalLineCost;
-      // Profit slice: (Cost * BDI_Factor) -> (Cost * BDI_Factor * Profit_Factor)
-      const lineProfit = (totalLineCost * bdiFactor * profitFactor) - (totalLineCost * bdiFactor);
-
-      bdiTotal += Number(lineBdi.toFixed(4));
-      profitTotal += Number(lineProfit.toFixed(4));
+      predictedVendaGlobal += lineCostTotal * combinedFactor;
+      actualVendaGlobal += currentSale * q;
     });
 
-    const totalVendaGlobal = budgetItems.reduce((acc, i) => acc + (Number(i.quantity_final || 0) * Number(i.unit_price || 0)), 0);
+    // Slices for the visual cards (Based on PREDICTED values)
+    const totalCostBase = totalProductsCost + totalServicesCost;
+    const bdiVal = (totalCostBase * bdiFactor) - totalCostBase;
+    const profitVal = (totalCostBase * bdiFactor * profitFactor) - (totalCostBase * bdiFactor);
 
     let discountVal = 0;
     if (proposal.discount_type === 'FIXED') {
       discountVal = Number(proposal.discount_value) || 0;
     } else {
-      discountVal = totalVendaGlobal * ((Number(proposal.discount_value) || 0) / 100);
+      discountVal = predictedVendaGlobal * ((Number(proposal.discount_value) || 0) / 100);
     }
 
     return {
-      productsBase: Number(productsCostTotal.toFixed(2)),
-      servicesTotal: Number(servicesCostTotal.toFixed(2)),
-      bdiVal: Number(bdiTotal.toFixed(2)),
-      profitVal: Number(profitTotal.toFixed(2)),
+      productsBase: Number(totalProductsCost.toFixed(2)),
+      servicesTotal: Number(totalServicesCost.toFixed(2)),
+      bdiVal: Number(bdiVal.toFixed(2)),
+      profitVal: Number(profitVal.toFixed(2)),
       discountVal: Number(discountVal.toFixed(2)),
-      final: Number((totalVendaGlobal - discountVal).toFixed(2))
+      final: Number((predictedVendaGlobal - discountVal).toFixed(2)),
+      actualFinal: Number((actualVendaGlobal - (proposal.discount_type === 'FIXED' ? discountVal : (actualVendaGlobal * (Number(proposal.discount_value || 0) / 100)))).toFixed(2))
     };
   };
 
   const handleRecalculatePrices = async () => {
     if (!selectedProjectId || !budgetItems.length) return;
-    if (!confirm('Deseja recalcular todos os preços de venda com base no Custo Unitário, BDI e Margem de Lucro atuais?')) return;
+    if (!confirm('Deseja recalcular todos os preços de venda com base no Custo Unitário, BDI e Margem de Lucro atuais? Itens com custo zero que forem encontrados no catálogo serão restaurados.')) return;
 
     setLoading(true);
     const bdiPct = Number(proposal.bdi_percent) || 0;
     const profitPct = Number(proposal.profit_percent) || 0;
     const bdiFactor = 1 + (bdiPct / 100);
     const profitFactor = 1 + (profitPct / 100);
+    const combinedFactor = bdiFactor * profitFactor;
 
     const updatedItems = budgetItems.map(item => {
-      const cost = Number(item.cost_price || 0);
-      if (cost > 0) {
-        const newUnitPrice = cost * bdiFactor * profitFactor;
-        return { ...item, unit_price: newUnitPrice };
+      let cost = Number(item.cost_price || 0);
+
+      // Healing / Fallback
+      if (cost <= 0) {
+        const cleanName = item.name.includes('[') && item.name.includes(']')
+          ? item.name.split(']')[1]?.trim() || item.name
+          : item.name.trim();
+
+        const catalogProd = catalogProducts.find(p => p.name.trim().toLowerCase() === cleanName.toLowerCase());
+        if (catalogProd && catalogProd.cost_price > 0) {
+          cost = catalogProd.cost_price;
+        } else {
+          // If still 0, use current unit_price as the base cost
+          cost = Number(item.unit_price || 0) / (combinedFactor || 1);
+        }
       }
-      return item;
+
+      const newUnitPrice = cost * combinedFactor;
+      return { ...item, cost_price: cost, unit_price: newUnitPrice };
     });
 
     try {
@@ -538,7 +571,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       if (error) throw error;
       setBudgetItems(updatedItems);
-      alert('Preços recalculados com sucesso!');
+      alert('Preços recalculados com sucesso! Todos os itens foram sincronizados com as novas taxas.');
     } catch (e: any) {
       console.error('Error recalculating prices:', e);
       alert('Erro ao recalcular preços: ' + e.message);
@@ -667,10 +700,43 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // Utility for adding footer
       const addFooter = (doc: any, pageNum: number, totalPages: number) => {
+        const footerY = pageHeight - 10;
+
+        // --- Company Stamps/Credentials on EVERY Page ---
+        let stampX = 20;
+        const stampY = pageHeight - 35; // Position above footer text
+
+        if (pdfSettings.show_credentials) {
+          if (pdfSettings.credentials_img) {
+            try {
+              doc.addImage(pdfSettings.credentials_img, 'PNG', stampX, stampY, 30, 15);
+              stampX += 35;
+            } catch (e) { console.warn('Error adding credentials_img to footer:', e); }
+          } else if (pdfSettings.credentials) {
+            doc.setFontSize(7);
+            doc.setTextColor(150);
+            doc.text(pdfSettings.credentials, stampX, stampY + 10);
+            stampX += 40;
+          }
+        }
+
+        if (pdfSettings.show_carimbo) {
+          if (pdfSettings.carimbo_img) {
+            try {
+              doc.addImage(pdfSettings.carimbo_img, 'PNG', stampX, stampY, 30, 15);
+            } catch (e) { console.warn('Error adding carimbo_img to footer:', e); }
+          } else if (pdfSettings.carimbo) {
+            doc.setFontSize(7);
+            doc.setTextColor(150);
+            doc.text(pdfSettings.carimbo, stampX, stampY + 10);
+          }
+        }
+
+        // --- Page Number Footer ---
         doc.setFontSize(8);
         doc.setTextColor(150);
         const footerText = `Proposta Comercial - ${pdfSettings.project_name_pdf || project.name} | Página ${pageNum} de ${totalPages}`;
-        doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        doc.text(footerText, pageWidth / 2, footerY, { align: 'center' });
       };
 
       const drawHeader = (doc: any, title: string) => {
@@ -1061,7 +1127,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             // It's a header row. colSpan is already set in tableBody generation.
           }
         },
-        margin: { top: 70 },
+        margin: { top: 70, bottom: 40 },
         didDrawPage: (data) => {
           if (data.pageNumber > 1) {
             drawHeader(doc, 'DETALHAMENTO DO INVESTIMENTO (CONT.)');
@@ -1137,6 +1203,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         body: financeBody,
         theme: 'grid',
         styles: { fontSize: 10 },
+        margin: { bottom: 40 },
         columnStyles: { 1: { halign: 'right', cellWidth: 60 } }
       });
 
@@ -1155,7 +1222,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           ['Validade da Proposta', `${proposal.validity_days || 10} dias a partir desta data`]
         ],
         theme: 'grid',
-        margin: { top: 70 },
+        margin: { top: 70, bottom: 40 },
         styles: { fontSize: 10, cellPadding: 5 },
         columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60, fillColor: [248, 250, 252] } }
       });
@@ -1176,34 +1243,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         }
       }
 
-      // Other stamps/credentials as images or text if toggled
-      let otherY = sigYPos + 25;
-      if (pdfSettings.show_credentials) {
-        if (pdfSettings.credentials_img) {
-          doc.addImage(pdfSettings.credentials_img, 'PNG', 30, otherY, 40, 20);
-          otherY += 25;
-        } else if (pdfSettings.credentials) {
-          doc.setFontSize(8);
-          doc.text(pdfSettings.credentials, 30, otherY);
-          otherY += 10;
-        }
-      }
-
-      if (pdfSettings.show_carimbo) {
-        if (pdfSettings.carimbo_img) {
-          doc.addImage(pdfSettings.carimbo_img, 'PNG', 30, otherY, 40, 20);
-          otherY += 25;
-        } else if (pdfSettings.carimbo) {
-          doc.setFontSize(8);
-          doc.text(pdfSettings.carimbo, 30, otherY);
-          otherY += 10;
-        }
-      }
-
       if (pdfSettings.validade) {
         doc.setFontSize(9);
         doc.setTextColor(150);
-        doc.text(`Proposta válida por: ${pdfSettings.validade} dias`, 20, pageHeight - 20);
+        doc.text(`Proposta válida por: ${pdfSettings.validade} dias`, 20, sigYPos + 30);
       }
 
       // Client signature area removed as requested
@@ -1772,7 +1815,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         <p className="text-white text-lg font-bold font-mono">R$ {values.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                       </div>
                       <div>
-                        <p className="text-[9px] font-bold text-slate-500 uppercase mb-1">Mão de Obra</p>
+                        <p className="text-[9px] font-bold text-slate-500 uppercase mb-1">Serviços / Mão de Obra</p>
                         <p className="text-white text-lg font-bold font-mono">R$ {values.servicesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                       </div>
                     </div>
@@ -1851,6 +1894,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         <p className="text-white text-3xl font-black font-mono tracking-tighter">
                           R$ {values.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </p>
+                        {Math.abs(values.final - (values.actualFinal || 0)) > 0.05 && (
+                          <div className="flex items-center gap-1 mt-1 text-[8px] font-black text-amber-500 uppercase tracking-tighter bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                            <span className="material-symbols-outlined text-[10px]">sync_problem</span>
+                            Sincronização pendente
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1968,15 +2017,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 <span className={`text-[10px] font-bold ${item.origin === 'MANUAL' ? 'text-rose-500' : 'text-rose-500/60'}`}>R$</span>
                                 <input
                                   type="number"
-                                  className={`w-full bg-transparent outline-none text-right font-mono text-xs ${item.origin === 'MANUAL' ? 'text-white' : 'text-slate-500 cursor-not-allowed'}`}
+                                  className="w-full bg-transparent outline-none text-right font-mono text-xs text-white"
                                   value={item.cost_price || 0}
-                                  onChange={(e) => {
-                                    if (item.origin === 'MANUAL') {
-                                      handleUpdateItem(item.id, { cost_price: Number(e.target.value) });
-                                    }
-                                  }}
-                                  readOnly={item.origin !== 'MANUAL'}
-                                  disabled={item.origin !== 'MANUAL'}
+                                  onChange={(e) => handleUpdateItem(item.id, { cost_price: Number(e.target.value) })}
                                   step="any"
                                 />
                               </div>

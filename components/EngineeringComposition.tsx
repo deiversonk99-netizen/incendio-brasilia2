@@ -64,6 +64,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
   const loadPdfSettings = async (projectId: string) => {
     try {
+      // 1. Load project-specific
       const { data } = await supabase
         .from('pdf_settings')
         .select('variables')
@@ -71,15 +72,43 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         .eq('phase', 'ENG_B')
         .single();
 
+      // 2. Load Global User Profile Defaults
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('assinatura, crq, credentials, credentials_img, carimbo, carimbo_img')
+        .eq('id', (await supabase.auth.getUser()).data.user?.id)
+        .single();
+
       if (data) {
-        setPdfSettings(data.variables);
+        setPdfSettings({
+          show_assinatura: true,
+          show_crq: true,
+          show_credentials: true,
+          show_referencias: true,
+          show_carimbo: true,
+          ...data.variables,
+          // Fallback individual fields
+          assinatura: data.variables.assinatura || profile?.assinatura || '',
+          crq: data.variables.crq || profile?.crq || '',
+          credentials: data.variables.credentials || profile?.credentials || '',
+          credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
+          carimbo: data.variables.carimbo || profile?.carimbo || '',
+          carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || ''
+        });
       } else {
         setPdfSettings({
-          carimbo: '',
-          assinatura: '',
-          crq: '',
-          credentials: '',
+          show_assinatura: true,
+          assinatura: profile?.assinatura || '',
+          show_crq: true,
+          crq: profile?.crq || '',
+          show_credentials: true,
+          credentials: profile?.credentials || '',
+          credentials_img: profile?.credentials_img || '',
+          show_referencias: true,
           referencias: '',
+          show_carimbo: true,
+          carimbo: profile?.carimbo || '',
+          carimbo_img: profile?.carimbo_img || '',
           validade: '10'
         });
       }
@@ -101,6 +130,23 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           variables: newSettings,
           updated_at: new Date().toISOString()
         }, { onConflict: 'project_id, phase' });
+
+      // Save global defaults to user profile
+      const user = (await supabase.auth.getUser()).data.user;
+      if (user) {
+        await supabase
+          .from('user_profiles')
+          .update({
+            assinatura: newSettings.assinatura,
+            crq: newSettings.crq,
+            credentials: newSettings.credentials,
+            credentials_img: newSettings.credentials_img,
+            carimbo: newSettings.carimbo,
+            carimbo_img: newSettings.carimbo_img,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+      }
     } catch (e) {
       console.error('Error saving PDF settings:', e);
     }
@@ -488,6 +534,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       quantity_calculated: 0,
       quantity_final: 1, // Default to 1
       unit_price: newItemPrice,
+      cost_price: catalogProducts.find(p => p.name === newItemName)?.cost_price || 0,
       origin: 'MANUAL',
       item_type: 'PRODUCT' as const
     };
@@ -523,6 +570,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           quantity_calculated: 0,
           quantity_final: 1,
           unit_price: model.labor_price || 0,
+          cost_price: model.labor_price || 0, // Labor cost is its base price
           origin: 'MANUAL',
           item_type: 'SERVICE' as const
         });
@@ -542,6 +590,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                 quantity_calculated: 0,
                 quantity_final: item.quantity,
                 unit_price: item.product.price,
+                cost_price: item.product.cost_price || 0,
                 origin: 'MANUAL',
                 item_type: 'PRODUCT' as const
               });
@@ -620,10 +669,42 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
     // Utility for adding footer
     const addFooter = (doc: any, pageNum: number, totalPages: number) => {
+      const footerY = pageHeight - 10;
+
+      // --- Company Stamps/Credentials on EVERY Page ---
+      let stampX = 20;
+      const stampY = pageHeight - 35;
+
+      if (pdfSettings.show_credentials) {
+        if (pdfSettings.credentials_img) {
+          try {
+            doc.addImage(pdfSettings.credentials_img, 'PNG', stampX, stampY, 30, 15);
+            stampX += 35;
+          } catch (e) { console.warn('Error adding credentials_img to footer:', e); }
+        } else if (pdfSettings.credentials) {
+          doc.setFontSize(7);
+          doc.setTextColor(150);
+          doc.text(pdfSettings.credentials, stampX, stampY + 10);
+          stampX += 40;
+        }
+      }
+
+      if (pdfSettings.show_carimbo) {
+        if (pdfSettings.carimbo_img) {
+          try {
+            doc.addImage(pdfSettings.carimbo_img, 'PNG', stampX, stampY, 30, 15);
+          } catch (e) { console.warn('Error adding carimbo_img to footer:', e); }
+        } else if (pdfSettings.carimbo) {
+          doc.setFontSize(7);
+          doc.setTextColor(150);
+          doc.text(pdfSettings.carimbo, stampX, stampY + 10);
+        }
+      }
+
       doc.setFontSize(8);
       doc.setTextColor(150);
       const footerText = `Composição de Materiais - ${project.name} | Página ${pageNum} de ${totalPages}`;
-      doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      doc.text(footerText, pageWidth / 2, footerY, { align: 'center' });
     };
 
     // --- Page 1: Header and Summary ---
@@ -666,6 +747,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         { content: `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } }]
       ],
       theme: 'grid',
+      margin: { bottom: 40 },
       headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
       styles: { fontSize: 10, cellPadding: 4 }
     });
@@ -763,6 +845,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       head: [['Produto', 'Origem', 'Qtd Final', 'Custo Unit.', 'Total']],
       body: tableData,
       theme: 'grid',
+      margin: { bottom: 40 },
       headStyles: { fillColor: [30, 41, 59], fontSize: 9 },
       styles: { fontSize: 9 },
       columnStyles: {
@@ -804,32 +887,11 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         sigY += 8;
       }
 
-      if (pdfSettings.show_credentials) {
-        if (pdfSettings.credentials_img) {
-          doc.addImage(pdfSettings.credentials_img, 'PNG', 20, sigY, 40, 20);
-          sigY += 25;
-        } else if (pdfSettings.credentials) {
-          doc.text(`Credenciais: ${pdfSettings.credentials}`, 20, sigY);
-          sigY += 8;
-        }
-      }
-
-      if (pdfSettings.show_carimbo) {
-        if (pdfSettings.carimbo_img) {
-          doc.addImage(pdfSettings.carimbo_img, 'PNG', 20, sigY, 40, 20);
-          sigY += 25;
-        } else if (pdfSettings.carimbo) {
-          doc.text(`Carimbo: ${pdfSettings.carimbo}`, 20, sigY);
-          sigY += 15;
-        }
-      }
-
       if (pdfSettings.show_referencias && pdfSettings.referencias) {
         doc.setFont('helvetica', 'bold');
-        doc.text('Referências:', 20, sigY);
+        doc.text('Referências:', 20, sigY + 5);
         doc.setFont('helvetica', 'normal');
-        doc.text(doc.splitTextToSize(pdfSettings.referencias, pageWidth - 40), 20, sigY + 6);
-        sigY += 20;
+        doc.text(doc.splitTextToSize(pdfSettings.referencias, pageWidth - 40), 20, sigY + 11);
       }
 
       if (pdfSettings.validade) {

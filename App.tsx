@@ -21,7 +21,7 @@ import StockView from './components/StockView';
 import RenewalControlView from './components/RenewalControlView';
 import SettingsView from './components/SettingsView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin } from './lib/permissions';
+import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin, canViewTab } from './lib/permissions';
 
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
@@ -30,28 +30,7 @@ const AppContent: React.FC = () => {
 
   const renderContent = useCallback(() => {
     const userRoleCheck = (view: AppView) => {
-      const email = user?.email;
-
-      // Special logic for FUNCIONARIO
-      if (profile?.role === 'FUNCIONARIO') {
-        return view === AppView.PLACAS || view === AppView.STOCK;
-      }
-
-      if (view === AppView.SETTINGS) {
-        return isSuperAdmin(email, profile);
-      }
-      if (view === AppView.FINANCE) {
-        return isFinanceAdmin(email, profile);
-      }
-      if (view === AppView.PLACAS || view === AppView.STOCK) {
-        return isStockAdmin(email, profile);
-      }
-      if (view === AppView.ENGINEERING_PHASE_A ||
-        view === AppView.ENGINEERING_PHASE_B ||
-        view === AppView.ENGINEERING_PHASE_C) {
-        return isProposalAdmin(email, profile);
-      }
-      return true;
+      return canViewTab(view, user?.email || undefined, profile);
     };
 
     if (!userRoleCheck(currentView)) {

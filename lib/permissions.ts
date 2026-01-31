@@ -46,20 +46,16 @@ export const canViewTab = (viewId: string, email?: string, profile?: any) => {
     // Super admins see everything
     if (isSuperAdmin(email, profile)) return true;
 
-    // Check dynamic permissions first
+    // 1. Check dynamic permissions (Top Priority)
+    // If a tab is explicitly marked as true or false in the profile, we respect that.
     if (profile?.permissions && profile.permissions[viewId] !== undefined) {
         return profile.permissions[viewId] === true;
     }
 
-    // Default RBAC fallbacks
+    // 2. Default RBAC fallbacks (If not explicitly permitted/denied)
     const role = profile?.role || 'USER';
 
-    // SPECIAL ROLE: FUNCIONARIO (Restricted to Field Ops)
-    if (role === 'FUNCIONARIO') {
-        return viewId === 'PLACAS' || viewId === 'STOCK';
-    }
-
-    // Groups logic
+    // Groups logic (Whitelist based on emails)
     if (viewId === 'FINANCE') {
         if (FINANCE_ADMINS.includes(email.toLowerCase())) return true;
         return role === 'ADMIN';
@@ -75,11 +71,22 @@ export const canViewTab = (viewId: string, email?: string, profile?: any) => {
         return role === 'ADMIN' || role === 'MANAGER';
     }
 
-    // Restricted for normal users but visible to Admin/Manager
-    if (viewId === 'DASHBOARD' || viewId === 'CLIENTS' || viewId === 'TASKS' || viewId === 'KITS' || viewId === 'CATALOG' || viewId === 'SERVICES' || viewId === 'SERVICE_MODELS' || viewId === 'RENEWALS') {
-        return role !== 'USER'; // Assuming USER is also restricted or needs specific permissions
+    // Special case for FUNCIONARIO role default visibility
+    if (role === 'FUNCIONARIO') {
+        return viewId === 'PLACAS' || viewId === 'STOCK';
     }
 
+    // Tabs only visible to Staff by default
+    const staffOnlyTabs = [
+        'DASHBOARD', 'CLIENTS', 'TASKS', 'KITS', 'CATALOG',
+        'SERVICES', 'SERVICE_MODELS', 'RENEWALS', 'SETTINGS'
+    ];
+
+    if (staffOnlyTabs.includes(viewId)) {
+        return role === 'ADMIN' || role === 'MANAGER';
+    }
+
+    // Default: visible to anyone (e.g. basic landing views if any exist)
     return true;
 };
 

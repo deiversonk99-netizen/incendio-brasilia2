@@ -75,11 +75,39 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
     }, [isOpen, initialType, editingTransaction]);
 
     const fetchInitialData = async () => {
-        const [projRes, clientRes] = await Promise.all([
+        const [
+            projRes,
+            clientRes,
+            fData,
+            bData,
+            prData
+        ] = await Promise.all([
             supabase.from('projects').select('*').order('name'),
-            supabase.from('clients').select('id, name').order('name')
+            supabase.from('clients').select('id, name').order('name'),
+            supabase.from('floors').select('project_id'),
+            supabase.from('budget_items').select('project_id'),
+            supabase.from('proposals').select('project_id')
         ]);
-        if (projRes.data) setProjects(projRes.data);
+
+        if (projRes.data) {
+            const linkedProjectIds = new Set([
+                ...(fData.data || []).map(f => f.project_id),
+                ...(bData.data || []).map(b => b.project_id),
+                ...(prData.data || []).map(pr => pr.project_id)
+            ]);
+
+            // Filter and unique
+            const filtered = projRes.data.filter(p => linkedProjectIds.has(p.id));
+            const unique: Project[] = [];
+            const seen = new Set();
+            filtered.forEach(p => {
+                if (!seen.has(p.name)) {
+                    unique.push(p);
+                    seen.add(p.name);
+                }
+            });
+            setProjects(unique);
+        }
         if (clientRes.data) setClients(clientRes.data);
     };
 

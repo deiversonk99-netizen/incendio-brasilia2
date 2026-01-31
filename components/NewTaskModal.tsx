@@ -61,7 +61,9 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 setProjectId(taskToEdit.project_id || '');
                 setIsAnnual(taskToEdit.is_annual || false);
                 setExpirationDate(taskToEdit.expiration_date || '');
-                fetchChecklist(taskToEdit.id);
+                if (taskToEdit.id) {
+                    fetchChecklist(taskToEdit.id);
+                }
             } else {
                 setTitle('');
                 setDescription('');
@@ -78,6 +80,21 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
         }
     }, [isOpen, defaultGroupId, boardId, taskToEdit]);
 
+    const fetchChecklist = async (taskId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('task_checklist_items')
+                .select('*')
+                .eq('task_id', taskId)
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+            if (data) setChecklistItems(data);
+        } catch (error) {
+            console.error('Error fetching checklist:', error);
+        }
+    };
+
     const fetchInitialData = async () => {
         // Fetch groups with their board info
         let groupsQuery = supabase
@@ -90,18 +107,56 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             groupsQuery = groupsQuery.eq('board_id', boardId);
         }
 
-        const [{ data: pData }, { data: gData }] = await Promise.all([
+        const [
+            { data: pData },
+            { data: gData },
+            { data: fData },
+            { data: bData },
+            { data: prData }
+        ] = await Promise.all([
             supabase.from('projects').select('*').order('name'),
-            groupsQuery
+            groupsQuery,
+            supabase.from('floors').select('project_id'),
+            supabase.from('budget_items').select('project_id'),
+            supabase.from('proposals').select('project_id')
         ]);
 
-        if (pData) setProjects(pData);
+        if (pData) {
+            // IDs of projects that have records in Phase A, B, or C
+            const linkedProjectIds = new Set([
+                ...(fData || []).map(f => f.project_id),
+                ...(bData || []).map(b => b.project_id),
+                ...(prData || []).map(pr => pr.project_id)
+            ]);
+
+            // Filter projects to only those that are in Phase A, B, or C
+            let filteredProjects = pData.filter(p => linkedProjectIds.has(p.id));
+
+            // Remove duplicate names, keeping only the most recent (last in alphabetical order? Or just first found)
+            // The user said "sem duplicar o nome do projeto"
+            const uniqueProjects: Project[] = [];
+            const seenNames = new Set();
+
+            // pData is already ordered by name. We just need to pick one for each name.
+            filteredProjects.forEach(p => {
+                if (!seenNames.has(p.name)) {
+                    uniqueProjects.push(p);
+                    seenNames.add(p.name);
+                }
+            });
+
+            setProjects(uniqueProjects);
+        }
+
         if (gData) {
             setGroups(gData as any);
 
             // If currently selected groupId is not in the fetched groups (and we are not editing), clear it
             // This prevents "ghost" selections if switching contexts
             // However, if we are editing, we trust the task's current group
+            if (!taskToEdit && groupId && !gData.some((g: any) => g.id === groupId)) {
+                setGroupId('');
+            }
 
             // If no group is selected, select the first one automatically if available
             if (!groupId && !taskToEdit && gData.length > 0) {
@@ -285,11 +340,18 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                                         required
                                     >
                                         <option value="" disabled className="bg-surface-dark">Selecione o estágio...</option>
-                                        {groups.map(g => (
-                                            <option key={g.id} value={g.id} className="bg-surface-dark">
-                                                {g.task_boards?.name ? `${g.task_boards.name} > ${g.name}` : g.name}
-                                            </option>
-                                        ))}
+                                        {groups.map(g => {
+                                            // Handle potential single or array return from join (Supabase edge case)
+                                            const boardName = Array.isArray(g.task_boards)
+                                                ? g.task_boards[0]?.name
+                                                : g.task_boards?.name;
+
+                                            return (
+                                                <option key={g.id} value={g.id} className="bg-surface-dark">
+                                                    {boardName ? `${boardName} > ${g.name}` : g.name}
+                                                </option>
+                                            );
+                                        })}
                                     </select>
                                     <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none group-focus-within:text-primary transition-colors">expand_more</span>
                                 </div>

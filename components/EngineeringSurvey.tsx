@@ -70,11 +70,19 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
 
   const loadPdfSettings = async (projectId: string) => {
     try {
+      // 1. Load project-specific
       const { data } = await supabase
         .from('pdf_settings')
         .select('variables')
         .eq('project_id', projectId)
         .eq('phase', 'ENG_A')
+        .single();
+
+      // 2. Load Global User Profile Defaults
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('assinatura, crq, credentials, credentials_img, carimbo, carimbo_img')
+        .eq('id', (await supabase.auth.getUser()).data.user?.id)
         .single();
 
       if (data) {
@@ -84,27 +92,34 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
           show_credentials: true,
           show_referencias: true,
           show_carimbo: true,
-          ...data.variables
+          ...data.variables,
+          // Fallback individual fields if missing in variables but present in profile
+          assinatura: data.variables.assinatura || profile?.assinatura || '',
+          crq: data.variables.crq || profile?.crq || '',
+          credentials: data.variables.credentials || profile?.credentials || '',
+          credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
+          carimbo: data.variables.carimbo || profile?.carimbo || '',
+          carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || ''
         });
       } else {
         setPdfSettings({
           show_assinatura: true,
-          assinatura: '',
+          assinatura: profile?.assinatura || '',
           show_crq: true,
-          crq: '',
+          crq: profile?.crq || '',
           show_credentials: true,
-          credentials: '',
-          credentials_img: '',
+          credentials: profile?.credentials || '',
+          credentials_img: profile?.credentials_img || '',
           show_referencias: true,
           referencias: '',
           show_carimbo: true,
-          carimbo: '',
-          carimbo_img: '',
+          carimbo: profile?.carimbo || '',
+          carimbo_img: profile?.carimbo_img || '',
           validade: '10'
         });
       }
     } catch (e) {
-      console.warn('PDF settings not found or table missing:', e);
+      console.warn('PDF settings load error:', e);
     }
   };
 
@@ -129,6 +144,23 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
           variables: newSettings,
           updated_at: new Date().toISOString()
         }, { onConflict: 'project_id, phase' });
+
+      // Save global defaults to user profile
+      const user = (await supabase.auth.getUser()).data.user;
+      if (user) {
+        await supabase
+          .from('user_profiles')
+          .update({
+            assinatura: newSettings.assinatura,
+            crq: newSettings.crq,
+            credentials: newSettings.credentials,
+            credentials_img: newSettings.credentials_img,
+            carimbo: newSettings.carimbo,
+            carimbo_img: newSettings.carimbo_img,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+      }
     } catch (e) {
       console.error('Error saving PDF settings:', e);
     }
@@ -414,10 +446,42 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
 
     // Utility for adding footer
     const addFooter = (doc: any, pageNum: number, totalPages: number) => {
+      const footerY = pageHeight - 10;
+
+      // --- Company Stamps/Credentials on EVERY Page ---
+      let stampX = 20;
+      const stampY = pageHeight - 35;
+
+      if (pdfSettings.show_credentials) {
+        if (pdfSettings.credentials_img) {
+          try {
+            doc.addImage(pdfSettings.credentials_img, 'PNG', stampX, stampY, 30, 15);
+            stampX += 35;
+          } catch (e) { console.warn('Error adding credentials_img to footer:', e); }
+        } else if (pdfSettings.credentials) {
+          doc.setFontSize(7);
+          doc.setTextColor(150);
+          doc.text(pdfSettings.credentials, stampX, stampY + 10);
+          stampX += 40;
+        }
+      }
+
+      if (pdfSettings.show_carimbo) {
+        if (pdfSettings.carimbo_img) {
+          try {
+            doc.addImage(pdfSettings.carimbo_img, 'PNG', stampX, stampY, 30, 15);
+          } catch (e) { console.warn('Error adding carimbo_img to footer:', e); }
+        } else if (pdfSettings.carimbo) {
+          doc.setFontSize(7);
+          doc.setTextColor(150);
+          doc.text(pdfSettings.carimbo, stampX, stampY + 10);
+        }
+      }
+
       doc.setFontSize(8);
       doc.setTextColor(150);
       const footerText = `Levantamento Técnico - ${project.name} | Página ${pageNum} de ${totalPages}`;
-      doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      doc.text(footerText, pageWidth / 2, footerY, { align: 'center' });
     };
 
     // --- Page 1: Header and Summary ---
@@ -463,6 +527,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
         ['Total de Equipamentos', totalEquipCount.toString()]
       ],
       theme: 'grid',
+      margin: { bottom: 40 },
       headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
       styles: { fontSize: 10, cellPadding: 4 },
       columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } }
@@ -518,9 +583,9 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
           head: [['Equipamento', 'Quant.']],
           body: tableData,
           theme: 'striped',
+          margin: { left: 40, bottom: 40 },
           headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
           styles: { fontSize: 8, cellPadding: 2 },
-          margin: { left: 40 },
           tableWidth: 80
         });
         yPos = (doc as any).lastAutoTable.finalY + 15;
@@ -563,32 +628,11 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
         sigY += 8;
       }
 
-      if (pdfSettings.show_credentials) {
-        if (pdfSettings.credentials_img) {
-          doc.addImage(pdfSettings.credentials_img, 'PNG', 20, sigY, 40, 20);
-          sigY += 25;
-        } else if (pdfSettings.credentials) {
-          doc.text(`Credenciais: ${pdfSettings.credentials}`, 20, sigY);
-          sigY += 8;
-        }
-      }
-
-      if (pdfSettings.show_carimbo) {
-        if (pdfSettings.carimbo_img) {
-          doc.addImage(pdfSettings.carimbo_img, 'PNG', 20, sigY, 40, 20);
-          sigY += 25;
-        } else if (pdfSettings.carimbo) {
-          doc.text(`Carimbo: ${pdfSettings.carimbo}`, 20, sigY);
-          sigY += 15;
-        }
-      }
-
       if (pdfSettings.show_referencias && pdfSettings.referencias) {
         doc.setFont('helvetica', 'bold');
-        doc.text('Referências:', 20, sigY);
+        doc.text('Referências:', 20, sigY + 5);
         doc.setFont('helvetica', 'normal');
-        doc.text(doc.splitTextToSize(pdfSettings.referencias, pageWidth - 40), 20, sigY + 6);
-        sigY += 20;
+        doc.text(doc.splitTextToSize(pdfSettings.referencias, pageWidth - 40), 20, sigY + 11);
       }
 
       if (pdfSettings.validade) {

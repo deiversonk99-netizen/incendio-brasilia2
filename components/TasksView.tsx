@@ -500,7 +500,11 @@ const TasksView: React.FC = () => {
                             }
                             (window as any)._draggedTaskId = null;
                           }}
-                          className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative overflow-hidden cursor-grab active:cursor-grabbing hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''}`}
+                          onClick={() => {
+                            setEditingTask(task);
+                            setIsModalOpen(true);
+                          }}
+                          className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative overflow-hidden cursor-pointer active:scale-[0.98] hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''}`}
                         >
                           {/* Priority Color Indicator */}
                           {task.label_color && task.label_color !== 'transparent' && (
@@ -531,7 +535,7 @@ const TasksView: React.FC = () => {
                                   setEditingTask(task);
                                   setIsModalOpen(true);
                                 }}
-                                className="size-7 flex items-center justify-center hover:bg-primary/10 rounded-lg text-slate-500 hover:text-primary transition-all"
+                                className="size-7 flex items-center justify-center hover:bg-primary/10 rounded-lg text-slate-500 hover:text-primary transition-all bg-white/5 border border-white/10 shadow-sm"
                                 title="Editar"
                               >
                                 <span className="material-symbols-outlined text-[16px]">edit</span>

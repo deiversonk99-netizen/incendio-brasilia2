@@ -23,6 +23,9 @@ const SettingsView: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
     const [isPermModalOpen, setIsPermModalOpen] = useState(false);
+    const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+    const [newUserEmail, setNewUserEmail] = useState('');
+    const [newUserRole, setNewUserRole] = useState<'ADMIN' | 'MANAGER' | 'USER' | 'FUNCIONARIO'>('USER');
     const [tempPerms, setTempPerms] = useState<any>({});
 
     const allTabs = [
@@ -86,8 +89,55 @@ const SettingsView: React.FC = () => {
 
     const handleOpenPermissionModal = (user: UserProfile) => {
         setSelectedUser(user);
-        setTempPerms(user.permissions || {});
+
+        // Populate tempPerms with explicit values to avoid 'undefined' fallback issues
+        const initialPerms: any = {};
+        allTabs.forEach(tab => {
+            if (user.permissions && user.permissions[tab.id] !== undefined) {
+                initialPerms[tab.id] = user.permissions[tab.id];
+            } else {
+                // Default based on current role if not explicitly set
+                if (user.role === 'ADMIN' || user.role === 'MANAGER') {
+                    initialPerms[tab.id] = true;
+                } else if (user.role === 'FUNCIONARIO') {
+                    initialPerms[tab.id] = (tab.id === 'PLACAS' || tab.id === 'STOCK');
+                } else {
+                    // USER role defaults
+                    initialPerms[tab.id] = (tab.id === 'PLACAS' || tab.id === 'STOCK' || tab.id === 'SUPPLIERS' || tab.id.startsWith('ENG_'));
+                }
+            }
+        });
+
+        setTempPerms(initialPerms);
         setIsPermModalOpen(true);
+    };
+
+    const handleAddUser = async () => {
+        if (!newUserEmail) return;
+        const { error } = await supabase.from('user_profiles').insert([{
+            email: newUserEmail,
+            role: newUserRole,
+            permissions: {}
+        }]);
+
+        if (!error) {
+            alert('Usuário convidado/adicionado com sucesso!');
+            setIsAddUserModalOpen(false);
+            setNewUserEmail('');
+            fetchSettings();
+        } else {
+            alert('Erro ao adicionar: ' + error.message);
+        }
+    };
+
+    const handleDeleteUser = async (email: string) => {
+        if (!confirm(`Deseja realmente remover o acesso de ${email}?`)) return;
+        const { error } = await supabase.from('user_profiles').delete().eq('email', email);
+        if (!error) {
+            setProfiles(prev => prev.filter(p => p.email !== email));
+        } else {
+            alert('Erro ao excluir: ' + error.message);
+        }
     };
 
     const handleSavePermissions = async () => {
@@ -142,13 +192,27 @@ const SettingsView: React.FC = () => {
                         {/* User Access Tab */}
                         {activeTab === 'users' && (
                             <div className="space-y-6">
+                                <div className="flex justify-between items-center bg-surface-dark border border-white/5 p-4 rounded-xl">
+                                    <h3 className="text-white font-bold flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-primary">manage_accounts</span>
+                                        Lista de Usuários Autorizados
+                                    </h3>
+                                    <button
+                                        onClick={() => setIsAddUserModalOpen(true)}
+                                        className="bg-primary hover:bg-primary-dark text-white text-xs font-black uppercase px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+                                    >
+                                        <span className="material-symbols-outlined text-[18px]">person_add</span>
+                                        Novo Usuário
+                                    </button>
+                                </div>
+
                                 <div className="bg-surface-dark border border-white/5 rounded-xl overflow-hidden shadow-xl">
                                     <table className="w-full text-left text-sm">
                                         <thead className="bg-white/5 text-slate-400 font-bold uppercase text-[11px] tracking-widest">
                                             <tr>
                                                 <th className="px-6 py-4">Usuário</th>
-                                                <th className="px-6 py-4">Nível de Acesso</th>
-                                                <th className="px-6 py-4 text-right">Permissões</th>
+                                                <th className="px-6 py-4 text-center">Nível de Acesso</th>
+                                                <th className="px-6 py-4 text-right">Ações</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/5 text-white">
@@ -173,12 +237,21 @@ const SettingsView: React.FC = () => {
                                                         </select>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <button
-                                                            onClick={() => handleOpenPermissionModal(profile)}
-                                                            className="text-primary hover:underline text-xs font-bold"
-                                                        >
-                                                            Configurar Visibilidade
-                                                        </button>
+                                                        <div className="flex items-center justify-end gap-4">
+                                                            <button
+                                                                onClick={() => handleOpenPermissionModal(profile)}
+                                                                className="text-primary hover:bg-primary/10 px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all"
+                                                            >
+                                                                Visibilidade
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteUser(profile.email)}
+                                                                className="text-rose-500 hover:bg-rose-500/10 p-1.5 rounded-lg transition-all"
+                                                                title="Remover Usuário"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -308,6 +381,61 @@ const SettingsView: React.FC = () => {
                                 className="flex-1 py-3 bg-primary hover:bg-primary-dark rounded-xl text-white font-bold shadow-lg shadow-primary/20 transition-all text-sm uppercase tracking-widest"
                             >
                                 Salvar Permissões
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Add User Modal */}
+            {isAddUserModalOpen && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                    <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-white uppercase tracking-wider">Novo Usuário</h2>
+                            <button onClick={() => setIsAddUserModalOpen(false)} className="text-slate-400 hover:text-white">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">E-mail de Acesso</label>
+                                <input
+                                    type="email"
+                                    placeholder="exemplo@email.com"
+                                    value={newUserEmail}
+                                    onChange={(e) => setNewUserEmail(e.target.value)}
+                                    className="bg-background-dark border border-white/10 rounded-lg p-3 text-white focus:border-primary outline-none"
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Nível de Acesso (Base)</label>
+                                <select
+                                    value={newUserRole}
+                                    onChange={(e) => setNewUserRole(e.target.value as any)}
+                                    className="bg-background-dark border border-white/10 rounded-lg p-3 text-white focus:border-primary outline-none"
+                                >
+                                    <option value="USER">Usuário Comum</option>
+                                    <option value="FUNCIONARIO">Operação/Funcionário</option>
+                                    <option value="MANAGER">Gerente de Projetos</option>
+                                    <option value="ADMIN">Administrador Central</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4 pt-8">
+                            <button
+                                onClick={() => setIsAddUserModalOpen(false)}
+                                className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all text-sm uppercase"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleAddUser}
+                                className="flex-1 py-3 bg-primary hover:bg-primary-dark rounded-xl text-white font-bold shadow-lg shadow-primary/20 transition-all text-sm uppercase"
+                            >
+                                Adicionar
                             </button>
                         </div>
                     </div>
