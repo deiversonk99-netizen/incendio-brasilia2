@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Project } from '../types';
+import { isTaskCentralUser } from '../lib/permissions';
 
 interface NewTaskModalProps {
     isOpen: boolean;
@@ -29,7 +30,7 @@ interface ChecklistItem {
 }
 
 const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess, defaultGroupId, boardId, taskToEdit }) => {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [loading, setLoading] = useState(false);
     const [projects, setProjects] = useState<Project[]>([]);
     const [groups, setGroups] = useState<TaskGroup[]>([]);
@@ -149,7 +150,20 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
         }
 
         if (gData) {
-            setGroups(gData as any);
+            const isCentral = isTaskCentralUser(user?.email);
+            const accessibleGroups = (gData as any[]).filter(g => {
+                if (isCentral) return true;
+                if (!profile) return true;
+                if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
+
+                const key = `GROUP_${g.id}`;
+                if (profile.permissions && profile.permissions[key] !== undefined) {
+                    return profile.permissions[key];
+                }
+                return true;
+            });
+
+            setGroups(accessibleGroups);
 
             // If currently selected groupId is not in the fetched groups (and we are not editing), clear it
             // This prevents "ghost" selections if switching contexts

@@ -11,10 +11,22 @@ interface UserProfile {
     permissions: any;
 }
 
+interface TaskGroup {
+    id: string;
+    name: string;
+    description?: string;
+    color?: string;
+    board_id: string;
+    task_boards?: {
+        name: string;
+    };
+}
+
 const SettingsView: React.FC = () => {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [activeTab, setActiveTab] = useState<'users' | 'pdf'>('users');
     const [profiles, setProfiles] = useState<UserProfile[]>([]);
+    const [taskGroups, setTaskGroups] = useState<TaskGroup[]>([]);
     const [pdfSettings, setPdfSettings] = useState<any>({
         validity_days: 10,
         footer_text: 'Incêndio Brasília - Gestão de Tecnologias de Segurança',
@@ -62,6 +74,14 @@ const SettingsView: React.FC = () => {
 
         if (profileData) setProfiles(profileData);
 
+        // Fetch Task Groups for Permissions
+        const { data: groupsData } = await supabase
+            .from('task_groups')
+            .select('id, name, color, board_id, task_boards(name)')
+            .order('board_id');
+
+        if (groupsData) setTaskGroups(groupsData as any);
+
         // 2. Fetch PDF Settings
         const { data: appData } = await supabase.from('app_settings').select('*').eq('key', 'pdf_global_config').single();
         if (appData) setPdfSettings(appData.value);
@@ -98,13 +118,28 @@ const SettingsView: React.FC = () => {
             } else {
                 // Default based on current role if not explicitly set
                 if (user.role === 'ADMIN' || user.role === 'MANAGER') {
+                    // Admin/Manager: All tabs ON by default
                     initialPerms[tab.id] = true;
                 } else if (user.role === 'FUNCIONARIO') {
+                    // Funcionario: Only default PLACAS/STOCK if not specified
                     initialPerms[tab.id] = (tab.id === 'PLACAS' || tab.id === 'STOCK');
                 } else {
-                    // USER role defaults
-                    initialPerms[tab.id] = (tab.id === 'PLACAS' || tab.id === 'STOCK' || tab.id === 'SUPPLIERS' || tab.id.startsWith('ENG_'));
+                    // USER role defaults:
+                    // Only standard engineering/client views.
+                    // STOCK/PLACAS/SUPPLIERS should be FALSE by default unless explicitly true.
+                    initialPerms[tab.id] = (tab.id.startsWith('ENG_') || tab.id === 'CLIENTS' || tab.id === 'CATALOG');
                 }
+            }
+        });
+
+        // Initialize Task Group Permissions
+        taskGroups.forEach(group => {
+            const key = `GROUP_${group.id}`;
+            if (user.permissions && user.permissions[key] !== undefined) {
+                initialPerms[key] = user.permissions[key];
+            } else {
+                // Default: All columns visible
+                initialPerms[key] = true;
             }
         });
 
@@ -353,6 +388,7 @@ const SettingsView: React.FC = () => {
                         </div>
 
                         <div className="grid grid-cols-2 gap-x-8 gap-y-4 max-h-[60vh] overflow-y-auto pr-4 custom-scrollbar mb-8">
+                            <h3 className="col-span-2 text-xs font-black text-primary uppercase tracking-[0.2em] mb-2 border-b border-white/5 pb-2 mt-2">Módulos do Sistema</h3>
                             {allTabs.map(tab => (
                                 <div key={tab.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
                                     <span className="text-sm font-medium text-slate-200">{tab.label}</span>
@@ -360,13 +396,42 @@ const SettingsView: React.FC = () => {
                                         <input
                                             type="checkbox"
                                             className="sr-only peer"
-                                            checked={tempPerms[tab.id] ?? true}
+                                            checked={tempPerms[tab.id] ?? false}
                                             onChange={(e) => setTempPerms({ ...tempPerms, [tab.id]: e.target.checked })}
                                         />
                                         <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                     </label>
                                 </div>
                             ))}
+
+                            {/* Task Columns Permissions */}
+                            <h3 className="col-span-2 text-xs font-black text-primary uppercase tracking-[0.2em] mb-2 border-b border-white/5 pb-2 mt-6">
+                                Visualização de Colunas (Tarefas)
+                            </h3>
+                            {taskGroups.length === 0 && <p className="col-span-2 text-slate-500 text-xs italic">Nenhum grupo de tarefas encontrado.</p>}
+                            {taskGroups.map(group => {
+                                const permKey = `GROUP_${group.id}`;
+                                return (
+                                    <div key={group.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
+                                        <div className="flex items-center gap-2">
+                                            <div className={`size-3 rounded-full ${group.color || 'bg-slate-500'}`}></div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-medium text-slate-200">{group.name}</span>
+                                                <span className="text-[9px] text-slate-500 uppercase">{group.task_boards?.name}</span>
+                                            </div>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                className="sr-only peer"
+                                                checked={tempPerms[permKey] ?? true} // Default to visible
+                                                onChange={(e) => setTempPerms({ ...tempPerms, [permKey]: e.target.checked })}
+                                            />
+                                            <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                        </label>
+                                    </div>
+                                );
+                            })}
                         </div>
 
                         <div className="flex gap-4 pt-4 border-t border-white/10">

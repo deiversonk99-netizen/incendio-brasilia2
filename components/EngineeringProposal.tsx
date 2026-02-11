@@ -433,12 +433,28 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       .select('id, name, quantity_final, unit_price, cost_price, origin, item_type')
       .eq('project_id', projectId);
 
-    if (budgetItemsData) setBudgetItems(budgetItemsData);
+    let processedItems: any[] = [];
+    if (budgetItemsData) {
+      // Heal items with missing cost_price (e.g. Services or Manual items where cost wasn't set)
+      // If Cost is 0, we assume the current Unit Price IS the base cost for markups.
+      processedItems = budgetItemsData.map(item => {
+        if ((!item.cost_price || item.cost_price <= 0) && item.unit_price > 0) {
+          return { ...item, cost_price: item.unit_price };
+        }
+        return item;
+      });
+      setBudgetItems(processedItems);
+    }
 
     // Correct totalCost to use COST_PRICE for base material cost
     // Requirement: "Custo Unitário deve vir do banco" -> Base Cost for BDI calculation.
-    const totalCost = budgetItemsData?.reduce((acc, item) => {
-      // Exclude Services from Material Base Cost
+    const totalCost = processedItems.reduce((acc, item) => {
+      // Exclude Services from Material Base Cost ?? 
+      // User complaint: "Service didn't change". If we exclude service from base, BDI won't apply to it in the summary?
+      // Actually BDI applies to EVERYTHING in the summary (Total Cost Base).
+      // The breakdown separates MaterialBase vs ServiceTotal.
+      // But for the "Base Cost" stored in proposal (historical?), we might keep just materials.
+      // However, for the live calculation, we use the items directly.
       if (item.item_type === 'SERVICE') return acc;
       return acc + (item.quantity_final * (item.cost_price || 0));
     }, 0) || 0;
@@ -520,7 +536,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     const totalCostBase = totalProductsCost + totalServicesCost;
     const bdiVal = (totalCostBase * bdiFactor) - totalCostBase;
-    const profitVal = (totalCostBase * bdiFactor * profitFactor) - (totalCostBase * bdiFactor);
+
+    // Profit is now the residual to ensure (Base + BDI + Profit) always equals Actual Total
+    // This handles manual price overrides correctly.
+    const profitVal = actualVendaGlobal - totalCostBase - bdiVal;
 
     let discountVal = 0;
     if (proposal.discount_type === 'FIXED') {
@@ -536,7 +555,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       bdiVal: Number(bdiVal.toFixed(2)),
       profitVal: Number(profitVal.toFixed(2)),
       discountVal: Number(discountVal.toFixed(2)),
-      final: Number((predictedVendaGlobal - discountVal).toFixed(2)),
+      final: Number((actualVendaGlobal - discountVal).toFixed(2)),
       actualFinal: Number((actualVendaGlobal - discountVal).toFixed(2))
     };
   };
@@ -565,7 +584,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         } else {
           // If still 0, we use current unit_price but with a STATIC assumption (e.g. current combined factor)
           // to break the circular reduction. Or we keep it 0 if combinedFactor is 0.
-          cost = Number(item.unit_price || 0) / (combinedFactor || 1);
+          if (item.unit_price > 0 && combinedFactor > 0) {
+            cost = Number(item.unit_price) / combinedFactor;
+          }
         }
       }
 
@@ -643,10 +664,23 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       quantity_calculated: 0,
       quantity_final: newItem.quantity,
       unit_price: newItem.price,
-      cost_price: newItem.cost_price,
+      cost_price: newItem.cost_price || newItem.price, // Default Cost to Price if 0 (Manual Entry)
       origin: 'MANUAL' as const,
       item_type: modalTab === 'service' ? 'SERVICE' : 'PRODUCT'
     };
+
+    // If we have markups, we should probably reverse-calculate the Cost so the Price matches what was typed
+    // BUT only if the user didn't explicitly type a cost.
+    // However, the modal usually just asks for "Preço de Venda" (Price) for manual items?
+    // If so, Cost = Price / Factor.
+    if (!newItem.cost_price && newItem.price > 0) {
+      const bdiPct = Number(proposal.bdi_percent) || 0;
+      const profitPct = Number(proposal.profit_percent) || 0;
+      const combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
+      if (combinedFactor > 1) {
+        newItemData.cost_price = newItem.price / combinedFactor;
+      }
+    }
 
     if (itemToReplace || itemToEdit) {
       // Update existing item
@@ -692,9 +726,24 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     // Optimistic update
     setBudgetItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
 
+    // If updating unit_price, we should also update cost_price to reflect the new "Base"
+    // otherwise the next Recalculate will revert it.
+    let finalUpdates = { ...updates };
+
+    if (updates.unit_price !== undefined) {
+      const bdiPct = Number(proposal.bdi_percent) || 0;
+      const profitPct = Number(proposal.profit_percent) || 0;
+      const combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
+
+      // New Cost = New Price / Factor. 
+      // This ensures that this manual price is respected as the result of Cost * Factor.
+      const newCost = Number(updates.unit_price) / (combinedFactor || 1);
+      finalUpdates.cost_price = newCost;
+    }
+
     const { error } = await supabase
       .from('budget_items')
-      .update(updates)
+      .update(finalUpdates)
       .eq('id', id);
 
     if (error) {
@@ -926,7 +975,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
           doc.setFontSize(10);
           doc.setFont('helvetica', 'normal');
-          const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${pdfSettings.project_name_pdf || project.name}", contemplando o fornecimento de materiais e mão de obra conforme detalhamento técnico a seguir.`;
+          const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${pdfSettings.project_name_pdf || project.name}", contemplando o fornecimento de materiais ou mão de obra conforme detalhamento técnico a seguir.`;
           const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
           doc.text(splitIntro, 20, yPos);
 
@@ -1264,6 +1313,37 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       });
 
       yPos = (doc as any).lastAutoTable.finalY + 40;
+
+      // --- REFERENCES / OBSERVATIONS ---
+      if (pdfSettings.show_referencias && pdfSettings.referencias) {
+        // Check if we need a new page
+        if (yPos > pageHeight - 60) {
+          doc.addPage();
+          drawHeader(doc, 'REFERÊNCIAS / OBSERVAÇÕES');
+          yPos = 70;
+        }
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(40);
+        doc.text('REFERÊNCIAS / OBSERVAÇÕES', 20, yPos);
+
+        yPos += 6;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+
+        const splitRefs = doc.splitTextToSize(pdfSettings.referencias, pageWidth - 40);
+        doc.text(splitRefs, 20, yPos);
+
+        yPos += (splitRefs.length * 4) + 20; // Add padding after references
+      }
+
+      // Check if signature fits on page
+      if (yPos > pageHeight - 40) {
+        doc.addPage();
+        drawHeader(doc, 'CONDIÇÕES COMERCIAIS (CONT.)');
+        yPos = 70;
+      }
 
       // Signatures
       doc.setDrawColor(200);

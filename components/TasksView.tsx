@@ -38,7 +38,7 @@ interface Task {
 }
 
 const TasksView: React.FC = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [boards, setBoards] = useState<TaskBoard[]>([]);
   const [selectedBoardId, setSelectedBoardId] = useState<string>('');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -142,7 +142,30 @@ const TasksView: React.FC = () => {
       .eq('board_id', selectedBoardId)
       .order('order_index', { ascending: true });
 
-    if (groupsData) setGroups(groupsData);
+    if (groupsData) {
+      // Filter accessible groups
+      const accessibleGroups = groupsData.filter(g => {
+        if (isCentral) return true;
+
+        // If profile is not loaded yet, default to safe (or visible?)
+        // Better to wait for profile? But loading state handles that.
+        if (!profile) return true;
+
+        // Check ADMIN/MANAGER role just in case
+        if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
+
+        const key = `GROUP_${g.id}`;
+        // If permission explicitly set
+        if (profile.permissions && profile.permissions[key] !== undefined) {
+          return profile.permissions[key];
+        }
+
+        // Default: Visible
+        return true;
+      });
+
+      setGroups(accessibleGroups);
+    }
 
     // 3. Fetch Tasks
     const groupIds = groupsData?.map(g => g.id) || [];
