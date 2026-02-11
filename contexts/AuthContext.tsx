@@ -14,6 +14,8 @@ interface AuthContextType {
     user: User | null;
     profile: UserProfile | null;
     loading: boolean;
+    isRecoveryMode: boolean;
+    setIsRecoveryMode: (value: boolean) => void;
     signOut: () => Promise<void>;
 }
 
@@ -22,6 +24,8 @@ const AuthContext = createContext<AuthContextType>({
     user: null,
     profile: null,
     loading: true,
+    isRecoveryMode: false,
+    setIsRecoveryMode: () => { },
     signOut: async () => { },
 });
 
@@ -30,6 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isRecoveryMode, setIsRecoveryMode] = useState(false);
 
     const fetchProfile = async (email: string) => {
         const { data } = await supabase
@@ -50,7 +55,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         // Listen for changes on auth state (logged in, signed out, etc.)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                setIsRecoveryMode(true);
+            }
+
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user?.email) fetchProfile(session.user.email);
@@ -66,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ session, user, profile, loading, signOut }}>
+        <AuthContext.Provider value={{ session, user, profile, loading, isRecoveryMode, setIsRecoveryMode, signOut }}>
             {children}
         </AuthContext.Provider>
     );

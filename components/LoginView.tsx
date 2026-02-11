@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 type AuthMode = 'LOGIN' | 'SIGNUP' | 'FORGOT_PASSWORD' | 'UPDATE_PASSWORD';
 
@@ -12,15 +13,13 @@ const LoginView: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
 
-    useEffect(() => {
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-            if (event === 'PASSWORD_RECOVERY') {
-                setMode('UPDATE_PASSWORD');
-            }
-        });
+    const { isRecoveryMode, setIsRecoveryMode } = useAuth();
 
-        return () => subscription.unsubscribe();
-    }, []);
+    useEffect(() => {
+        if (isRecoveryMode) {
+            setMode('UPDATE_PASSWORD');
+        }
+    }, [isRecoveryMode]);
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -53,6 +52,7 @@ const LoginView: React.FC = () => {
                     password: newPassword,
                 });
                 if (error) throw error;
+                setIsRecoveryMode(false);
                 setMessage('Senha atualizada com sucesso! Você já pode entrar.');
                 setMode('LOGIN');
             }

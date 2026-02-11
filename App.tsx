@@ -26,7 +26,7 @@ import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin, canViewTab
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [engineeringProjectId, setEngineeringProjectId] = useState<string>('');
-  const { session, user, profile, loading } = useAuth(); // Added profile
+  const { session, user, profile, loading, isRecoveryMode } = useAuth(); // Added profile and isRecoveryMode
 
   const renderContent = useCallback(() => {
     const userRoleCheck = (view: AppView) => {
@@ -120,7 +120,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (!session) {
+  if (!session || isRecoveryMode) {
     return <LoginView />;
   }
 
