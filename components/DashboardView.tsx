@@ -112,28 +112,17 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       setProjectsWithCalculatedItems(new Set(itemsData.map(i => i.project_id)));
     }
 
-    // 6. Load Label Definitions
+    // 7. Fetch Quick Tasks (group_id IS NULL)
     if (user) {
-      const { data: labelsData } = await supabase
-        .from('project_label_definitions')
-        .select('color, label')
-        .eq('user_id', user.id);
+      const { data: quickTasksData } = await supabase
+        .from('tasks')
+        .select('*')
+        .is('group_id', null)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-      if (labelsData && labelsData.length > 0) {
-        setLabelDefinitions(labelsData);
-      } else {
-        // Initialize default labels
-        const defaultLabels = [
-          { color: 'bg-red-500', label: 'Crítico / Urgente' },
-          { color: 'bg-yellow-500', label: 'Atenção' },
-          { color: 'bg-blue-500', label: 'Informativo' },
-          { color: 'bg-green-500', label: 'Concluído / OK' }
-        ];
-        setLabelDefinitions(defaultLabels);
-
-        // Save defaults to database
-        const inserts = defaultLabels.map(d => ({ ...d, user_id: user.id }));
-        await supabase.from('project_label_definitions').insert(inserts);
+      if (quickTasksData) {
+        setTasks(quickTasksData);
       }
     }
 
@@ -142,7 +131,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [user]);
 
   const handleTaskToggle = async (id: string, currentStatus: boolean) => {
     // Optimistic
@@ -152,9 +141,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTaskTitle.trim()) return;
+    if (!newTaskTitle.trim() || !user) return;
 
-    const { data } = await supabase.from('tasks').insert({ title: newTaskTitle }).select();
+    const { data } = await supabase.from('tasks').insert({
+      title: newTaskTitle,
+      user_id: user.id
+      // group_id is null by default
+    }).select();
+
     if (data) {
       setTasks(prev => [data[0], ...prev]);
       setNewTaskTitle('');
@@ -165,6 +159,55 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     setTasks(prev => prev.filter(t => t.id !== id));
     await supabase.from('tasks').delete().eq('id', id);
   }
+
+  const handleSendToPending = async (project: Project) => {
+    if (!user) return;
+
+    if (!confirm(`Deseja enviar o projeto "${project.name}" para a lista de tarefas pendentes?`)) return;
+
+    // 1. Find the "Pendentes" group ID. We try to find a group named 'Pendentes' in any board, 
+    // preferring the "central-sync" board if possible, or just the first one found.
+    // Since we don't have board context here, we'll search for a group named 'Pendentes'.
+
+    // Try to find the Sync Board first
+    const { data: syncBoard } = await supabase.from('task_boards').select('id').eq('id', 'central-sync').single();
+
+    let groupIdToUse = null;
+
+    if (syncBoard) {
+      // Find group in Sync Board
+      const { data: group } = await supabase.from('task_groups').select('id').eq('board_id', 'central-sync').ilike('name', '%Pendentes%').limit(1).single();
+      if (group) groupIdToUse = group.id;
+    }
+
+    if (!groupIdToUse) {
+      // Fallback: Find ANY Pending group
+      const { data: group } = await supabase.from('task_groups').select('id').ilike('name', '%Pendentes%').limit(1).single();
+      if (group) groupIdToUse = group.id;
+    }
+
+    if (!groupIdToUse) {
+      alert('Não foi possível encontrar uma coluna "Pendentes" para enviar a tarefa. Crie uma coluna "Pendentes" no módulo de Tarefas primeiro.');
+      return;
+    }
+
+    // 2. Create the task
+    const { error } = await supabase.from('tasks').insert({
+      title: `Projeto: ${project.name}`,
+      description: `Cliente: ${project.client}\nValor: R$ ${project.value}\nGerado a partir do Dashboard via "Enviar para Pendentes".`,
+      group_id: groupIdToUse,
+      user_id: user.id,
+      project_id: project.id,
+      status: 'PENDING'
+    });
+
+    if (error) {
+      console.error('Error creating task:', error);
+      alert('Erro ao criar tarefa: ' + error.message);
+    } else {
+      alert('Projeto enviado para a lista de tarefas pendentes com sucesso!');
+    }
+  };
 
   const handleProjectClick = (project: Project) => {
     setSelectedProject(project);
@@ -434,262 +477,278 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
               </div>
             </div>
             <div className="flex h-[500px] gap-6 min-w-[1200px]">
-              {activeColumns.map(col => (
-                <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${col.color} ${col.shadow}`}></span>
-                      <h3 className="text-white font-bold text-sm uppercase tracking-wider">{col.label}</h3>
-                      <span className="bg-[#46252c] text-text-muted text-xs font-bold px-2 py-0.5 rounded-full">
-                        {projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length}
-                      </span>
+              <div className="flex h-[500px] gap-6 min-w-[1200px]">
+                {activeColumns.map(col => (
+                  <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${col.color} ${col.shadow}`}></span>
+                        <h3 className="text-white font-bold text-sm uppercase tracking-wider">{col.label}</h3>
+                        <span className="bg-[#46252c] text-text-muted text-xs font-bold px-2 py-0.5 rounded-full">
+                          {projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length}
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-3">
-                    {loading ? (
-                      <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
-                    ) : (
-                      projects
-                        .filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id)
-                        .filter(p => {
-                          // Filter by Type
+                    <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-3">
+                      {loading ? (
+                        <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
+                      ) : (
+                        projects
+                          .filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id)
+                          .filter(p => {
+                            // Filter by Type
+                            if (filterType !== 'ALL' && p.type !== filterType) return false;
+
+                            // Filter by Client
+                            if (filterClient !== 'ALL' && p.client !== filterClient) return false;
+
+                            // Search filter
+                            const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+                            if (searchWords.length === 0) return true;
+                            const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
+                            return searchWords.every(word =>
+                              p.name.toLowerCase().includes(word) ||
+                              p.client.toLowerCase().includes(word) ||
+                              projectTypeLabel.includes(word)
+                            );
+                          })
+                          .map(proj => (
+                            <div
+                              key={proj.id}
+                              onClick={() => handleProjectClick(proj)}
+                              className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative"
+                            >
+                              {/* Color Label Indicator */}
+                              {(proj as any).label_color && (proj as any).label_color !== 'transparent' && (
+                                <div
+                                  className={`absolute top-0 right-0 w-1.5 h-full ${(proj as any).label_color} rounded-r-xl`}
+                                  title={labelDefinitions.find(l => l.color === (proj as any).label_color)?.label || ''}
+                                ></div>
+                              )}
+
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="flex items-center gap-2">
+                                  {proj.project_number && (
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded bg-primary text-white border border-primary/20">
+                                      PR{String(proj.project_number).padStart(3, '0')}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
+                                    {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
+                                  </span>
+                                </div>
+
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                  {/* Send to Pending Button (New Feature) */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSendToPending(proj);
+                                    }}
+                                    className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+                                    title="Enviar para Pendentes (Tarefas)"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">move_to_inbox</span>
+                                  </button>
+
+                                  {/* Color Label Selector */}
+                                  <div className="relative group/label">
+                                    <button
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+                                    >
+                                      <span className="material-symbols-outlined text-[16px]">label</span>
+                                    </button>
+
+                                    {/* Dropdown */}
+                                    <div className="absolute right-0 top-full mt-1 w-48 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-2 opacity-0 group-hover/label:opacity-100 pointer-events-none group-hover/label:pointer-events-auto transition-all z-50 flex flex-col gap-1">
+                                      <span className="text-[9px] font-black text-slate-600 px-2 py-1 uppercase tracking-widest">Sinalização Visual</span>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleUpdateProjectColor(proj.id, 'transparent');
+                                        }}
+                                        className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left"
+                                      >
+                                        <span className="size-3 rounded-full bg-transparent border border-white/20"></span>
+                                        Nenhuma
+                                      </button>
+                                      {labelDefinitions.map(def => (
+                                        <button
+                                          key={def.color}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleUpdateProjectColor(proj.id, def.color);
+                                          }}
+                                          className={`flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-left ${(proj as any).label_color === def.color ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
+                                        >
+                                          <span className={`size-3 rounded-full ${def.color} ${(proj as any).label_color === def.color ? 'ring-2 ring-white scale-110' : ''}`}></span>
+                                          {def.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              <h4 className="text-white font-bold text-base mb-1 truncate flex items-center gap-2">
+                                {highlightText(proj.name, searchTerm)}
+                                {proj.internal_observations && (
+                                  <span className="material-symbols-outlined text-amber-500 text-[16px]" title="Dica: Possui observações internas">info</span>
+                                )}
+                              </h4>
+                              {proj.internal_observations && (
+                                <p className="text-[10px] text-amber-500/80 italic mb-2 line-clamp-1 border-l border-amber-500/30 pl-2">
+                                  {proj.internal_observations}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-1.5 mb-3">
+                                <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
+                                <p className="text-text-muted text-xs font-medium truncate">
+                                  {highlightText(proj.client, searchTerm)}
+                                </p>
+                              </div>
+                              <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
+                              <div className="flex justify-between items-center">
+                                <div className="text-right w-full flex justify-between items-center">
+                                  <div className="text-left">
+                                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
+                                    <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
+                                  </div>
+                                  {projectsWithProposals.has(proj.id) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelectProject(proj.id);
+                                        onViewChange(AppView.ENGINEERING_PHASE_C);
+                                      }}
+                                      className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-lg border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[10px] font-black uppercase"
+                                      title="Ir para a Proposta"
+                                    >
+                                      <span className="material-symbols-outlined text-[16px]">description</span>
+                                      Proposta
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                      )}
+                      {!loading && projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length > 0 &&
+                        projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).filter(p => {
                           if (filterType !== 'ALL' && p.type !== filterType) return false;
-
-                          // Filter by Client
                           if (filterClient !== 'ALL' && p.client !== filterClient) return false;
 
-                          // Search filter
                           const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-                          if (searchWords.length === 0) return true;
-                          const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
                           return searchWords.every(word =>
                             p.name.toLowerCase().includes(word) ||
                             p.client.toLowerCase().includes(word) ||
-                            projectTypeLabel.includes(word)
+                            (p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial').includes(word)
                           );
-                        })
-                        .map(proj => (
-                          <div
-                            key={proj.id}
-                            onClick={() => handleProjectClick(proj)}
-                            className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative"
-                          >
-                            {/* Color Label Indicator */}
-                            {(proj as any).label_color && (proj as any).label_color !== 'transparent' && (
-                              <div
-                                className={`absolute top-0 right-0 w-1.5 h-full ${(proj as any).label_color} rounded-r-xl`}
-                                title={labelDefinitions.find(l => l.color === (proj as any).label_color)?.label || ''}
-                              ></div>
-                            )}
-
-                            <div className="flex justify-between items-start mb-2">
-                              <div className="flex items-center gap-2">
-                                {proj.project_number && (
-                                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-primary text-white border border-primary/20">
-                                    PR{String(proj.project_number).padStart(3, '0')}
-                                  </span>
-                                )}
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
-                                  {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
-                                </span>
-                              </div>
-
-                              {/* Color Label Selector */}
-                              <div className="relative group/label opacity-0 group-hover:opacity-100 transition-all">
-                                <button
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">label</span>
-                                </button>
-
-                                {/* Dropdown */}
-                                <div className="absolute right-0 top-full mt-1 w-48 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-2 opacity-0 group-hover/label:opacity-100 pointer-events-none group-hover/label:pointer-events-auto transition-all z-50 flex flex-col gap-1">
-                                  <span className="text-[9px] font-black text-slate-600 px-2 py-1 uppercase tracking-widest">Sinalização Visual</span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUpdateProjectColor(proj.id, 'transparent');
-                                    }}
-                                    className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left"
-                                  >
-                                    <span className="size-3 rounded-full bg-transparent border border-white/20"></span>
-                                    Nenhuma
-                                  </button>
-                                  {labelDefinitions.map(def => (
-                                    <button
-                                      key={def.color}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateProjectColor(proj.id, def.color);
-                                      }}
-                                      className={`flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-left ${(proj as any).label_color === def.color ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
-                                    >
-                                      <span className={`size-3 rounded-full ${def.color} ${(proj as any).label_color === def.color ? 'ring-2 ring-white scale-110' : ''}`}></span>
-                                      {def.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                            <h4 className="text-white font-bold text-base mb-1 truncate flex items-center gap-2">
-                              {highlightText(proj.name, searchTerm)}
-                              {proj.internal_observations && (
-                                <span className="material-symbols-outlined text-amber-500 text-[16px]" title="Dica: Possui observações internas">info</span>
-                              )}
-                            </h4>
-                            {proj.internal_observations && (
-                              <p className="text-[10px] text-amber-500/80 italic mb-2 line-clamp-1 border-l border-amber-500/30 pl-2">
-                                {proj.internal_observations}
-                              </p>
-                            )}
-                            <div className="flex items-center gap-1.5 mb-3">
-                              <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
-                              <p className="text-text-muted text-xs font-medium truncate">
-                                {highlightText(proj.client, searchTerm)}
-                              </p>
-                            </div>
-                            <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
-                            <div className="flex justify-between items-center">
-                              <div className="text-right w-full flex justify-between items-center">
-                                <div className="text-left">
-                                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
-                                  <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                  <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
-                                </div>
-                                {projectsWithProposals.has(proj.id) && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onSelectProject(proj.id);
-                                      onViewChange(AppView.ENGINEERING_PHASE_C);
-                                    }}
-                                    className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-lg border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[10px] font-black uppercase"
-                                    title="Ir para a Proposta"
-                                  >
-                                    <span className="material-symbols-outlined text-[16px]">description</span>
-                                    Proposta
-                                  </button>
-                                )}
-                              </div>
-                            </div>
+                        }).length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                            <span className="material-symbols-outlined text-slate-600 text-[32px] mb-2">search_off</span>
+                            <p className="text-slate-500 text-xs italic">Nenhum projeto corresponde aos filtros nesta coluna.</p>
                           </div>
-                        ))
-                    )}
-                    {!loading && projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length > 0 &&
-                      projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).filter(p => {
-                        if (filterType !== 'ALL' && p.type !== filterType) return false;
-                        if (filterClient !== 'ALL' && p.client !== filterClient) return false;
+                        )
+                      }
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
 
-                        const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-                        return searchWords.every(word =>
-                          p.name.toLowerCase().includes(word) ||
-                          p.client.toLowerCase().includes(word) ||
-                          (p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial').includes(word)
-                        );
-                      }).length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-                          <span className="material-symbols-outlined text-slate-600 text-[32px] mb-2">search_off</span>
-                          <p className="text-slate-500 text-xs italic">Nenhum projeto corresponde aos filtros nesta coluna.</p>
-                        </div>
-                      )
-                    }
+        <NewProjectModal
+          isOpen={isNewProjectModalOpen}
+          onClose={() => {
+            setIsNewProjectModalOpen(false);
+            setProjectToEdit(null);
+          }}
+          onSuccess={() => {
+            fetchData();
+            setIsNewProjectModalOpen(false);
+            setProjectToEdit(null);
+          }}
+          projectToEdit={projectToEdit}
+        />
+
+        <ProjectDetailsModal
+          isOpen={isDetailsModalOpen}
+          onClose={() => setIsDetailsModalOpen(false)}
+          project={selectedProject}
+          onUpdate={() => fetchData()}
+          onViewChange={onViewChange}
+          onSelectProject={onSelectProject}
+          hasProposal={selectedProject ? projectsWithProposals.has(selectedProject.id) : false}
+          onEdit={(project) => {
+            setProjectToEdit(project);
+            setIsNewProjectModalOpen(true);
+            setIsDetailsModalOpen(false);
+          }}
+        />
+
+        {/* Label Settings Modal */}
+        {showLabelSettings && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                    <span className="material-symbols-outlined text-primary text-[24px]">palette</span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Sinalização Visual</h3>
+                    <p className="text-xs text-slate-500">Personalize o significado das cores</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <NewProjectModal
-        isOpen={isNewProjectModalOpen}
-        onClose={() => {
-          setIsNewProjectModalOpen(false);
-          setProjectToEdit(null);
-        }}
-        onSuccess={() => {
-          fetchData();
-          setIsNewProjectModalOpen(false);
-          setProjectToEdit(null);
-        }}
-        projectToEdit={projectToEdit}
-      />
-
-      <ProjectDetailsModal
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        project={selectedProject}
-        onUpdate={() => fetchData()}
-        onViewChange={onViewChange}
-        onSelectProject={onSelectProject}
-        hasProposal={selectedProject ? projectsWithProposals.has(selectedProject.id) : false}
-        onEdit={(project) => {
-          setProjectToEdit(project);
-          setIsNewProjectModalOpen(true);
-          setIsDetailsModalOpen(false);
-        }}
-      />
-
-      {/* Label Settings Modal */}
-      {showLabelSettings && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                  <span className="material-symbols-outlined text-primary text-[24px]">palette</span>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">Sinalização Visual</h3>
-                  <p className="text-xs text-slate-500">Personalize o significado das cores</p>
-                </div>
+                <button
+                  onClick={() => setShowLabelSettings(false)}
+                  className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
               </div>
-              <button
-                onClick={() => setShowLabelSettings(false)}
-                className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
 
-            <div className="space-y-3 mb-6">
-              {editingLabels.map((def, index) => (
-                <div key={def.color} className="flex items-center gap-3">
-                  <div className={`size-6 rounded-full ${def.color} shrink-0 shadow-lg`}></div>
-                  <input
-                    type="text"
-                    value={def.label}
-                    onChange={(e) => {
-                      const newLabels = [...editingLabels];
-                      newLabels[index].label = e.target.value;
-                      setEditingLabels(newLabels);
-                    }}
-                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-primary outline-none transition-all"
-                    placeholder="Ex: Crítico / Urgente"
-                  />
-                </div>
-              ))}
-            </div>
+              <div className="space-y-3 mb-6">
+                {editingLabels.map((def, index) => (
+                  <div key={def.color} className="flex items-center gap-3">
+                    <div className={`size-6 rounded-full ${def.color} shrink-0 shadow-lg`}></div>
+                    <input
+                      type="text"
+                      value={def.label}
+                      onChange={(e) => {
+                        const newLabels = [...editingLabels];
+                        newLabels[index].label = e.target.value;
+                        setEditingLabels(newLabels);
+                      }}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-primary outline-none transition-all"
+                      placeholder="Ex: Crítico / Urgente"
+                    />
+                  </div>
+                ))}
+              </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowLabelSettings(false)}
-                className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-all"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveLabelDefinitions}
-                className="flex-1 px-4 py-2.5 bg-primary hover:bg-red-600 rounded-xl text-sm font-bold text-white transition-all shadow-lg shadow-primary/20"
-              >
-                Salvar Configurações
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowLabelSettings(false)}
+                  className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSaveLabelDefinitions}
+                  className="flex-1 px-4 py-2.5 bg-primary hover:bg-red-600 rounded-xl text-sm font-bold text-white transition-all shadow-lg shadow-primary/20"
+                >
+                  Salvar Configurações
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
 };

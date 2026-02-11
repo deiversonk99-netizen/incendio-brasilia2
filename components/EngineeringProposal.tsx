@@ -771,12 +771,20 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.setFont('helvetica', 'bold');
         doc.text(title.toUpperCase(), 20, 52);
 
-        // Proposal Number
+        // Proposal Number & Project Number in Header
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100);
+
+        let headerY = 52;
         if (proposal.proposal_number) {
-          doc.setFontSize(10);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(100);
-          doc.text(`Proposta Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, pageWidth - 20, 52, { align: 'right' });
+          doc.text(`Proposta Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, pageWidth - 20, headerY, { align: 'right' });
+          headerY += 5; // Move down for Project Number
+        }
+
+        if (project.project_number) {
+          const prString = `PR${String(project.project_number).padStart(3, '0')}`;
+          doc.text(`Projeto: ${prString}`, pageWidth - 20, headerY, { align: 'right' });
         }
 
         // Red accent line below title
@@ -809,11 +817,21 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.setTextColor(200, 200, 200);
       doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 115);
 
+      let coverNumY = 130;
       if (proposal.proposal_number) {
         doc.setFontSize(18);
         doc.setTextColor(239, 68, 68);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, 20, 130);
+        doc.text(`Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, 20, coverNumY);
+        coverNumY += 10;
+      }
+
+      if (project.project_number) {
+        const prString = `PR${String(project.project_number).padStart(3, '0')}`;
+        doc.setFontSize(14);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Projeto: ${prString}`, 20, coverNumY);
       }
 
       doc.setFillColor(239, 68, 68); // Red Accent

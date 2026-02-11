@@ -10,6 +10,7 @@ const SYNC_BOARD_ID = 'central-sync';
 interface TaskBoard {
   id: string;
   name: string;
+  user_id?: string;
 }
 
 interface TaskGroup {
@@ -47,8 +48,16 @@ const TasksView: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isCompact, setIsCompact] = useState(false);
+  const [boardFilter, setBoardFilter] = useState<'ALL' | 'MINE' | 'SHARED'>('ALL'); // New Filter State
+  const [openMenuTaskId, setOpenMenuTaskId] = useState<string | null>(null);
 
   const isCentral = isTaskCentralUser(user?.email);
+
+  useEffect(() => {
+    const handleClickOutside = () => setOpenMenuTaskId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -133,13 +142,10 @@ const TasksView: React.FC = () => {
       .eq('board_id', selectedBoardId)
       .order('order_index', { ascending: true });
 
-    console.log('Groups Data:', groupsData);
-
     if (groupsData) setGroups(groupsData);
 
     // 3. Fetch Tasks
     const groupIds = groupsData?.map(g => g.id) || [];
-    console.log('Group IDs:', groupIds);
 
     const [{ data: tasksData, error: tasksError }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
       supabase
@@ -156,7 +162,6 @@ const TasksView: React.FC = () => {
     ]);
 
     if (tasksError) console.error('Tasks Fetch Error:', tasksError);
-    console.log('Tasks Data:', tasksData);
 
     if (tasksData) {
       const enrichedTasks = tasksData.map((t: any) => {
@@ -180,6 +185,37 @@ const TasksView: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [user, selectedBoardId]);
+
+  const handleConvertToProject = async (task: Task) => {
+    if (!confirm(`Deseja converter a tarefa "${task.title}" em um novo Projeto?`)) return;
+
+    try {
+      const { data: newProject, error } = await supabase.from('projects').insert({
+        name: task.title,
+        status: 'ANALYSIS',
+        client: 'Indefinido (Via Tarefa)',
+        type: 'business', // Default
+        value: 0,
+        deadline: new Date().toISOString().split('T')[0],
+        internal_observations: `Convertido da tarefa: ${task.description || ''}`,
+        created_at: new Date().toISOString()
+      }).select().single();
+
+      if (error) throw error;
+
+      alert('Projeto criado com sucesso! Status: Em Análise.');
+
+      // Optional: Delete the task or move it? 
+      // User said "move to Em Análise na Gestão de Projetos". 
+      // The task itself could be deleted or kept as reference. 
+      // Let's keep it but maybe mark it? Or just delete it?
+      // I'll leave it for now to avoid data loss.
+
+    } catch (error: any) {
+      console.error('Error converting to project:', error);
+      alert('Erro ao converter: ' + error.message);
+    }
+  };
 
   const handleUpdateTaskGroup = async (taskId: string, groupId: string) => {
     // Optimistic
@@ -334,6 +370,14 @@ const TasksView: React.FC = () => {
     t.projects?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Filter boards based on boardFilter
+  const filteredBoards = boards.filter(b => {
+    if (boardFilter === 'ALL') return true;
+    if (boardFilter === 'MINE') return b.user_id === user?.id; // Assuming user_id works
+    if (boardFilter === 'SHARED') return b.user_id !== user?.id && b.id !== SYNC_BOARD_ID; // Assuming shared means not mine and not sync
+    return true;
+  });
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       <header className="relative z-10 px-8 py-6 flex flex-col gap-6 border-b border-white/5 bg-background-dark/40 backdrop-blur-md">
@@ -352,12 +396,35 @@ const TasksView: React.FC = () => {
                   value={selectedBoardId}
                   onChange={(e) => setSelectedBoardId(e.target.value)}
                 >
-                  {boards.map(b => (
+                  {filteredBoards.map(b => (
                     <option key={b.id} value={b.id} className="bg-surface-dark text-white uppercase text-[10px] font-black">{b.name}</option>
                   ))}
                 </select>
                 <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[14px] text-primary/60 pointer-events-none group-hover:text-primary transition-colors">expand_more</span>
               </div>
+
+              {/* Board Filter Toggles */}
+              <div className="flex bg-white/5 rounded-full p-0.5 border border-white/5">
+                <button
+                  onClick={() => setBoardFilter('ALL')}
+                  className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'ALL' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
+                >
+                  Todos
+                </button>
+                <button
+                  onClick={() => setBoardFilter('MINE')}
+                  className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'MINE' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
+                >
+                  Meus
+                </button>
+                <button
+                  onClick={() => setBoardFilter('SHARED')}
+                  className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'SHARED' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
+                >
+                  Compart.
+                </button>
+              </div>
+
               <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
               <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">Controle de fluxos e processos</p>
             </div>
@@ -448,10 +515,17 @@ const TasksView: React.FC = () => {
                       <span className="material-symbols-outlined text-white text-[16px]">{getGroupIcon(group.name)}</span>
                     </div>
                     <div>
-                      <h3 className="font-black text-white text-[11px] uppercase tracking-[0.1em]">{group.name}</h3>
+                      <h3
+                        className="font-black text-white text-[11px] uppercase tracking-[0.1em] cursor-pointer hover:text-primary transition-colors"
+                        onDoubleClick={() => handleRenameGroup(group.id)} // Double click to rename
+                        title="Clique duas vezes para renomear"
+                      >
+                        {group.name}
+                      </h3>
                       <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{groupTasks.length} {groupTasks.length === 1 ? 'Tarefa' : 'Tarefas'}</p>
                     </div>
                   </div>
+
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                     <button onClick={() => handleRenameGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
                       <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -504,15 +578,15 @@ const TasksView: React.FC = () => {
                             setEditingTask(task);
                             setIsModalOpen(true);
                           }}
-                          className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative overflow-hidden cursor-pointer active:scale-[0.98] hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''}`}
+                          className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative cursor-pointer active:scale-[0.98] hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 hover:z-10 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''}`}
                         >
                           {/* Priority Color Indicator */}
                           {task.label_color && task.label_color !== 'transparent' && (
-                            <div className={`absolute top-0 right-0 w-1.5 h-full ${task.label_color}`}></div>
+                            <div className={`absolute top-0 right-0 w-1.5 h-full ${task.label_color} rounded-tr-xl rounded-br-xl`}></div>
                           )}
 
                           {isExpired && (
-                            <div className="absolute top-0 left-0 w-full h-[3px] bg-red-500 animate-pulse"></div>
+                            <div className="absolute top-0 left-0 w-full h-[3px] bg-red-500 animate-pulse rounded-t-xl"></div>
                           )}
 
                           <div className="flex justify-between items-start mb-2">
@@ -606,12 +680,18 @@ const TasksView: React.FC = () => {
                                   "Status" usually maps to Column.
                                   "Ver Detalhes" maps to opening the modal.
                               */}
-                              <div className="relative group/move ml-1">
-                                <button className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
+                              <div className="relative ml-1">
+                                <button
+                                  onClick={(e: React.MouseEvent) => {
+                                    e.stopPropagation();
+                                    setOpenMenuTaskId(openMenuTaskId === task.id ? null : task.id);
+                                  }}
+                                  className={`size-6 flex items-center justify-center rounded-lg transition-all ${openMenuTaskId === task.id ? 'bg-white/20 text-white' : 'hover:bg-white/10 text-slate-500 hover:text-white'}`}
+                                >
                                   <span className="material-symbols-outlined text-[16px]">more_vert</span>
                                 </button>
                                 {/* Dropdown Menu */}
-                                <div className="absolute right-0 bottom-full mb-2 w-40 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-1 opacity-0 group-hover/move:opacity-100 pointer-events-none group-hover/move:pointer-events-auto transition-all z-50 flex flex-col gap-1">
+                                <div className={`absolute right-0 top-full mt-2 w-40 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-1 transition-all z-50 flex flex-col gap-1 ${openMenuTaskId === task.id ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-95'}`}>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -623,6 +703,20 @@ const TasksView: React.FC = () => {
                                     <span className="material-symbols-outlined text-[14px]">visibility</span>
                                     Ver Detalhes
                                   </button>
+
+                                  {/* Convert to Project Action */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleConvertToProject(task);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-300 hover:text-emerald-400 text-left uppercase tracking-wider"
+                                    title="Transformar esta tarefa em um novo projeto"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">engineering</span>
+                                    Virar Projeto
+                                  </button>
+
                                   <div className="h-px bg-white/5 my-0.5"></div>
                                   <span className="text-[9px] font-black text-slate-600 px-3 py-1 uppercase tracking-widest">Mover para:</span>
                                   {groups.filter(g => g.id !== group.id).map(g => (
