@@ -833,7 +833,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         if (project.project_number) {
           const prString = `PR${String(project.project_number).padStart(3, '0')}`;
-          doc.text(`Projeto: ${prString}`, pageWidth - 20, headerY, { align: 'right' });
+          doc.text(prString, pageWidth - 20, headerY, { align: 'right' });
         }
 
         // Red accent line below title
@@ -880,7 +880,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.setFontSize(14);
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Projeto: ${prString}`, 20, coverNumY);
+        doc.text(prString, 20, coverNumY);
       }
 
       doc.setFillColor(239, 68, 68); // Red Accent
