@@ -45,6 +45,8 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
     const [file, setFile] = useState<File | null>(null);
     const [isAnnual, setIsAnnual] = useState(false);
     const [expirationDate, setExpirationDate] = useState('');
+    const [assignee, setAssignee] = useState('');
+    const [users, setUsers] = useState<any[]>([]); // Store user profiles
 
     // Checklist State
     const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
@@ -62,6 +64,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 setProjectId(taskToEdit.project_id || '');
                 setIsAnnual(taskToEdit.is_annual || false);
                 setExpirationDate(taskToEdit.expiration_date || '');
+                setAssignee(taskToEdit.assignee || '');
                 if (taskToEdit.id) {
                     fetchChecklist(taskToEdit.id);
                 }
@@ -75,6 +78,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 setProjectId('');
                 setIsAnnual(false);
                 setExpirationDate('');
+                setAssignee('');
                 setChecklistItems([]);
                 setNewChecklistItem('');
             }
@@ -100,7 +104,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
         // Fetch groups with their board info
         let groupsQuery = supabase
             .from('task_groups')
-            .select('id, name, board_id, task_boards(name)')
+            .select('id, name, board_id, task_boards(name, user_id)')
             .order('order_index');
 
         // Only filter by board if it's a valid ID and NOT the virtual sync board
@@ -113,14 +117,20 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             { data: gData },
             { data: fData },
             { data: bData },
-            { data: prData }
+            { data: prData },
+            { data: uData }
         ] = await Promise.all([
             supabase.from('projects').select('*').order('name'),
             groupsQuery,
             supabase.from('floors').select('project_id'),
             supabase.from('budget_items').select('project_id'),
-            supabase.from('proposals').select('project_id')
+            supabase.from('proposals').select('project_id'),
+            supabase.from('user_profiles').select('id, email, professional_title')
         ]);
+
+        if (uData) {
+            setUsers(uData);
+        }
 
         if (pData) {
             // IDs of projects that have records in Phase A, B, or C
@@ -154,6 +164,19 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             const accessibleGroups = (gData as any[]).filter(g => {
                 if (isCentral) return true;
                 if (!profile) return true;
+
+                // For non-central users, strictly enforce board ownership
+                // If the group belongs to a board, check if that board belongs to the user
+                if (g.task_boards) {
+                    const boardOwnerId = Array.isArray(g.task_boards)
+                        ? g.task_boards[0]?.user_id
+                        : g.task_boards?.user_id;
+
+                    if (boardOwnerId && boardOwnerId !== user?.id) {
+                        return false;
+                    }
+                }
+
                 if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
 
                 const key = `GROUP_${g.id}`;
@@ -233,6 +256,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 user_id: user?.id,
                 is_annual: isAnnual,
                 expiration_date: expirationDate || null,
+                assignee: assignee || null, // Add assignee
                 order_index: taskToEdit ? (taskToEdit.order_index || 0) : 0, // Default to top for new tasks
                 status: taskToEdit ? (taskToEdit.status || 'PENDING') : 'PENDING'
             };
@@ -290,6 +314,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             // Reset form
             setTitle('');
             setDescription('');
+            setAssignee('');
             setFile(null);
         } catch (error: any) {
             console.error('Error creating task:', error);
@@ -424,6 +449,26 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                                 </div>
                             </div>
                         </div>
+
+                        <div>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Responsável (Atribuir a)</label>
+                            <div className="relative group">
+                                <select
+                                    className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10"
+                                    value={assignee}
+                                    onChange={e => setAssignee(e.target.value)}
+                                >
+                                    <option value="" className="bg-surface-dark">Sem Responsável</option>
+                                    {users.map(u => (
+                                        <option key={u.id} value={u.id} className="bg-surface-dark">
+                                            {u.email} {u.professional_title ? `(${u.professional_title})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                                <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none group-focus-within:text-primary transition-colors">person</span>
+                            </div>
+                        </div>
+
                     </div>
 
                     <div className="bg-primary/5 p-6 rounded-2xl border border-primary/20 space-y-6 shadow-xl shadow-black/20">

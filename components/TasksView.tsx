@@ -35,6 +35,9 @@ interface Task {
   expiration_date?: string;
   projects?: { name: string };
   order_index: number;
+  user_id: string;
+  assignee?: string;
+  assignee_profile?: { email: string; professional_title?: string };
 }
 
 const TasksView: React.FC = () => {
@@ -48,7 +51,7 @@ const TasksView: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isCompact, setIsCompact] = useState(false);
-  const [boardFilter, setBoardFilter] = useState<'ALL' | 'MINE' | 'SHARED'>('ALL'); // New Filter State
+  const [boardFilter, setBoardFilter] = useState<'ALL' | 'MINE' | 'SHARED' | 'ASSIGNED'>('ALL'); // New Filter State
   const [openMenuTaskId, setOpenMenuTaskId] = useState<string | null>(null);
 
   const isCentral = isTaskCentralUser(user?.email);
@@ -63,10 +66,16 @@ const TasksView: React.FC = () => {
     setLoading(true);
 
     // 1. Fetch Boards
-    const { data: boardsData } = await supabase
+    let boardsQuery = supabase
       .from('task_boards')
       .select('*')
       .order('name');
+
+    if (!isCentral) {
+      boardsQuery = boardsQuery.eq('user_id', user?.id);
+    }
+
+    const { data: boardsData } = await boardsQuery;
 
     if (boardsData) {
       let finalBoards = [...boardsData];
@@ -116,6 +125,7 @@ const TasksView: React.FC = () => {
           return {
             ...t,
             user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
+            assignee_profile: t.assignee ? profilesData?.find(p => p.id === t.assignee) : null,
             checklist_progress: totalCount > 0 ? `${completedCount}/${totalCount}` : null,
             checklist_percentage: totalCount > 0 ? (completedCount / totalCount) * 100 : 0
           };
@@ -195,6 +205,7 @@ const TasksView: React.FC = () => {
         return {
           ...t,
           user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
+          assignee_profile: t.assignee ? profilesData?.find(p => p.id === t.assignee) : null,
           checklist_progress: totalCount > 0 ? `${completedCount}/${totalCount}` : null,
           checklist_percentage: totalCount > 0 ? (completedCount / totalCount) * 100 : 0
         };
@@ -221,7 +232,8 @@ const TasksView: React.FC = () => {
         value: 0,
         deadline: new Date().toISOString().split('T')[0],
         internal_observations: `Convertido da tarefa: ${task.description || ''}`,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        user_id: user?.id
       }).select().single();
 
       if (error) throw error;
@@ -388,10 +400,26 @@ const TasksView: React.FC = () => {
     }
   };
 
-  const filteredTasks = tasks.filter(t =>
-    t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.projects?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredTasks = tasks.filter(t => {
+    const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.projects?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (boardFilter === 'ASSIGNED') {
+      return t.assignee === user?.id;
+    }
+
+    if (boardFilter === 'MINE') {
+      return t.user_id === user?.id;
+    }
+
+    if (boardFilter === 'SHARED') {
+      return t.user_id !== user?.id;
+    }
+
+    return true;
+  });
 
   // Filter boards based on boardFilter
   const filteredBoards = boards.filter(b => {
@@ -428,23 +456,41 @@ const TasksView: React.FC = () => {
 
               {/* Board Filter Toggles */}
               <div className="flex bg-white/5 rounded-full p-0.5 border border-white/5">
+                {isCentral && (
+                  <>
+                    <button
+                      onClick={() => setBoardFilter('ALL')}
+                      className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'ALL' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => setBoardFilter('MINE')}
+                      className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'MINE' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
+                    >
+                      Meus
+                    </button>
+                    <button
+                      onClick={() => setBoardFilter('SHARED')}
+                      className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'SHARED' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
+                    >
+                      Compart.
+                    </button>
+                  </>
+                )}
+                {!isCentral && (
+                  <button
+                    className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all bg-primary text-white cursor-default`}
+                  >
+                    Meus Projetos
+                  </button>
+                )}
+
                 <button
-                  onClick={() => setBoardFilter('ALL')}
-                  className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'ALL' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
+                  onClick={() => setBoardFilter('ASSIGNED')}
+                  className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'ASSIGNED' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
                 >
-                  Todos
-                </button>
-                <button
-                  onClick={() => setBoardFilter('MINE')}
-                  className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'MINE' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
-                >
-                  Meus
-                </button>
-                <button
-                  onClick={() => setBoardFilter('SHARED')}
-                  className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'SHARED' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
-                >
-                  Compart.
+                  Atribuídas a Mim
                 </button>
               </div>
 
@@ -659,6 +705,26 @@ const TasksView: React.FC = () => {
                                   </span>
                                 )}
                               </div>
+
+                              {/* Assignee Avatar */}
+                              {(task as any).assignee_profile && (
+                                <div className="flex items-center gap-1.5 ml-2 border-l border-white/10 pl-2">
+                                  <span className="text-[8px] font-bold text-slate-500 uppercase">Resp:</span>
+                                  <div className="size-6 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-black text-primary shadow-inner" title={`Atribuído a: ${(task as any).assignee_profile.email}`}>
+                                    {(task as any).assignee_profile.email?.charAt(0).toUpperCase()}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Assignee Avatar */}
+                              {(task as any).assignee_profile && (
+                                <div className="flex items-center gap-1.5 ml-2 border-l border-white/10 pl-2">
+                                  <span className="text-[8px] font-bold text-slate-500 uppercase">Resp:</span>
+                                  <div className="size-6 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-black text-primary shadow-inner" title={`Atribuído a: ${(task as any).assignee_profile.email}`}>
+                                    {(task as any).assignee_profile.email?.charAt(0).toUpperCase()}
+                                  </div>
+                                </div>
+                              )}
                               <span className="text-[9px] font-black uppercase tracking-widest text-[#c7949f] opacity-40">
                                 {task.category}
                               </span>

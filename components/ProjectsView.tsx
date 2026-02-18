@@ -35,10 +35,10 @@ const ProjectsView: React.FC = () => {
   }, []);
 
   const columns = [
-    { id: 'ANALYSIS', label: 'Em Análise', color: 'bg-blue-400', shadow: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]' },
-    { id: 'APPROVED', label: 'Aprovado', color: 'bg-yellow-400', shadow: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]' },
-    { id: 'EXECUTION', label: 'Execução', color: 'bg-primary', shadow: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]' },
-    { id: 'DONE', label: 'Concluído', color: 'bg-emerald-400', shadow: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]' },
+    { id: 'ANALYSIS', label: 'Em Análise', color: 'bg-blue-400', shadow: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]', borderColor: 'border-blue-500/30 hover:border-blue-500', pillColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+    { id: 'APPROVED', label: 'Aprovado', color: 'bg-yellow-400', shadow: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]', borderColor: 'border-yellow-500/30 hover:border-yellow-500', pillColor: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' },
+    { id: 'EXECUTION', label: 'Execução', color: 'bg-primary', shadow: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]', borderColor: 'border-primary/30 hover:border-primary', pillColor: 'bg-primary/20 text-primary-300 border-primary/30' },
+    { id: 'DONE', label: 'Concluído', color: 'bg-emerald-400', shadow: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]', borderColor: 'border-emerald-500/30 hover:border-emerald-500', pillColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
   ];
 
   return (
@@ -100,13 +100,13 @@ const ProjectsView: React.FC = () => {
                           setSelectedProject(proj);
                           setIsDetailsModalOpen(true);
                         }}
-                        className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98]"
+                        className={`bg-card-dark rounded-xl p-4 border ${col.borderColor} cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98]`}
                       >
                         <div className="flex justify-between items-start mb-2">
-                          <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide border ${proj.status === 'ANALYSIS' ? 'bg-blue-900/40 text-blue-300 border-blue-900/50' :
-                            'bg-orange-900/40 text-orange-300 border-orange-900/50'
-                            }`}>
-                            {proj.status === 'ANALYSIS' ? 'Novo' : 'Prioridade'}
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide border ${col.pillColor}`}>
+                            {proj.status === 'ANALYSIS' ? 'Em Análise' :
+                              proj.status === 'APPROVED' ? 'Aprovado' :
+                                proj.status === 'EXECUTION' ? 'Em Execução' : 'Concluído'}
                           </span>
                         </div>
                         <h4 className="text-white font-bold text-base mb-1">{proj.name}</h4>

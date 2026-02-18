@@ -27,6 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     { id: AppView.ENGINEERING_PHASE_C, label: 'Fase C - Proposta', icon: 'description' },
     { id: AppView.RENEWALS, label: 'Controle de Renovação', icon: 'contract_edit' },
     { id: AppView.FINANCE, label: 'Financeiro', icon: 'account_balance_wallet' },
+    { id: AppView.STOCK, label: 'Gestão de Depósito', icon: 'warehouse' },
     { id: AppView.SETTINGS, label: 'Configurações', icon: 'settings' },
   ];
 

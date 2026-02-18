@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Product } from '../types';
 import PageHeader from './PageHeader';
+import ProductFormModal from './ProductFormModal';
 
 const StockView: React.FC = () => {
     const { user } = useAuth();
@@ -14,6 +15,7 @@ const StockView: React.FC = () => {
 
     // Modals
     const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+    const [isProductModalOpen, setIsProductModalOpen] = useState(false);
     const [stockModalAction, setStockModalAction] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [quantity, setQuantity] = useState<number>(0);
@@ -44,14 +46,10 @@ const StockView: React.FC = () => {
         return movements.reduce((sum, m) => {
             if (m.movement_type === 'IN') return sum + m.quantity;
             if (m.movement_type === 'OUT') return sum - m.quantity;
-            if (m.movement_type === 'ADJUST') return m.quantity; // Adjust sets the total directly or adds? Usually it adds but here let's make it an absolute set for ADJUST to match common usage in simple stock systems
+            if (m.movement_type === 'ADJUST') return m.quantity;
             return sum;
         }, 0);
     };
-
-    // Correction: Usually ADJUST in your system (InventoryView) was sum + quantity. 
-    // Let's re-check InventoryView logic: return sum + m.quantity; // ADJUST
-    // So it behaves like an IN. 
 
     const openStockModal = (product: Product, action: 'IN' | 'OUT' | 'ADJUST') => {
         setSelectedProduct(product);
@@ -101,6 +99,13 @@ const StockView: React.FC = () => {
                 actions={
                     <div className="flex gap-2">
                         <button
+                            onClick={() => setIsProductModalOpen(true)}
+                            className="flex items-center gap-2 h-10 px-4 rounded-lg bg-primary hover:bg-primary-dark text-white transition-all font-bold text-sm shadow-lg shadow-primary/20"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                            Novo Produto
+                        </button>
+                        <button
                             onClick={() => setViewMode(viewMode === 'GRID' ? 'LIST' : 'GRID')}
                             className="flex items-center gap-2 h-10 px-4 rounded-lg bg-surface-dark border border-white/10 text-white hover:bg-white/5 transition-all font-bold text-sm"
                         >
@@ -139,10 +144,10 @@ const StockView: React.FC = () => {
                         {filteredProducts.map((product) => {
                             const currentQty = computeQuantity(product.id);
                             return (
-                                <div key={product.id} className="bg-surface-dark border border-white/10 rounded-2xl overflow-hidden shadow-lg hover:border-primary/50 transition-all group">
+                                <div key={product.id} className="bg-surface-dark border border-white/10 rounded-2xl overflow-hidden shadow-lg hover:border-primary/50 transition-all group flex flex-col">
                                     <div className="aspect-square bg-white/5 relative overflow-hidden flex items-center justify-center p-4">
                                         {product.image ? (
-                                            <img src={product.image} alt={product.name} className="w-full h-full object-contain transition-transform group-hover:scale-105" />
+                                            <img src={product.image} alt={product.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
                                         ) : (
                                             <span className="material-symbols-outlined text-6xl text-slate-700">inventory_2</span>
                                         )}
@@ -160,31 +165,45 @@ const StockView: React.FC = () => {
                                             </div>
                                         )}
                                     </div>
-                                    <div className="p-5">
+                                    <div className="p-5 flex flex-col flex-1">
                                         <h3 className="font-bold text-white mb-1 truncate" title={product.name}>{product.name}</h3>
                                         <p className="text-xs text-slate-500 mb-4 line-clamp-1">{product.category || 'Material'}</p>
 
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="mt-auto grid grid-cols-4 gap-2">
                                             <button
                                                 onClick={() => openStockModal(product, 'IN')}
                                                 className="flex flex-col items-center justify-center py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-xl transition-all border border-emerald-500/20"
+                                                title="Entrada"
                                             >
                                                 <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                                                <span className="text-[10px] font-bold mt-1">ENTRADA</span>
+                                                <span className="text-[9px] font-bold mt-1">ENTRADA</span>
                                             </button>
                                             <button
                                                 onClick={() => openStockModal(product, 'OUT')}
                                                 className="flex flex-col items-center justify-center py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all border border-rose-500/20"
+                                                title="Saída"
                                             >
                                                 <span className="material-symbols-outlined text-[18px]">remove_circle</span>
-                                                <span className="text-[10px] font-bold mt-1">SAÍDA</span>
+                                                <span className="text-[9px] font-bold mt-1">SAÍDA</span>
                                             </button>
                                             <button
                                                 onClick={() => openStockModal(product, 'ADJUST')}
                                                 className="flex flex-col items-center justify-center py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 rounded-xl transition-all border border-amber-500/20"
+                                                title="Ajuste"
                                             >
-                                                <span className="material-symbols-outlined text-[18px]">instinct</span>
-                                                <span className="text-[10px] font-bold mt-1">AJUSTE</span>
+                                                <span className="material-symbols-outlined text-[18px]">tune</span>
+                                                <span className="text-[9px] font-bold mt-1">AJUSTE</span>
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedProduct(product);
+                                                    setIsProductModalOpen(true);
+                                                }}
+                                                className="flex flex-col items-center justify-center py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-xl transition-all border border-blue-500/20"
+                                                title="Editar Produto"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                                                <span className="text-[9px] font-bold mt-1">EDITAR</span>
                                             </button>
                                         </div>
                                     </div>
@@ -211,13 +230,17 @@ const StockView: React.FC = () => {
                                             <div className="flex justify-start gap-2">
                                                 <button onClick={() => openStockModal(product, 'IN')} className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-lg transition-all" title="Entrada"><span className="material-symbols-outlined text-[18px]">add</span></button>
                                                 <button onClick={() => openStockModal(product, 'OUT')} className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg transition-all" title="Saída"><span className="material-symbols-outlined text-[18px]">remove</span></button>
-                                                <button onClick={() => openStockModal(product, 'ADJUST')} className="p-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 rounded-lg transition-all" title="Ajuste"><span className="material-symbols-outlined text-[18px]">edit</span></button>
+                                                <button onClick={() => openStockModal(product, 'ADJUST')} className="p-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 rounded-lg transition-all" title="Ajuste"><span className="material-symbols-outlined text-[18px]">tune</span></button>
+                                                <button onClick={() => {
+                                                    setSelectedProduct(product);
+                                                    setIsProductModalOpen(true);
+                                                }} className="p-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-lg transition-all" title="Editar Produto"><span className="material-symbols-outlined text-[18px]">edit</span></button>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden border border-white/10">
+                                            <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden border border-white/10 shrink-0">
                                                 {product.image ? (
-                                                    <img src={product.image} className="w-full h-full object-contain" />
+                                                    <img src={product.image} className="w-full h-full object-cover" />
                                                 ) : (
                                                     <span className="material-symbols-outlined text-slate-600">inventory_2</span>
                                                 )}
@@ -254,7 +277,7 @@ const StockView: React.FC = () => {
                                 stockModalAction === 'OUT' ? 'bg-rose-500/20 text-rose-500' : 'bg-amber-500/20 text-amber-500'
                                 }`}>
                                 <span className="material-symbols-outlined text-[28px]">
-                                    {stockModalAction === 'IN' ? 'add_circle' : stockModalAction === 'OUT' ? 'remove_circle' : 'instinct'}
+                                    {stockModalAction === 'IN' ? 'add_circle' : stockModalAction === 'OUT' ? 'remove_circle' : 'tune'}
                                 </span>
                             </div>
                             <div>
@@ -307,6 +330,21 @@ const StockView: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            <ProductFormModal
+                isOpen={isProductModalOpen}
+                onClose={() => {
+                    setIsProductModalOpen(false);
+                    setSelectedProduct(null); // Reset selection
+                }}
+                onSuccess={() => {
+                    fetchData();
+                    setIsProductModalOpen(false);
+                    setSelectedProduct(null); // Reset selection
+                }}
+                productToEdit={selectedProduct} // Pass the selected product for editing
+            />
+
         </div>
     );
 };
