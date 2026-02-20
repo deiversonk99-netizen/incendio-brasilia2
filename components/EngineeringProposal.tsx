@@ -820,20 +820,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.setFont('helvetica', 'bold');
         doc.text(title.toUpperCase(), 20, 52);
 
-        // Proposal Number & Project Number in Header
+
+        // Proposal Number in Header
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(100);
 
         let headerY = 52;
         if (proposal.proposal_number) {
-          doc.text(`Proposta Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, pageWidth - 20, headerY, { align: 'right' });
-          headerY += 5; // Move down for Project Number
-        }
-
-        if (project.project_number) {
-          const prString = `PR${String(project.project_number).padStart(3, '0')}`;
-          doc.text(prString, pageWidth - 20, headerY, { align: 'right' });
+          doc.text(`Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, pageWidth - 20, headerY, { align: 'right' });
+          headerY += 5;
         }
 
         // Red accent line below title
@@ -875,13 +871,6 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         coverNumY += 10;
       }
 
-      if (project.project_number) {
-        const prString = `PR${String(project.project_number).padStart(3, '0')}`;
-        doc.setFontSize(14);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.text(prString, 20, coverNumY);
-      }
 
       doc.setFillColor(239, 68, 68); // Red Accent
       doc.rect(0, 140, pageWidth * 0.4, 2, 'F');

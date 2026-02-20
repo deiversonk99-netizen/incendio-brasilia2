@@ -106,10 +106,29 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       setProjectsWithFloors(new Set(floorsData.map(f => f.project_id)));
     }
 
+
     // 5. Calculated Items (Phase B)
     const { data: itemsData } = await supabase.from('budget_items').select('project_id').eq('origin', 'CALCULATED');
     if (itemsData) {
       setProjectsWithCalculatedItems(new Set(itemsData.map(i => i.project_id)));
+    }
+
+    // 6. Label Definitions
+    if (user) {
+      const { data: labelData } = await supabase.from('project_label_definitions').select('*').eq('user_id', user.id);
+      if (labelData && labelData.length > 0) {
+        setLabelDefinitions(labelData);
+      } else {
+        // Default definitions if none exist
+        setLabelDefinitions([
+          { color: 'bg-red-500', label: 'Crítico' },
+          { color: 'bg-orange-500', label: 'Urgente' },
+          { color: 'bg-yellow-500', label: 'Atenção' },
+          { color: 'bg-green-500', label: 'Normal' },
+          { color: 'bg-blue-500', label: 'Baixa Prioridade' },
+          { color: 'bg-purple-500', label: 'Aguardando' },
+        ]);
+      }
     }
 
     // 7. Fetch Quick Tasks (group_id IS NULL)
