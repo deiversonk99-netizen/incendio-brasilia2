@@ -802,7 +802,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         // --- Page Number Footer ---
         doc.setFontSize(8);
         doc.setTextColor(150);
-        const footerText = `Proposta Comercial - ${pdfSettings.project_name_pdf || project.name} | Página ${pageNum} de ${totalPages}`;
+
+        let safeProjectName = (pdfSettings.project_name_pdf || project.name || '').replace(/[\r\n]+/g, ' ').trim();
+        if (safeProjectName.length > 80) safeProjectName = safeProjectName.substring(0, 77) + '...';
+
+        const footerText = `Proposta Comercial - ${safeProjectName} | Página ${pageNum} de ${totalPages}`;
         doc.text(footerText, pageWidth / 2, footerY, { align: 'center' });
       };
 
@@ -821,14 +825,17 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.text(title.toUpperCase(), 20, 52);
 
 
-        // Proposal Number in Header
+        // Proposal Number and Project Number in Header
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(100);
 
         let headerY = 52;
-        if (proposal.proposal_number) {
-          doc.text(`Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, pageWidth - 20, headerY, { align: 'right' });
+        const prNumber = project.project_number ? `PR${String(project.project_number).padStart(3, '0')}` : '';
+        const numberText = proposal.proposal_number ? `Nº ${proposal.proposal_number}/${new Date().getFullYear()}${prNumber ? ` - ${prNumber}` : ''}` : prNumber;
+
+        if (numberText) {
+          doc.text(numberText, pageWidth - 20, headerY, { align: 'right' });
           headerY += 5;
         }
 
@@ -863,11 +870,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 115);
 
       let coverNumY = 130;
-      if (proposal.proposal_number) {
+      const prNumberCover = project.project_number ? `PR${String(project.project_number).padStart(3, '0')}` : '';
+      const coverNumText = proposal.proposal_number ? `Nº ${proposal.proposal_number}/${new Date().getFullYear()}${prNumberCover ? ` - ${prNumberCover}` : ''}` : prNumberCover;
+
+      if (coverNumText) {
         doc.setFontSize(18);
         doc.setTextColor(239, 68, 68);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Nº ${proposal.proposal_number}/${new Date().getFullYear()}`, 20, coverNumY);
+        doc.text(coverNumText, 20, coverNumY);
         coverNumY += 10;
       }
 
