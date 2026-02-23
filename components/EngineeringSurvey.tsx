@@ -872,7 +872,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                   <option value="">Selecione...</option>
                   {projects.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} - ` : ''}{p.name} - {p.client}
+                      {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} / ` : ''}{p.client || 'Sem Cliente'}
                     </option>
                   ))}
                 </select>

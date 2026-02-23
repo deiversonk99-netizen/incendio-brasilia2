@@ -831,8 +831,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.setTextColor(100);
 
         let headerY = 52;
-        const prNumber = project.project_number ? `PR${String(project.project_number).padStart(3, '0')}` : '';
-        const numberText = proposal.proposal_number ? `Nº ${proposal.proposal_number}/${new Date().getFullYear()}` : prNumber;
+        const currentProjNum = project.project_number || proposal.proposal_number;
+        const prNumber = currentProjNum ? `PR${String(currentProjNum).padStart(3, '0')}` : '';
+        const numberText = currentProjNum ? `Nº ${currentProjNum}/${new Date().getFullYear()}` : '';
 
         if (numberText) {
           doc.text(numberText, pageWidth - 20, headerY, { align: 'right' });
@@ -870,8 +871,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 115);
 
       let coverNumY = 130;
-      const prNumberCover = project.project_number ? `PR${String(project.project_number).padStart(3, '0')}` : '';
-      const coverNumText = proposal.proposal_number ? `Nº ${proposal.proposal_number}/${new Date().getFullYear()}` : prNumberCover;
+      const currentProjNumCover = project.project_number || proposal.proposal_number;
+      const prNumberCover = currentProjNumCover ? `PR${String(currentProjNumCover).padStart(3, '0')}` : '';
+      const coverNumText = currentProjNumCover ? `Nº ${currentProjNumCover}/${new Date().getFullYear()}` : '';
 
       if (coverNumText) {
         doc.setFontSize(18);
@@ -922,14 +924,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         let yPos = 70;
 
         // Render Scope Image if present
-        if (pdfSettings.scope_img) {
+        if (pdfSettings.scope_img && !pdfSettings.scope_img.startsWith('data:application/pdf')) {
           try {
-            // Determine image dimensions to fit within margins
-            // Use 16:9 ratio or actual aspect ratio if possible, but jsPDF addImage handles scaling if we give strict bounds?
-            // Let's force full width - 40px
             const imgWidth = pageWidth - 40;
             const imgHeight = imgWidth * 0.5625; // 16:9 approx
-
             doc.addImage(pdfSettings.scope_img, 'PNG', 20, yPos, imgWidth, imgHeight);
             yPos += imgHeight + 10;
           } catch (e) {
@@ -1382,7 +1380,28 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       // 1. Embed Main Report
       const reportPdf = await PDFDocument.load(reportPdfBytes);
       const reportPages = await pdfDoc.copyPages(reportPdf, reportPdf.getPageIndices());
-      reportPages.forEach((page) => pdfDoc.addPage(page));
+
+      // Cover Page
+      pdfDoc.addPage(reportPages[0]);
+
+      // Handle PDF Scope insertion after Page 2 (Scope Header) if applicable
+      const isScopePdf = pdfSettings.scope_img && pdfSettings.scope_img.startsWith('data:application/pdf');
+
+      for (let i = 1; i < reportPages.length; i++) {
+        pdfDoc.addPage(reportPages[i]);
+
+        // If this was the scope page and we have a PDF to insert, do it now
+        if (i === 1 && isScopePdf) {
+          try {
+            const scopePdfBuffer = Uint8Array.from(atob(pdfSettings.scope_img.split(',')[1]), c => c.charCodeAt(0)).buffer;
+            const scopePdfDoc = await PDFDocument.load(scopePdfBuffer);
+            const scopePages = await pdfDoc.copyPages(scopePdfDoc, scopePdfDoc.getPageIndices());
+            scopePages.forEach(p => pdfDoc.addPage(p));
+          } catch (e) {
+            console.error('Error merging scope PDF:', e);
+          }
+        }
+      }
 
       // 2. Helper to merge External PDF
       const mergeExternalPdf = async (source: string | ArrayBuffer) => {
@@ -1535,7 +1554,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                   </div>
 
                   <div className="lg:col-span-3 flex flex-col gap-3 pb-2 border-b border-white/5">
-                    <label className="text-xs font-bold text-primary uppercase tracking-wider">Imagem de Escopo / Projeto (Capa)</label>
+                    <label className="text-xs font-bold text-primary uppercase tracking-wider">Imagem ou PDF de Escopo / Projeto (Capa)</label>
                     <div className="flex gap-4 items-center">
                       <div className="flex-1">
                         <label className="flex flex-col items-center justify-center w-full h-16 border border-white/10 border-dashed rounded-lg cursor-pointer hover:bg-white/5 transition-colors">
@@ -1543,12 +1562,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             <span className="material-symbols-outlined text-[20px]">add_photo_alternate</span>
                             <span className="text-xs font-bold uppercase">Selecionar Imagem</span>
                           </div>
-                          <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload('scope_img', e.target.files[0])} />
+                          <input type="file" className="hidden" accept="image/*,application/pdf" onChange={(e) => e.target.files?.[0] && handleImageUpload('scope_img', e.target.files[0])} />
                         </label>
                       </div>
                       {pdfSettings.scope_img && (
                         <div className="relative group">
-                          <img src={pdfSettings.scope_img} alt="Escopo" className="h-16 rounded border border-white/10" />
+                          {pdfSettings.scope_img.startsWith('data:application/pdf') ? (
+                            <div className="h-16 w-20 rounded border border-white/10 flex flex-col items-center justify-center bg-white/5">
+                              <span className="material-symbols-outlined text-red-500">picture_as_pdf</span>
+                              <span className="text-[8px] font-bold text-slate-400">PDF</span>
+                            </div>
+                          ) : (
+                            <img src={pdfSettings.scope_img} alt="Escopo" className="h-16 rounded border border-white/10" />
+                          )}
                           <button
                             onClick={() => savePdfSettings({ ...pdfSettings, scope_img: '' })}
                             className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1558,7 +1584,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         </div>
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-500">Esta imagem será exibida em destaque na página de escopo ou capa.</p>
+                    <p className="text-[10px] text-slate-500">A imagem será exibida em destaque na página de escopo ou capa, caso seja PDF será exibido página a página.</p>
                   </div>
 
                   <div className="flex flex-col gap-3">
