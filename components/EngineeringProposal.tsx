@@ -832,7 +832,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         let headerY = 52;
         const prNumber = project.project_number ? `PR${String(project.project_number).padStart(3, '0')}` : '';
-        const numberText = proposal.proposal_number ? `Nº ${proposal.proposal_number}/${new Date().getFullYear()}${prNumber ? ` - ${prNumber}` : ''}` : prNumber;
+        const numberText = proposal.proposal_number ? `Nº ${proposal.proposal_number}/${new Date().getFullYear()}` : prNumber;
 
         if (numberText) {
           doc.text(numberText, pageWidth - 20, headerY, { align: 'right' });
@@ -871,7 +871,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       let coverNumY = 130;
       const prNumberCover = project.project_number ? `PR${String(project.project_number).padStart(3, '0')}` : '';
-      const coverNumText = proposal.proposal_number ? `Nº ${proposal.proposal_number}/${new Date().getFullYear()}${prNumberCover ? ` - ${prNumberCover}` : ''}` : prNumberCover;
+      const coverNumText = proposal.proposal_number ? `Nº ${proposal.proposal_number}/${new Date().getFullYear()}` : prNumberCover;
 
       if (coverNumText) {
         doc.setFontSize(18);
@@ -1870,7 +1870,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     <option value="">Selecione...</option>
                     {filteredProjects.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} - ` : ''}{p.name} - {p.client}
+                        {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} / ` : ''}{p.client || 'Sem Cliente'}
                       </option>
                     ))}
                   </select>
