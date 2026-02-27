@@ -83,7 +83,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('assinatura, crq, credentials, credentials_img, carimbo, carimbo_img')
-        .eq('user_id', user?.id)
+        .eq('id', user?.id)
         .single();
 
       if (data) {

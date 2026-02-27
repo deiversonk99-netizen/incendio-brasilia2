@@ -67,7 +67,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setLoading(false);
         });
 
-        return () => subscription.unsubscribe();
+        // Real-time listener for profile updates
+        let profileSubscription: any = null;
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user?.id) {
+                profileSubscription = supabase
+                    .channel('custom-user-profile')
+                    .on(
+                        'postgres_changes',
+                        { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `id=eq.${session.user.id}` },
+                        (payload) => {
+                            setProfile(payload.new as UserProfile);
+                        }
+                    )
+                    .subscribe();
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+            if (profileSubscription) supabase.removeChannel(profileSubscription);
+        };
     }, []);
 
     const signOut = async () => {

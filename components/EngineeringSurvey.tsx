@@ -28,6 +28,22 @@ interface Floor {
 
 const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedProjectId, onSelectProject }) => {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const filteredProjects = React.useMemo(() => {
+    if (!searchTerm) return projects;
+
+    const searchWords = searchTerm.toLowerCase().split(/\s+/).filter((w: string) => w.length > 0);
+
+    return projects.filter((p: Project) =>
+      searchWords.every((word: string) =>
+        p.name.toLowerCase().includes(word) ||
+        (p.client && p.client.toLowerCase().includes(word)) ||
+        (p.project_number ? `PR${String(p.project_number).padStart(3, '0')}`.toLowerCase().includes(word) : false)
+      )
+    );
+  }, [projects, searchTerm]);
+
   const [floors, setFloors] = useState<Floor[]>([]);
   const [loading, setLoading] = useState(false);
   const [pdfSettings, setPdfSettings] = useState<any>({

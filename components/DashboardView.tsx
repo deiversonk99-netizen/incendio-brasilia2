@@ -529,6 +529,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                             return searchWords.every(word =>
                               p.name.toLowerCase().includes(word) ||
                               p.client.toLowerCase().includes(word) ||
+                              (p.project_number && String(p.project_number).includes(word)) ||
+                              (p.project_number && `pr${String(p.project_number).padStart(3, '0')}`.toLowerCase().includes(word)) ||
                               projectTypeLabel.includes(word)
                             );
                           })
@@ -571,42 +573,27 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                                     <span className="material-symbols-outlined text-[16px]">move_to_inbox</span>
                                   </button>
 
-                                  {/* Color Label Selector */}
-                                  <div className="relative group/label">
+                                  {/* Inline Color Label Selector */}
+                                  <div className="flex items-center gap-1 bg-surface-dark border border-white/10 rounded-lg p-1" onClick={(e) => e.stopPropagation()}>
                                     <button
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
-                                    >
-                                      <span className="material-symbols-outlined text-[16px]">label</span>
-                                    </button>
-
-                                    {/* Dropdown */}
-                                    <div className="absolute right-0 top-full mt-1 w-48 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-2 opacity-0 group-hover/label:opacity-100 pointer-events-none group-hover/label:pointer-events-auto transition-all z-50 flex flex-col gap-1">
-                                      <span className="text-[9px] font-black text-slate-600 px-2 py-1 uppercase tracking-widest">Sinalização Visual</span>
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateProjectColor(proj.id, 'transparent');
+                                      }}
+                                      className={`size-4 rounded-full border border-white/20 transition-all hover:scale-110 ${(proj as any).label_color === 'transparent' || !(proj as any).label_color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-50 blur-[1px]'}`}
+                                      title="Remover Sinalização"
+                                    ></button>
+                                    {labelDefinitions.map(def => (
                                       <button
+                                        key={def.color}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          handleUpdateProjectColor(proj.id, 'transparent');
+                                          handleUpdateProjectColor(proj.id, def.color);
                                         }}
-                                        className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left"
-                                      >
-                                        <span className="size-3 rounded-full bg-transparent border border-white/20"></span>
-                                        Nenhuma
-                                      </button>
-                                      {labelDefinitions.map(def => (
-                                        <button
-                                          key={def.color}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleUpdateProjectColor(proj.id, def.color);
-                                          }}
-                                          className={`flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-left ${(proj as any).label_color === def.color ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
-                                        >
-                                          <span className={`size-3 rounded-full ${def.color} ${(proj as any).label_color === def.color ? 'ring-2 ring-white scale-110' : ''}`}></span>
-                                          {def.label}
-                                        </button>
-                                      ))}
-                                    </div>
+                                        className={`size-4 rounded-full ${def.color} transition-all hover:scale-110 ${(proj as any).label_color === def.color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-50 blur-[1px]'}`}
+                                        title={def.label}
+                                      ></button>
+                                    ))}
                                   </div>
                                 </div>
                               </div>
@@ -663,6 +650,9 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                           return searchWords.every(word =>
                             p.name.toLowerCase().includes(word) ||
                             p.client.toLowerCase().includes(word) ||
+                            (p.project_number && String(p.project_number).includes(word)) ||
+                            (p.project_number && `pr00${p.project_number}`.slice(-3).includes(word)) ||
+                            (p.project_number && `pr${String(p.project_number).padStart(3, '0')}`.toLowerCase().includes(word)) ||
                             (p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial').includes(word)
                           );
                         }).length === 0 && (

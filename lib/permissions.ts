@@ -43,14 +43,17 @@ export const isSuperAdmin = (email?: string, profile?: any) => {
 export const canViewTab = (viewId: string, email?: string, profile?: any) => {
     if (!email) return false;
 
-    // Super admins see everything
-    if (isSuperAdmin(email, profile)) return true;
-
     // 1. Check dynamic permissions (Top Priority)
-    // If a tab is explicitly marked as true or false in the profile, we respect that.
     if (profile?.permissions && profile.permissions[viewId] !== undefined) {
+        // Prevent SuperAdmins from locking themselves out of vital areas
+        if (isSuperAdmin(email, profile) && (viewId === 'SETTINGS' || viewId === 'DASHBOARD')) {
+            return true;
+        }
         return profile.permissions[viewId] === true;
     }
+
+    // 2. Super admins see everything if not explicitly blocked above
+    if (isSuperAdmin(email, profile)) return true;
 
     // 2. Default RBAC fallbacks (If not explicitly permitted/denied)
     const role = profile?.role || 'USER';

@@ -71,10 +71,6 @@ const TasksView: React.FC = () => {
       .select('*')
       .order('name');
 
-    if (!isCentral) {
-      boardsQuery = boardsQuery.eq('user_id', user?.id);
-    }
-
     const { data: boardsData } = await boardsQuery;
 
     if (boardsData) {
@@ -155,20 +151,17 @@ const TasksView: React.FC = () => {
     if (groupsData) {
       // Filter accessible groups
       const accessibleGroups = groupsData.filter(g => {
-        if (isCentral) return true;
-
-        // If profile is not loaded yet, default to safe (or visible?)
-        // Better to wait for profile? But loading state handles that.
         if (!profile) return true;
 
-        // Check ADMIN/MANAGER role just in case
-        if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
-
         const key = `GROUP_${g.id}`;
-        // If permission explicitly set
+
+        // Explicit permissions override role check
         if (profile.permissions && profile.permissions[key] !== undefined) {
-          return profile.permissions[key];
+          return profile.permissions[key] === true;
         }
+
+        if (isCentral) return true;
+        if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
 
         // Default: Visible
         return true;
