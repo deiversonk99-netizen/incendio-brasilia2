@@ -4,6 +4,7 @@ import { AreaChart, Area, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } f
 import PageHeader from './PageHeader';
 import NewProjectModal from './NewProjectModal';
 import ProjectDetailsModal from './ProjectDetailsModal';
+import ManageColumnsModal from './ManageColumnsModal';
 import { supabase } from '../lib/supabase';
 import { Project, AppView } from '../types';
 import { Button, Card } from './ui';
@@ -13,6 +14,14 @@ interface Task {
   id: string;
   title: string;
   completed: boolean;
+}
+
+export interface StatusColumn {
+  id: string;
+  label: string;
+  color: string;
+  shadow_class: string;
+  order_index: number;
 }
 
 interface DashboardViewProps {
@@ -31,6 +40,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [filterType, setFilterType] = useState('ALL');
   const [filterClient, setFilterClient] = useState('ALL');
   const [viewMode, setViewMode] = useState<'STATUS' | 'PHASE'>('STATUS');
+  const [statusColumns, setStatusColumns] = useState<StatusColumn[]>([]);
+  const [isManageColumnsModalOpen, setIsManageColumnsModalOpen] = useState(false);
 
   // Real Data States
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -142,6 +153,53 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
       if (quickTasksData) {
         setTasks(quickTasksData);
+      }
+    }
+
+    // 8. Custom Status Columns
+    if (user) {
+      const { data: colsData } = await supabase
+        .from('project_status_columns')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('order_index', { ascending: true });
+
+      if (colsData && colsData.length > 0) {
+        setStatusColumns(colsData);
+      } else {
+        // First time initialization
+        const defaultCols = [
+          { user_id: user.id, label: 'Em Análise', color: 'bg-blue-400', shadow_class: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]', order_index: 0 },
+          { user_id: user.id, label: 'Aprovado', color: 'bg-yellow-400', shadow_class: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]', order_index: 1 },
+          { user_id: user.id, label: 'Execução', color: 'bg-primary', shadow_class: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]', order_index: 2 },
+          { user_id: user.id, label: 'Concluído', color: 'bg-emerald-400', shadow_class: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]', order_index: 3 },
+        ];
+
+        const { data: insertedCols } = await supabase.from('project_status_columns').insert(defaultCols).select();
+
+        if (insertedCols && insertedCols.length > 0) {
+          const sortedCols = insertedCols.sort((a, b) => a.order_index - b.order_index);
+          setStatusColumns(sortedCols);
+
+          // Migrate old projects
+          const colMap: Record<string, string> = {
+            'ANALYSIS': sortedCols.find(c => c.label === 'Em Análise')?.id || '',
+            'APPROVED': sortedCols.find(c => c.label === 'Aprovado')?.id || '',
+            'EXECUTION': sortedCols.find(c => c.label === 'Execução')?.id || '',
+            'DONE': sortedCols.find(c => c.label === 'Concluído')?.id || ''
+          };
+
+          Object.entries(colMap).forEach(async ([oldStatus, newId]) => {
+            if (newId) {
+              await supabase.from('projects').update({ status: newId }).eq('status', oldStatus).eq('user_id', user.id);
+            }
+          });
+
+          setProjects(prev => prev.map(p => {
+            if (colMap[p.status]) return { ...p, status: colMap[p.status] } as Project;
+            return p;
+          }));
+        }
       }
     }
 
@@ -261,16 +319,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   };
 
   // KPI Calculations
-  const activeProjects = projects.filter(p => p.status === 'EXECUTION' || p.status === 'ANALYSIS').length;
-  const pendingQuotes = projects.filter(p => p.status === 'ANALYSIS').length;
-  const totalValue = projects.reduce((acc, curr) => acc + Number(curr.value || 0), 0);
+  const analysisColId = statusColumns.find(c => c.label === 'Em Análise')?.id || 'ANALYSIS';
+  const executionColId = statusColumns.find(c => c.label === 'Execução')?.id || 'EXECUTION';
 
-  const columns = [
-    { id: 'ANALYSIS', label: 'Em Análise', color: 'bg-blue-400', shadow: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]' },
-    { id: 'APPROVED', label: 'Aprovado', color: 'bg-yellow-400', shadow: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]' },
-    { id: 'EXECUTION', label: 'Execução', color: 'bg-primary', shadow: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]' },
-    { id: 'DONE', label: 'Concluído', color: 'bg-emerald-400', shadow: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]' },
-  ];
+  const activeProjects = projects.filter(p => p.status === executionColId || p.status === analysisColId).length;
+  const pendingQuotes = projects.filter(p => p.status === analysisColId).length;
+  const totalValue = projects.reduce((acc, curr) => acc + Number(curr.value || 0), 0);
 
   const uniqueClients = Array.from(new Set(projects.map(p => p.client))).sort();
 
@@ -288,7 +342,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     return 'NEW';
   };
 
-  const activeColumns = viewMode === 'STATUS' ? columns : phaseColumns;
+  const dynamicColumnsMapped = statusColumns.map(c => ({ id: c.id, label: c.label, color: c.color, shadow: c.shadow_class }));
+  const activeColumns = viewMode === 'STATUS' ? dynamicColumnsMapped : phaseColumns;
 
   return (
     <>
@@ -481,6 +536,16 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                     <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-[18px]">expand_more</span>
                   </div>
 
+                  <div className="flex bg-surface-dark border border-white/10 rounded-xl p-1 gap-1">
+                    <button
+                      onClick={() => setIsManageColumnsModalOpen(true)}
+                      className="flex items-center justify-center p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all w-8 h-8"
+                      title="Gerenciar Colunas de Status"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">settings</span>
+                    </button>
+                  </div>
+
                   <button
                     onClick={() => {
                       setEditingLabels([...labelDefinitions]);
@@ -526,13 +591,24 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                             const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
                             if (searchWords.length === 0) return true;
                             const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
-                            return searchWords.every(word =>
-                              p.name.toLowerCase().includes(word) ||
-                              p.client.toLowerCase().includes(word) ||
-                              (p.project_number && String(p.project_number).includes(word)) ||
-                              (p.project_number && `pr${String(p.project_number).padStart(3, '0')}`.toLowerCase().includes(word)) ||
-                              projectTypeLabel.includes(word)
-                            );
+                            return searchWords.every(word => {
+                              const projNumStr = p.project_number ? String(p.project_number) : '';
+                              const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
+                              const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+
+                              const cleanWordNumber = word.replace(/^0+/, '') || '0';
+                              const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
+                              const wordNumbersOnly = word.replace(/\D/g, '');
+
+                              return p.name.toLowerCase().includes(word) ||
+                                p.client.toLowerCase().includes(word) ||
+                                (projNumStr && projNumStr === cleanWordNumber) ||
+                                (projNumStr && projNumStr === wordBeforeSlash) ||
+                                (projNumStr && projNumStr === wordNumbersOnly) ||
+                                (projNumPadded && projNumPadded.includes(word)) ||
+                                (prFormatted && prFormatted.includes(word)) ||
+                                projectTypeLabel.includes(word);
+                            });
                           })
                           .map(proj => (
                             <div
@@ -647,14 +723,25 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                           if (filterClient !== 'ALL' && p.client !== filterClient) return false;
 
                           const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-                          return searchWords.every(word =>
-                            p.name.toLowerCase().includes(word) ||
-                            p.client.toLowerCase().includes(word) ||
-                            (p.project_number && String(p.project_number).includes(word)) ||
-                            (p.project_number && `pr00${p.project_number}`.slice(-3).includes(word)) ||
-                            (p.project_number && `pr${String(p.project_number).padStart(3, '0')}`.toLowerCase().includes(word)) ||
-                            (p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial').includes(word)
-                          );
+                          return searchWords.every(word => {
+                            const projNumStr = p.project_number ? String(p.project_number) : '';
+                            const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
+                            const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+
+                            const cleanWordNumber = word.replace(/^0+/, '') || '0';
+                            const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
+                            const wordNumbersOnly = word.replace(/\D/g, '');
+                            const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
+
+                            return p.name.toLowerCase().includes(word) ||
+                              p.client.toLowerCase().includes(word) ||
+                              (projNumStr && projNumStr === cleanWordNumber) ||
+                              (projNumStr && projNumStr === wordBeforeSlash) ||
+                              (projNumStr && projNumStr === wordNumbersOnly) ||
+                              (projNumPadded && projNumPadded.includes(word)) ||
+                              (prFormatted && prFormatted.includes(word)) ||
+                              projectTypeLabel.includes(word);
+                          });
                         }).length === 0 && (
                           <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
                             <span className="material-symbols-outlined text-slate-600 text-[32px] mb-2">search_off</span>

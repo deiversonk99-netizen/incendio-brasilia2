@@ -36,11 +36,23 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     const searchWords = searchTerm.toLowerCase().split(/\s+/).filter((w: string) => w.length > 0);
 
     return projects.filter((p: Project) =>
-      searchWords.every((word: string) =>
-        p.name.toLowerCase().includes(word) ||
-        (p.client && p.client.toLowerCase().includes(word)) ||
-        (p.project_number ? `PR${String(p.project_number).padStart(3, '0')}`.toLowerCase().includes(word) : false)
-      )
+      searchWords.every((word: string) => {
+        const projNumStr = p.project_number ? String(p.project_number) : '';
+        const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
+        const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+
+        const cleanWordNumber = word.replace(/^0+/, '') || '0';
+        const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
+        const wordNumbersOnly = word.replace(/\D/g, '');
+
+        return p.name.toLowerCase().includes(word) ||
+          (p.client && p.client.toLowerCase().includes(word)) ||
+          (projNumStr && projNumStr === cleanWordNumber) ||
+          (projNumStr && projNumStr === wordBeforeSlash) ||
+          (projNumStr && projNumStr === wordNumbersOnly) ||
+          (projNumPadded && projNumPadded.includes(word)) ||
+          (prFormatted && prFormatted.includes(word));
+      })
     );
   }, [projects, searchTerm]);
 

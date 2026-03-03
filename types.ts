@@ -23,7 +23,7 @@ export interface Project {
   id: string;
   name: string;
   client: string;
-  status: 'ANALYSIS' | 'APPROVED' | 'EXECUTION' | 'DONE';
+  status: string; // Was: 'ANALYSIS' | 'APPROVED' | 'EXECUTION' | 'DONE'
   team: string[];
   value: number;
   deadline: string;

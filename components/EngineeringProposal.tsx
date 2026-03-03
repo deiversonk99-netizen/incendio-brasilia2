@@ -359,10 +359,28 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     if (data) setProjects(data);
   };
 
-  const filteredProjects = projects.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.client && p.client.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredProjects = projects.filter(p => {
+    const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+    if (searchWords.length === 0) return true;
+
+    return searchWords.every(word => {
+      const projNumStr = p.project_number ? String(p.project_number) : '';
+      const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
+      const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+
+      const cleanWordNumber = word.replace(/^0+/, '') || '0';
+      const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
+      const wordNumbersOnly = word.replace(/\D/g, '');
+
+      return p.name.toLowerCase().includes(word) ||
+        (p.client && p.client.toLowerCase().includes(word)) ||
+        (projNumStr && projNumStr === cleanWordNumber) ||
+        (projNumStr && projNumStr === wordBeforeSlash) ||
+        (projNumStr && projNumStr === wordNumbersOnly) ||
+        (projNumPadded && projNumPadded.includes(word)) ||
+        (prFormatted && prFormatted.includes(word));
+    });
+  });
 
   const handleDuplicateProposal = async (project: Project) => {
     const newName = prompt('Nome para a cópia do projeto:', `${project.name} (Cópia)`);
@@ -569,7 +587,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const profitPct = Number(proposal.profit_percent) || 0;
     const combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
 
-    const updatedItems = budgetItems.map(item => {
+    const updatedItems = budgetItems.map((item: any) => {
       let cost = Number(item.cost_price || 0);
 
       // Healing / Fallback from Catalog
@@ -597,7 +615,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     try {
       const { error } = await supabase
         .from('budget_items')
-        .upsert(updatedItems.map(i => ({
+        .upsert(updatedItems.map((i: any) => ({
           id: i.id,
           project_id: selectedProjectId,
           unit_price: i.unit_price,

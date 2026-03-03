@@ -9,7 +9,7 @@ interface NewProjectModalProps {
     projectToEdit?: any;
 }
 
-const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSuccess, projectToEdit }) => {
+const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProjectModalProps) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [clients, setClients] = useState<string[]>([]);
@@ -185,12 +185,22 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onSu
 
                 onSuccess(projectToEdit.id);
             } else {
+                // Fetch first valid status
+                const { data: cols } = await supabase
+                    .from('project_status_columns')
+                    .select('id')
+                    .eq('user_id', user.id)
+                    .order('order_index', { ascending: true })
+                    .limit(1);
+
+                const defaultStatus = cols && cols.length > 0 ? cols[0].id : 'ANALYSIS';
+
                 // Create
                 const { data: newProject, error } = await supabase.from('projects').insert({
                     name: formData.name,
                     client: formData.client,
                     type: isOtherType ? customType : formData.type,
-                    status: 'ANALYSIS',
+                    status: defaultStatus,
                     user_id: user.id,
                     blueprint_url: blueprint_url || null,
                     internal_observations: formData.internal_observations,

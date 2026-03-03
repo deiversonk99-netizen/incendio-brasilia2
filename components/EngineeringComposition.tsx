@@ -30,6 +30,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const [items, setItems] = useState<BudgetItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Manual Add Item State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -920,6 +921,29 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     doc.save(`Composicao_${project.name.replace(/\s+/g, '_')}.pdf`);
   };
 
+  const filteredProjects = projects.filter(p => {
+    const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+    if (searchWords.length === 0) return true;
+
+    return searchWords.every(word => {
+      const projNumStr = p.project_number ? String(p.project_number) : '';
+      const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
+      const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+
+      const cleanWordNumber = word.replace(/^0+/, '') || '0';
+      const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
+      const wordNumbersOnly = word.replace(/\D/g, '');
+
+      return p.name.toLowerCase().includes(word) ||
+        (p.client && p.client.toLowerCase().includes(word)) ||
+        (projNumStr && projNumStr === cleanWordNumber) ||
+        (projNumStr && projNumStr === wordBeforeSlash) ||
+        (projNumStr && projNumStr === wordNumbersOnly) ||
+        (projNumPadded && projNumPadded.includes(word)) ||
+        (prFormatted && prFormatted.includes(word));
+    });
+  });
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <PageHeader
@@ -1140,19 +1164,33 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           <div className="bg-surface-dark p-6 rounded-xl border border-white/5 shadow-sm">
             <div className="flex flex-col md:flex-row md:items-end gap-4">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-slate-400 mb-2">Selecione o Projeto</label>
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => onSelectProject(e.target.value)}
-                  className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                >
-                  <option value="">Selecione...</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} / ` : ''}{p.client || 'Sem Cliente'}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-slate-400">Selecione o Projeto</label>
+                </div>
+                <div className="flex flex-col xl:flex-row gap-4">
+                  <div className="relative flex-1">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">search</span>
+                    <input
+                      type="text"
+                      placeholder="Buscar por nome, cliente ou número..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full bg-background-dark border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                    />
+                  </div>
+                  <select
+                    value={selectedProjectId}
+                    onChange={(e) => onSelectProject(e.target.value)}
+                    className="w-full xl:w-[50%] bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                  >
+                    <option value="">Selecione um projeto...</option>
+                    {filteredProjects.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} / ` : ''}{p.client || 'Sem Cliente'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="flex items-center gap-2 h-11 shrink-0">
                 {selectedProjectId && (
