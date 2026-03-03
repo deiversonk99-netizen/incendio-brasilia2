@@ -538,7 +538,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
                   <div className="flex bg-surface-dark border border-white/10 rounded-xl p-1 gap-1">
                     <button
-                      onClick={() => setIsManageColumnsModalOpen(true)}
+                      onClick={() => {
+                        console.log("Opening Manage Columns Modal");
+                        setIsManageColumnsModalOpen(true);
+                      }}
                       className="flex items-center justify-center p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all w-8 h-8"
                       title="Gerenciar Colunas de Status"
                     >
@@ -561,168 +564,35 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
               </div>
             </div>
             <div className="flex h-[500px] gap-6 min-w-[1200px]">
-              <div className="flex h-[500px] gap-6 min-w-[1200px]">
-                {activeColumns.map(col => (
-                  <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2.5 h-2.5 rounded-full ${col.color} ${col.shadow}`}></span>
-                        <h3 className="text-white font-bold text-sm uppercase tracking-wider">{col.label}</h3>
-                        <span className="bg-[#46252c] text-text-muted text-xs font-bold px-2 py-0.5 rounded-full">
-                          {projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length}
-                        </span>
-                      </div>
+              {activeColumns.map(col => (
+                <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${col.color} ${col.shadow}`}></span>
+                      <h3 className="text-white font-bold text-sm uppercase tracking-wider">{col.label}</h3>
+                      <span className="bg-[#46252c] text-text-muted text-xs font-bold px-2 py-0.5 rounded-full">
+                        {projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length}
+                      </span>
                     </div>
+                  </div>
 
-                    <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-3">
-                      {loading ? (
-                        <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
-                      ) : (
-                        projects
-                          .filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id)
-                          .filter(p => {
-                            // Filter by Type
-                            if (filterType !== 'ALL' && p.type !== filterType) return false;
-
-                            // Filter by Client
-                            if (filterClient !== 'ALL' && p.client !== filterClient) return false;
-
-                            // Search filter
-                            const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-                            if (searchWords.length === 0) return true;
-                            const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
-                            return searchWords.every(word => {
-                              const projNumStr = p.project_number ? String(p.project_number) : '';
-                              const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
-                              const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
-
-                              const cleanWordNumber = word.replace(/^0+/, '') || '0';
-                              const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
-                              const wordNumbersOnly = word.replace(/\D/g, '');
-
-                              return p.name.toLowerCase().includes(word) ||
-                                p.client.toLowerCase().includes(word) ||
-                                (projNumStr && projNumStr === cleanWordNumber) ||
-                                (projNumStr && projNumStr === wordBeforeSlash) ||
-                                (projNumStr && projNumStr === wordNumbersOnly) ||
-                                (projNumPadded && projNumPadded.includes(word)) ||
-                                (prFormatted && prFormatted.includes(word)) ||
-                                projectTypeLabel.includes(word);
-                            });
-                          })
-                          .map(proj => (
-                            <div
-                              key={proj.id}
-                              onClick={() => handleProjectClick(proj)}
-                              className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative"
-                            >
-                              {/* Color Label Indicator */}
-                              {(proj as any).label_color && (proj as any).label_color !== 'transparent' && (
-                                <div
-                                  className={`absolute top-0 right-0 w-1.5 h-full ${(proj as any).label_color} rounded-r-xl`}
-                                  title={labelDefinitions.find(l => l.color === (proj as any).label_color)?.label || ''}
-                                ></div>
-                              )}
-
-                              <div className="flex justify-between items-start mb-2">
-                                <div className="flex items-center gap-2">
-                                  {proj.project_number && (
-                                    <span className="text-[10px] font-black px-2 py-0.5 rounded bg-primary text-white border border-primary/20">
-                                      PR{String(proj.project_number).padStart(3, '0')}
-                                    </span>
-                                  )}
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
-                                    {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
-                                  </span>
-                                </div>
-
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                  {/* Send to Pending Button (New Feature) */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSendToPending(proj);
-                                    }}
-                                    className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
-                                    title="Enviar para Pendentes (Tarefas)"
-                                  >
-                                    <span className="material-symbols-outlined text-[16px]">move_to_inbox</span>
-                                  </button>
-
-                                  {/* Inline Color Label Selector */}
-                                  <div className="flex items-center gap-1 bg-surface-dark border border-white/10 rounded-lg p-1" onClick={(e) => e.stopPropagation()}>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateProjectColor(proj.id, 'transparent');
-                                      }}
-                                      className={`size-4 rounded-full border border-white/20 transition-all hover:scale-110 ${(proj as any).label_color === 'transparent' || !(proj as any).label_color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-50 blur-[1px]'}`}
-                                      title="Remover Sinalização"
-                                    ></button>
-                                    {labelDefinitions.map(def => (
-                                      <button
-                                        key={def.color}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleUpdateProjectColor(proj.id, def.color);
-                                        }}
-                                        className={`size-4 rounded-full ${def.color} transition-all hover:scale-110 ${(proj as any).label_color === def.color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-50 blur-[1px]'}`}
-                                        title={def.label}
-                                      ></button>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                              <h4 className="text-white font-bold text-base mb-1 truncate flex items-center gap-2">
-                                {highlightText(proj.name, searchTerm)}
-                                {proj.internal_observations && (
-                                  <span className="material-symbols-outlined text-amber-500 text-[16px]" title="Dica: Possui observações internas">info</span>
-                                )}
-                              </h4>
-                              {proj.internal_observations && (
-                                <p className="text-[10px] text-amber-500/80 italic mb-2 line-clamp-1 border-l border-amber-500/30 pl-2">
-                                  {proj.internal_observations}
-                                </p>
-                              )}
-                              <div className="flex items-center gap-1.5 mb-3">
-                                <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
-                                <p className="text-text-muted text-xs font-medium truncate">
-                                  {highlightText(proj.client, searchTerm)}
-                                </p>
-                              </div>
-                              <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
-                              <div className="flex justify-between items-center">
-                                <div className="text-right w-full flex justify-between items-center">
-                                  <div className="text-left">
-                                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
-                                    <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                    <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
-                                  </div>
-                                  {projectsWithProposals.has(proj.id) && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSelectProject(proj.id);
-                                        onViewChange(AppView.ENGINEERING_PHASE_C);
-                                      }}
-                                      className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-lg border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[10px] font-black uppercase"
-                                      title="Ir para a Proposta"
-                                    >
-                                      <span className="material-symbols-outlined text-[16px]">description</span>
-                                      Proposta
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                      )}
-                      {!loading && projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length > 0 &&
-                        projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).filter(p => {
+                  <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-3">
+                    {loading ? (
+                      <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
+                    ) : (
+                      projects
+                        .filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id)
+                        .filter(p => {
+                          // Filter by Type
                           if (filterType !== 'ALL' && p.type !== filterType) return false;
+
+                          // Filter by Client
                           if (filterClient !== 'ALL' && p.client !== filterClient) return false;
 
+                          // Search filter
                           const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+                          if (searchWords.length === 0) return true;
+                          const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
                           return searchWords.every(word => {
                             const projNumStr = p.project_number ? String(p.project_number) : '';
                             const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
@@ -731,7 +601,6 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                             const cleanWordNumber = word.replace(/^0+/, '') || '0';
                             const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
                             const wordNumbersOnly = word.replace(/\D/g, '');
-                            const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
 
                             return p.name.toLowerCase().includes(word) ||
                               p.client.toLowerCase().includes(word) ||
@@ -742,109 +611,253 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                               (prFormatted && prFormatted.includes(word)) ||
                               projectTypeLabel.includes(word);
                           });
-                        }).length === 0 && (
-                          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-                            <span className="material-symbols-outlined text-slate-600 text-[32px] mb-2">search_off</span>
-                            <p className="text-slate-500 text-xs italic">Nenhum projeto corresponde aos filtros nesta coluna.</p>
+                        })
+                        .map(proj => (
+                          <div
+                            key={proj.id}
+                            onClick={() => handleProjectClick(proj)}
+                            className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative"
+                          >
+                            {/* Color Label Indicator */}
+                            {(proj as any).label_color && (proj as any).label_color !== 'transparent' && (
+                              <div
+                                className={`absolute top-0 right-0 w-1.5 h-full ${(proj as any).label_color} rounded-r-xl`}
+                                title={labelDefinitions.find(l => l.color === (proj as any).label_color)?.label || ''}
+                              ></div>
+                            )}
+
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-2">
+                                {proj.project_number && (
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-primary text-white border border-primary/20">
+                                    PR{String(proj.project_number).padStart(3, '0')}
+                                  </span>
+                                )}
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
+                                  {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
+                                </span>
+                              </div>
+
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                {/* Send to Pending Button (New Feature) */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendToPending(proj);
+                                  }}
+                                  className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+                                  title="Enviar para Pendentes (Tarefas)"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">move_to_inbox</span>
+                                </button>
+
+                                {/* Inline Color Label Selector */}
+                                <div className="flex items-center gap-1 bg-surface-dark border border-white/10 rounded-lg p-1" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateProjectColor(proj.id, 'transparent');
+                                    }}
+                                    className={`size-4 rounded-full border border-white/20 transition-all hover:scale-110 ${(proj as any).label_color === 'transparent' || !(proj as any).label_color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-50 blur-[1px]'}`}
+                                    title="Remover Sinalização"
+                                  ></button>
+                                  {labelDefinitions.map(def => (
+                                    <button
+                                      key={def.color}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateProjectColor(proj.id, def.color);
+                                      }}
+                                      className={`size-4 rounded-full ${def.color} transition-all hover:scale-110 ${(proj as any).label_color === def.color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-50 blur-[1px]'}`}
+                                      title={def.label}
+                                    ></button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            <h4 className="text-white font-bold text-base mb-1 truncate flex items-center gap-2">
+                              {highlightText(proj.name, searchTerm)}
+                              {proj.internal_observations && (
+                                <span className="material-symbols-outlined text-amber-500 text-[16px]" title="Dica: Possui observações internas">info</span>
+                              )}
+                            </h4>
+                            {proj.internal_observations && (
+                              <p className="text-[10px] text-amber-500/80 italic mb-2 line-clamp-1 border-l border-amber-500/30 pl-2">
+                                {proj.internal_observations}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-1.5 mb-3">
+                              <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
+                              <p className="text-text-muted text-xs font-medium truncate">
+                                {highlightText(proj.client, searchTerm)}
+                              </p>
+                            </div>
+                            <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
+                            <div className="flex justify-between items-center">
+                              <div className="text-right w-full flex justify-between items-center">
+                                <div className="text-left">
+                                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
+                                  <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
+                                </div>
+                                {projectsWithProposals.has(proj.id) && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectProject(proj.id);
+                                      onViewChange(AppView.ENGINEERING_PHASE_C);
+                                    }}
+                                    className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-lg border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[10px] font-black uppercase"
+                                    title="Ir para a Proposta"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">description</span>
+                                    Proposta
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        )
-                      }
-                    </div>
+                        ))
+                    )}
+                    {!loading && projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length > 0 &&
+                      projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).filter(p => {
+                        if (filterType !== 'ALL' && p.type !== filterType) return false;
+                        if (filterClient !== 'ALL' && p.client !== filterClient) return false;
+
+                        const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+                        return searchWords.every(word => {
+                          const projNumStr = p.project_number ? String(p.project_number) : '';
+                          const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
+                          const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+
+                          const cleanWordNumber = word.replace(/^0+/, '') || '0';
+                          const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
+                          const wordNumbersOnly = word.replace(/\D/g, '');
+                          const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
+
+                          return p.name.toLowerCase().includes(word) ||
+                            p.client.toLowerCase().includes(word) ||
+                            (projNumStr && projNumStr === cleanWordNumber) ||
+                            (projNumStr && projNumStr === wordBeforeSlash) ||
+                            (projNumStr && projNumStr === wordNumbersOnly) ||
+                            (projNumPadded && projNumPadded.includes(word)) ||
+                            (prFormatted && prFormatted.includes(word)) ||
+                            projectTypeLabel.includes(word);
+                        });
+                      }).length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                          <span className="material-symbols-outlined text-slate-600 text-[32px] mb-2">search_off</span>
+                          <p className="text-slate-500 text-xs italic">Nenhum projeto corresponde aos filtros nesta coluna.</p>
+                        </div>
+                      )
+                    }
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
+      </div>
 
-        <NewProjectModal
-          isOpen={isNewProjectModalOpen}
-          onClose={() => {
-            setIsNewProjectModalOpen(false);
-            setProjectToEdit(null);
-          }}
-          onSuccess={() => {
-            fetchData();
-            setIsNewProjectModalOpen(false);
-            setProjectToEdit(null);
-          }}
-          projectToEdit={projectToEdit}
-        />
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => {
+          setIsNewProjectModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        onSuccess={() => {
+          fetchData();
+          setIsNewProjectModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        projectToEdit={projectToEdit}
+      />
 
-        <ProjectDetailsModal
-          isOpen={isDetailsModalOpen}
-          onClose={() => setIsDetailsModalOpen(false)}
-          project={selectedProject}
-          onUpdate={() => fetchData()}
-          onViewChange={onViewChange}
-          onSelectProject={onSelectProject}
-          hasProposal={selectedProject ? projectsWithProposals.has(selectedProject.id) : false}
-          onEdit={(project) => {
-            setProjectToEdit(project);
-            setIsNewProjectModalOpen(true);
-            setIsDetailsModalOpen(false);
-          }}
-        />
+      <ProjectDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={() => setIsDetailsModalOpen(false)}
+        project={selectedProject}
+        onUpdate={() => fetchData()}
+        onViewChange={onViewChange}
+        onSelectProject={onSelectProject}
+        hasProposal={selectedProject ? projectsWithProposals.has(selectedProject.id) : false}
+        onEdit={(project) => {
+          setProjectToEdit(project);
+          setIsNewProjectModalOpen(true);
+          setIsDetailsModalOpen(false);
+        }}
+      />
 
-        {/* Label Settings Modal */}
-        {showLabelSettings && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                    <span className="material-symbols-outlined text-primary text-[24px]">palette</span>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-white">Sinalização Visual</h3>
-                    <p className="text-xs text-slate-500">Personalize o significado das cores</p>
-                  </div>
+      {/* Label Settings Modal */}
+      {showLabelSettings && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                  <span className="material-symbols-outlined text-primary text-[24px]">palette</span>
                 </div>
-                <button
-                  onClick={() => setShowLabelSettings(false)}
-                  className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
-                >
-                  <span className="material-symbols-outlined text-[20px]">close</span>
-                </button>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Sinalização Visual</h3>
+                  <p className="text-xs text-slate-500">Personalize o significado das cores</p>
+                </div>
               </div>
+              <button
+                onClick={() => setShowLabelSettings(false)}
+                className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
 
-              <div className="space-y-3 mb-6">
-                {editingLabels.map((def, index) => (
-                  <div key={def.color} className="flex items-center gap-3">
-                    <div className={`size-6 rounded-full ${def.color} shrink-0 shadow-lg`}></div>
-                    <input
-                      type="text"
-                      value={def.label}
-                      onChange={(e) => {
-                        const newLabels = [...editingLabels];
-                        newLabels[index].label = e.target.value;
-                        setEditingLabels(newLabels);
-                      }}
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-primary outline-none transition-all"
-                      placeholder="Ex: Crítico / Urgente"
-                    />
-                  </div>
-                ))}
-              </div>
+            <div className="space-y-3 mb-6">
+              {editingLabels.map((def, index) => (
+                <div key={def.color} className="flex items-center gap-3">
+                  <div className={`size-6 rounded-full ${def.color} shrink-0 shadow-lg`}></div>
+                  <input
+                    type="text"
+                    value={def.label}
+                    onChange={(e) => {
+                      const newLabels = [...editingLabels];
+                      newLabels[index].label = e.target.value;
+                      setEditingLabels(newLabels);
+                    }}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-primary outline-none transition-all"
+                    placeholder="Ex: Crítico / Urgente"
+                  />
+                </div>
+              ))}
+            </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowLabelSettings(false)}
-                  className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleSaveLabelDefinitions}
-                  className="flex-1 px-4 py-2.5 bg-primary hover:bg-red-600 rounded-xl text-sm font-bold text-white transition-all shadow-lg shadow-primary/20"
-                >
-                  Salvar Configurações
-                </button>
-              </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLabelSettings(false)}
+                className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveLabelDefinitions}
+                className="flex-1 px-4 py-2.5 bg-primary hover:bg-red-600 rounded-xl text-sm font-bold text-white transition-all shadow-lg shadow-primary/20"
+              >
+                Salvar Configurações
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {isManageColumnsModalOpen && (
+        <ManageColumnsModal
+          isOpen={isManageColumnsModalOpen}
+          onClose={() => setIsManageColumnsModalOpen(false)}
+          currentColumns={statusColumns}
+          onSaved={(newCols) => {
+            setStatusColumns(newCols);
+            fetchData();
+          }}
+        />
+      )}
     </>
   );
 };
