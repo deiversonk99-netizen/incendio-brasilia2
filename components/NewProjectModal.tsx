@@ -185,11 +185,10 @@ const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProje
 
                 onSuccess(projectToEdit.id);
             } else {
-                // Fetch first valid status
+                // Fetch first valid status (Global)
                 const { data: cols } = await supabase
                     .from('project_status_columns')
                     .select('id')
-                    .eq('user_id', user.id)
                     .order('order_index', { ascending: true })
                     .limit(1);
 

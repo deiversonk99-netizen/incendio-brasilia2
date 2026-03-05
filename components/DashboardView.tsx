@@ -156,50 +156,55 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       }
     }
 
-    // 8. Custom Status Columns
-    if (user) {
-      const { data: colsData } = await supabase
-        .from('project_status_columns')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('order_index', { ascending: true });
+    // 8. Custom Status Columns & Migration
+    // Fetch ALL status columns (shared dashboard)
+    const { data: colsData } = await supabase
+      .from('project_status_columns')
+      .select('*')
+      .order('order_index', { ascending: true });
 
-      if (colsData && colsData.length > 0) {
-        setStatusColumns(colsData);
-      } else {
-        // First time initialization
-        const defaultCols = [
-          { user_id: user.id, label: 'Em Análise', color: 'bg-blue-400', shadow_class: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]', order_index: 0 },
-          { user_id: user.id, label: 'Aprovado', color: 'bg-yellow-400', shadow_class: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]', order_index: 1 },
-          { user_id: user.id, label: 'Execução', color: 'bg-primary', shadow_class: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]', order_index: 2 },
-          { user_id: user.id, label: 'Concluído', color: 'bg-emerald-400', shadow_class: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]', order_index: 3 },
-        ];
+    let currentCols = colsData || [];
 
-        const { data: insertedCols } = await supabase.from('project_status_columns').insert(defaultCols).select();
+    if (currentCols.length === 0 && user) {
+      // First time initialization (only if NO columns exist at all)
+      const defaultCols = [
+        { user_id: user.id, label: 'Em Análise', color: 'bg-blue-400', shadow_class: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]', order_index: 0 },
+        { user_id: user.id, label: 'Aprovado', color: 'bg-yellow-400', shadow_class: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]', order_index: 1 },
+        { user_id: user.id, label: 'Execução', color: 'bg-primary', shadow_class: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]', order_index: 2 },
+        { user_id: user.id, label: 'Concluído', color: 'bg-emerald-400', shadow_class: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]', order_index: 3 },
+      ];
 
-        if (insertedCols && insertedCols.length > 0) {
-          const sortedCols = insertedCols.sort((a, b) => a.order_index - b.order_index);
-          setStatusColumns(sortedCols);
+      const { data: insertedCols } = await supabase.from('project_status_columns').insert(defaultCols).select();
+      if (insertedCols) {
+        currentCols = insertedCols.sort((a, b) => a.order_index - b.order_index);
+      }
+    }
 
-          // Migrate old projects
-          const colMap: Record<string, string> = {
-            'ANALYSIS': sortedCols.find(c => c.label === 'Em Análise')?.id || '',
-            'APPROVED': sortedCols.find(c => c.label === 'Aprovado')?.id || '',
-            'EXECUTION': sortedCols.find(c => c.label === 'Execução')?.id || '',
-            'DONE': sortedCols.find(c => c.label === 'Concluído')?.id || ''
-          };
+    if (currentCols.length > 0) {
+      setStatusColumns(currentCols);
 
-          Object.entries(colMap).forEach(async ([oldStatus, newId]) => {
-            if (newId) {
-              await supabase.from('projects').update({ status: newId }).eq('status', oldStatus).eq('user_id', user.id);
-            }
-          });
+      // Universal Migration: Ensure all projects use UUIDs instead of legacy strings
+      const colMap: Record<string, string> = {
+        'ANALYSIS': currentCols.find(c => c.label === 'Em Análise')?.id || currentCols[0].id,
+        'APPROVED': currentCols.find(c => c.label === 'Aprovado')?.id || currentCols[Math.min(1, currentCols.length - 1)].id,
+        'EXECUTION': currentCols.find(c => c.label === 'Execução')?.id || currentCols[Math.min(2, currentCols.length - 1)].id,
+        'DONE': currentCols.find(c => c.label === 'Concluído')?.id || currentCols[currentCols.length - 1].id
+      };
 
-          setProjects(prev => prev.map(p => {
-            if (colMap[p.status]) return { ...p, status: colMap[p.status] } as Project;
-            return p;
-          }));
+      // Check if any project still has a legacy status
+      const legacyStatuses = ['ANALYSIS', 'APPROVED', 'EXECUTION', 'DONE'];
+      const needsMigration = projData?.some((p: any) => legacyStatuses.includes(p.status));
+
+      if (needsMigration && user) {
+        console.log("Migrating legacy project statuses to UUIDs...");
+        for (const [oldStatus, newId] of Object.entries(colMap)) {
+          await supabase.from('projects')
+            .update({ status: newId })
+            .eq('status', oldStatus);
+          // No user_id filter here to catch everyone's legacy projects during migration
         }
+
+        // Update local state is handled below when setting projects
       }
     }
 
@@ -619,10 +624,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                             className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative"
                           >
                             {/* Color Label Indicator */}
-                            {(proj as any).label_color && (proj as any).label_color !== 'transparent' && (
+                            {proj.label_color && proj.label_color !== 'transparent' && (
                               <div
-                                className={`absolute top-0 right-0 w-1.5 h-full ${(proj as any).label_color} rounded-r-xl`}
-                                title={labelDefinitions.find(l => l.color === (proj as any).label_color)?.label || ''}
+                                className={`absolute top-0 right-0 w-1.5 h-full ${proj.label_color} rounded-r-xl`}
+                                title={labelDefinitions.find(l => l.color === proj.label_color)?.label || ''}
                               ></div>
                             )}
 
@@ -638,7 +643,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                                 </span>
                               </div>
 
-                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
                                 {/* Send to Pending Button (New Feature) */}
                                 <button
                                   onClick={(e) => {
@@ -652,13 +657,13 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                                 </button>
 
                                 {/* Inline Color Label Selector */}
-                                <div className="flex items-center gap-1 bg-surface-dark border border-white/10 rounded-lg p-1" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center gap-1.5 bg-surface-dark border border-white/10 rounded-lg p-1.5 shadow-xl" onClick={(e) => e.stopPropagation()}>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleUpdateProjectColor(proj.id, 'transparent');
                                     }}
-                                    className={`size-4 rounded-full border border-white/20 transition-all hover:scale-110 ${(proj as any).label_color === 'transparent' || !(proj as any).label_color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-50 blur-[1px]'}`}
+                                    className={`size-3.5 rounded-full border border-white/20 transition-all hover:scale-125 ${proj.label_color === 'transparent' || !proj.label_color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-40 hover:opacity-100'}`}
                                     title="Remover Sinalização"
                                   ></button>
                                   {labelDefinitions.map(def => (
@@ -668,7 +673,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                                         e.stopPropagation();
                                         handleUpdateProjectColor(proj.id, def.color);
                                       }}
-                                      className={`size-4 rounded-full ${def.color} transition-all hover:scale-110 ${(proj as any).label_color === def.color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-50 blur-[1px]'}`}
+                                      className={`size-3.5 rounded-full ${def.color} transition-all hover:scale-125 ${proj.label_color === def.color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-40 hover:opacity-100'}`}
                                       title={def.label}
                                     ></button>
                                   ))}

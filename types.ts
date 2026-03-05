@@ -31,6 +31,7 @@ export interface Project {
   blueprint_url?: string;
   internal_observations?: string;
   project_number?: number;
+  label_color?: string;
 }
 
 export interface Task {
