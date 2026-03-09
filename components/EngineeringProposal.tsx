@@ -60,7 +60,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     show_cert_crq: true,
     cert_crq_file: null, // Base64 or URL. If null, try default
     show_cert_regularity: true,
-    cert_regularity_file: null
+    cert_regularity_file: null,
+    show_services_total: true // New: Toggle Services total in financial summary
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [showVisibilityModal, setShowVisibilityModal] = useState(false);
@@ -140,7 +141,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_cert_regularity: true,
           cert_crq_file: null,
           cert_regularity_file: null,
-          project_name_pdf: ''
+          project_name_pdf: '',
+          show_services_total: true
         });
       }
     } catch (e) {
@@ -596,7 +598,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           ? item.name.split(']')[1]?.trim() || item.name
           : item.name.trim();
 
-        const catalogProd = catalogProducts.find(p => p.name.trim().toLowerCase() === cleanName.toLowerCase());
+        const catalogProd = catalogItems.find(p => p.name.trim().toLowerCase() === cleanName.toLowerCase());
         if (catalogProd && catalogProd.cost_price > 0) {
           cost = catalogProd.cost_price;
         } else {
@@ -1281,10 +1283,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       }
 
       if (pdfSettings.show_profit !== false) {
-        financeBody.push(['Margem de lucro encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        financeBody.push(['Margem e encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
       }
 
-      if (vals.servicesTotal > 0 && !proposal.hide_services_pdf) {
+      if (vals.servicesTotal > 0 && !proposal.hide_services_pdf && pdfSettings.show_services_total !== false) {
         financeBody.push(['Total de Mão de Obra / Serviços', `R$ ${vals.servicesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
       }
 
@@ -1374,10 +1376,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         }
       }
 
-      if (pdfSettings.validade) {
+      if (proposal.validity_days) {
         doc.setFontSize(9);
         doc.setTextColor(150);
-        doc.text(`Proposta válida por: ${pdfSettings.validade} dias`, 20, sigYPos + 30);
+        doc.text(`Proposta válida por: ${proposal.validity_days} dias`, 20, sigYPos + 30);
       }
 
       // Client signature area removed as requested
@@ -1717,8 +1719,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       <input
                         type="number"
                         className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none"
-                        value={pdfSettings.validade}
-                        onChange={(e) => savePdfSettings({ ...pdfSettings, validade: e.target.value })}
+                        value={proposal.validity_days}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setProposal({ ...proposal, validity_days: val });
+                          savePdfSettings({ ...pdfSettings, validade: e.target.value });
+                        }}
                       />
                     </div>
 
@@ -1786,6 +1792,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                               type="checkbox"
                               checked={pdfSettings.show_discount !== false}
                               onChange={(e) => savePdfSettings({ ...pdfSettings, show_discount: e.target.checked })}
+                            />
+                          </label>
+
+                          <label className="flex items-center justify-between text-xs text-white cursor-pointer hover:bg-white/5 p-1 rounded">
+                            <span>Exibir Total de Mão de Obra / Serviços</span>
+                            <input
+                              type="checkbox"
+                              checked={pdfSettings.show_services_total !== false}
+                              onChange={(e) => savePdfSettings({ ...pdfSettings, show_services_total: e.target.checked })}
                             />
                           </label>
 
@@ -2419,7 +2434,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                           <select
                             className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
                             value={proposal.validity_days}
-                            onChange={e => setProposal({ ...proposal, validity_days: Number(e.target.value) })}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setProposal({ ...proposal, validity_days: val });
+                              savePdfSettings({ ...pdfSettings, validade: e.target.value });
+                            }}
                           >
                             <option value={5}>05 dias</option>
                             <option value={10}>10 dias</option>
