@@ -63,6 +63,8 @@ const AppContent: React.FC = () => {
         return <FinanceView />;
       case AppView.TASKS:
         return <TasksView />;
+      case AppView.TEAM_TASKS:
+        return <TasksView isTeamMonitoring={true} />;
       case AppView.CLIENTS:
         return <ClientsView />;
       case AppView.ENGINEERING_PHASE_A:

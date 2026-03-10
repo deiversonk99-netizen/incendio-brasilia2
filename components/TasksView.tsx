@@ -38,9 +38,14 @@ interface Task {
   user_id: string;
   assignee?: string;
   assignee_profile?: { email: string; professional_title?: string };
+  assignee_profile?: { email: string; professional_title?: string };
 }
 
-const TasksView: React.FC = () => {
+interface TasksViewProps {
+  isTeamMonitoring?: boolean;
+}
+
+const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const { user, profile } = useAuth();
   const [boards, setBoards] = useState<TaskBoard[]>([]);
   const [selectedBoardId, setSelectedBoardId] = useState<string>('');
@@ -51,8 +56,13 @@ const TasksView: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isCompact, setIsCompact] = useState(false);
-  const [boardFilter, setBoardFilter] = useState<'ALL' | 'MINE' | 'SHARED' | 'ASSIGNED'>('ALL'); // New Filter State
   const [openMenuTaskId, setOpenMenuTaskId] = useState<string | null>(null);
+
+  // Add Board Modal State
+  const [isAddBoardModalOpen, setIsAddBoardModalOpen] = useState(false);
+  const [newBoardName, setNewBoardName] = useState('');
+  const [newBoardUserId, setNewBoardUserId] = useState('');
+  const [users, setUsers] = useState<any[]>([]);
 
   const isCentral = isTaskCentralUser(user?.email);
 
@@ -65,6 +75,11 @@ const TasksView: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
 
+    if (isCentral && users.length === 0) {
+      const { data: uData } = await supabase.from('user_profiles').select('id, email, professional_title');
+      if (uData) setUsers(uData);
+    }
+
     // 1. Fetch Boards
     let boardsQuery = supabase
       .from('task_boards')
@@ -74,17 +89,30 @@ const TasksView: React.FC = () => {
     const { data: boardsData } = await boardsQuery;
 
     if (boardsData) {
-      let finalBoards = [...boardsData];
-      if (isCentral) {
-        finalBoards.push({ id: SYNC_BOARD_ID, name: '🔄 Monitoramento de Pendências (Equipe)' });
-      }
-      setBoards(finalBoards);
+      let allowedBoards = boardsData.filter(b => {
+        if (isCentral) return true;
+        if (b.user_id === user?.id) return true;
 
-      // If no board is selected, pick the first one
-      if (!selectedBoardId && finalBoards.length > 0) {
-        setSelectedBoardId(finalBoards[0].id);
+        // Check explicitly granted permissions
+        const permKey = `BOARD_${b.id}`;
+        return profile?.permissions && profile.permissions[permKey] === true;
+      });
+
+      if (isTeamMonitoring) {
+        // If in team monitoring mode, force the sync board
+        setSelectedBoardId(SYNC_BOARD_ID);
         setLoading(false);
         return;
+      } else {
+        // If normal tasks mode, DO NOT add the sync board here
+        setBoards(allowedBoards);
+
+        // If no board is selected, pick the first one
+        if (!selectedBoardId && allowedBoards.length > 0) {
+          setSelectedBoardId(allowedBoards[0].id);
+          setLoading(false);
+          return;
+        }
       }
     }
 
@@ -362,14 +390,20 @@ const TasksView: React.FC = () => {
     }
   };
 
-  const handleAddBoard = async () => {
-    const name = prompt('Nome do novo Quadro (Workflow):');
-    if (!name) return;
+  const handleAddBoardClick = () => {
+    setIsAddBoardModalOpen(true);
+    setNewBoardName('');
+    setNewBoardUserId('');
+  };
+
+  const handleCreateBoardSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBoardName) return;
 
     try {
       const { data: boardData, error: boardError } = await supabase.from('task_boards').insert({
-        name,
-        user_id: user?.id
+        name: newBoardName,
+        user_id: newBoardUserId || user?.id
       }).select().single();
 
       if (boardError) throw boardError;
@@ -381,11 +415,12 @@ const TasksView: React.FC = () => {
           color: 'bg-primary',
           order_index: 0,
           board_id: boardData.id,
-          user_id: user?.id
+          user_id: newBoardUserId || user?.id
         });
 
         setBoards([...boards, boardData]);
         setSelectedBoardId(boardData.id);
+        setIsAddBoardModalOpen(false);
       }
     } catch (error: any) {
       console.error('Error adding board:', error);
@@ -397,29 +432,7 @@ const TasksView: React.FC = () => {
     const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.projects?.name?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    if (!matchesSearch) return false;
-
-    if (boardFilter === 'ASSIGNED') {
-      return t.assignee === user?.id;
-    }
-
-    if (boardFilter === 'MINE') {
-      return t.user_id === user?.id;
-    }
-
-    if (boardFilter === 'SHARED') {
-      return t.user_id !== user?.id;
-    }
-
-    return true;
-  });
-
-  // Filter boards based on boardFilter
-  const filteredBoards = boards.filter(b => {
-    if (boardFilter === 'ALL') return true;
-    if (boardFilter === 'MINE') return b.user_id === user?.id; // Assuming user_id works
-    if (boardFilter === 'SHARED') return b.user_id !== user?.id && b.id !== SYNC_BOARD_ID; // Assuming shared means not mine and not sync
-    return true;
+    return matchesSearch;
   });
 
   return (
@@ -433,63 +446,41 @@ const TasksView: React.FC = () => {
               </div>
               Gestão de Tarefas
             </h2>
-            <div className="flex items-center gap-3">
-              <div className="relative group">
-                <select
-                  className="appearance-none bg-white/5 hover:bg-white/10 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 outline-none cursor-pointer transition-all uppercase tracking-widest pl-4 pr-8"
-                  value={selectedBoardId}
-                  onChange={(e) => setSelectedBoardId(e.target.value)}
-                >
-                  {filteredBoards.map(b => (
-                    <option key={b.id} value={b.id} className="bg-surface-dark text-white uppercase text-[10px] font-black">{b.name}</option>
-                  ))}
-                </select>
-                <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[14px] text-primary/60 pointer-events-none group-hover:text-primary transition-colors">expand_more</span>
+            {isTeamMonitoring ? (
+              <div className="flex items-center gap-3">
+                <div className="relative group">
+                  <div className="bg-white/5 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 uppercase tracking-widest max-w-[300px] truncate">
+                    🔄 Monitoramento de Pendências (Equipe)
+                  </div>
+                </div>
               </div>
-
-              {/* Board Filter Toggles */}
-              <div className="flex bg-white/5 rounded-full p-0.5 border border-white/5">
-                {isCentral && (
-                  <>
-                    <button
-                      onClick={() => setBoardFilter('ALL')}
-                      className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'ALL' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
-                    >
-                      Todos
-                    </button>
-                    <button
-                      onClick={() => setBoardFilter('MINE')}
-                      className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'MINE' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
-                    >
-                      Meus
-                    </button>
-                    <button
-                      onClick={() => setBoardFilter('SHARED')}
-                      className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'SHARED' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
-                    >
-                      Compart.
-                    </button>
-                  </>
-                )}
-                {!isCentral && (
-                  <button
-                    className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all bg-primary text-white cursor-default`}
+            ) : isCentral ? (
+              <div className="flex items-center gap-3">
+                <div className="relative group">
+                  <select
+                    className="appearance-none bg-white/5 hover:bg-white/10 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 outline-none cursor-pointer transition-all uppercase tracking-widest pl-4 pr-8 max-w-[300px] truncate"
+                    value={selectedBoardId}
+                    onChange={(e) => setSelectedBoardId(e.target.value)}
                   >
-                    Meus Projetos
-                  </button>
-                )}
+                    {boards.map(b => (
+                      <option key={b.id} value={b.id} className="bg-surface-dark text-white uppercase text-[10px] font-black">{b.name}</option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[14px] text-primary/60 pointer-events-none group-hover:text-primary transition-colors">expand_more</span>
+                </div>
 
-                <button
-                  onClick={() => setBoardFilter('ASSIGNED')}
-                  className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all ${boardFilter === 'ASSIGNED' ? 'bg-primary text-white' : 'text-slate-500 hover:text-white'}`}
-                >
-                  Atribuídas a Mim
-                </button>
+                <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">Controle de fluxos e processos</p>
               </div>
-
-              <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
-              <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">Controle de fluxos e processos</p>
-            </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="relative group">
+                  <div className="bg-white/5 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 uppercase tracking-widest max-w-[300px] truncate">
+                    {boards.find(b => b.id === selectedBoardId)?.name || 'MEU QUADRO'}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -524,7 +515,7 @@ const TasksView: React.FC = () => {
               </button>
               {isCentral && (
                 <button
-                  onClick={handleAddBoard}
+                  onClick={handleAddBoardClick}
                   className="flex items-center justify-center gap-2 rounded-lg h-9 px-4 transition-all text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white hover:bg-white/5"
                 >
                   <span className="material-symbols-outlined text-[18px]">add_box</span>
@@ -857,6 +848,68 @@ const TasksView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Add Board Modal */}
+      {isAddBoardModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-white/10 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white">Criar Novo Quadro</h3>
+              <button onClick={() => setIsAddBoardModalOpen(false)} className="text-slate-400 hover:text-white">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateBoardSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Nome do Quadro</label>
+                <input
+                  required
+                  type="text"
+                  className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none"
+                  placeholder="Ex: Tarefas João"
+                  value={newBoardName}
+                  onChange={(e) => setNewBoardName(e.target.value)}
+                />
+              </div>
+
+              {isCentral && (
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Atribuir a (Opcional)</label>
+                  <select
+                    className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2 text-white focus:border-primary outline-none"
+                    value={newBoardUserId}
+                    onChange={(e) => setNewBoardUserId(e.target.value)}
+                  >
+                    <option value="">Selecione um usuário...</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.email} {u.professional_title ? `(${u.professional_title})` : ''}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-1">Se não selecionado, o quadro será seu.</p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsAddBoardModalOpen(false)}
+                  className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg font-bold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newBoardName}
+                  className="flex-1 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold disabled:opacity-50"
+                >
+                  Criar Quadro
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <NewTaskModal
         isOpen={isModalOpen}

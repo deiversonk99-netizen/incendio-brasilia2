@@ -11,22 +11,17 @@ interface UserProfile {
     permissions: any;
 }
 
-interface TaskGroup {
+interface TaskBoard {
     id: string;
     name: string;
-    description?: string;
-    color?: string;
-    board_id: string;
-    task_boards?: {
-        name: string;
-    };
+    user_id?: string;
 }
 
 const SettingsView: React.FC = () => {
     const { user, profile } = useAuth();
     const [activeTab, setActiveTab] = useState<'users' | 'pdf'>('users');
     const [profiles, setProfiles] = useState<UserProfile[]>([]);
-    const [taskGroups, setTaskGroups] = useState<TaskGroup[]>([]);
+    const [taskBoards, setTaskBoards] = useState<TaskBoard[]>([]);
     const [pdfSettings, setPdfSettings] = useState<any>({
         validity_days: 10,
         footer_text: 'Incêndio Brasília - Gestão de Tecnologias de Segurança',
@@ -74,13 +69,13 @@ const SettingsView: React.FC = () => {
 
         if (profileData) setProfiles(profileData);
 
-        // Fetch Task Groups for Permissions
-        const { data: groupsData } = await supabase
-            .from('task_groups')
-            .select('id, name, color, board_id, task_boards(name)')
-            .order('board_id');
+        // Fetch Task Boards for Permissions
+        const { data: boardsData } = await supabase
+            .from('task_boards')
+            .select('id, name, user_id')
+            .order('name');
 
-        if (groupsData) setTaskGroups(groupsData as any);
+        if (boardsData) setTaskBoards(boardsData as any);
 
         // 2. Fetch PDF Settings
         const { data: appData } = await supabase.from('app_settings').select('*').eq('key', 'pdf_global_config').single();
@@ -132,14 +127,20 @@ const SettingsView: React.FC = () => {
             }
         });
 
-        // Initialize Task Group Permissions
-        taskGroups.forEach(group => {
-            const key = `GROUP_${group.id}`;
+        // Initialize Task Board Permissions
+        taskBoards.forEach(board => {
+            const key = `BOARD_${board.id}`;
             if (user.permissions && user.permissions[key] !== undefined) {
                 initialPerms[key] = user.permissions[key];
             } else {
-                // Default: All columns visible
-                initialPerms[key] = true;
+                // Default logic
+                if (user.role === 'ADMIN' || user.role === 'MANAGER') {
+                    initialPerms[key] = true;
+                } else if (board.user_id === user.id) {
+                    initialPerms[key] = true;
+                } else {
+                    initialPerms[key] = false;
+                }
             }
         });
 
@@ -404,27 +405,28 @@ const SettingsView: React.FC = () => {
                                 </div>
                             ))}
 
-                            {/* Task Columns Permissions */}
+                            {/* Task Boards Permissions */}
                             <h3 className="col-span-2 text-xs font-black text-primary uppercase tracking-[0.2em] mb-2 border-b border-white/5 pb-2 mt-6">
-                                Visualização de Colunas (Tarefas)
+                                Acesso aos Quadros de Tarefas
                             </h3>
-                            {taskGroups.length === 0 && <p className="col-span-2 text-slate-500 text-xs italic">Nenhum grupo de tarefas encontrado.</p>}
-                            {taskGroups.map(group => {
-                                const permKey = `GROUP_${group.id}`;
+                            {taskBoards.length === 0 && <p className="col-span-2 text-slate-500 text-xs italic">Nenhum quadro de tarefas encontrado.</p>}
+                            {taskBoards.map(board => {
+                                const permKey = `BOARD_${board.id}`;
                                 return (
-                                    <div key={group.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
-                                        <div className="flex items-center gap-2">
-                                            <div className={`size-3 rounded-full ${group.color || 'bg-slate-500'}`}></div>
+                                    <div key={board.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
+                                        <div className="flex items-center gap-3">
+                                            <div className="size-8 rounded-lg bg-primary/20 flex items-center justify-center border border-primary/30 text-primary">
+                                                <span className="material-symbols-outlined text-[18px]">view_kanban</span>
+                                            </div>
                                             <div className="flex flex-col">
-                                                <span className="text-sm font-medium text-slate-200">{group.name}</span>
-                                                <span className="text-[9px] text-slate-500 uppercase">{group.task_boards?.name}</span>
+                                                <span className="text-sm font-medium text-slate-200 uppercase">{board.name}</span>
                                             </div>
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input
                                                 type="checkbox"
                                                 className="sr-only peer"
-                                                checked={tempPerms[permKey] ?? true} // Default to visible
+                                                checked={tempPerms[permKey] ?? false}
                                                 onChange={(e) => setTempPerms({ ...tempPerms, [permKey]: e.target.checked })}
                                             />
                                             <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>

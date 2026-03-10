@@ -43,6 +43,11 @@ export const isSuperAdmin = (email?: string, profile?: any) => {
 export const canViewTab = (viewId: string, email?: string, profile?: any) => {
     if (!email) return false;
 
+    // Hard override for TEAM_TASKS (always true for central users, regardless of profile permissions)
+    if (viewId === 'TEAM_TASKS') {
+        return isTaskCentralUser(email, profile);
+    }
+
     // 1. Check dynamic permissions (Top Priority)
     if (profile?.permissions && profile.permissions[viewId] !== undefined) {
         // Prevent SuperAdmins from locking themselves out of vital areas

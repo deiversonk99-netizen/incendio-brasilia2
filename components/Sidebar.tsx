@@ -16,6 +16,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     { id: AppView.DASHBOARD, label: 'Dashboard', icon: 'dashboard' },
     { id: AppView.CLIENTS, label: 'Clientes', icon: 'person_outline' },
     { id: AppView.TASKS, label: 'Tarefas', icon: 'check_circle' },
+    { id: AppView.TEAM_TASKS, label: 'Monitoramento Equipe', icon: 'groups' },
     { id: AppView.KITS, label: 'Infraestruturas', icon: 'dataset' },
     { id: AppView.CATALOG, label: 'Catálogo Produtos', icon: 'inventory_2' },
     { id: AppView.SUPPLIERS, label: 'Fornecedores', icon: 'local_shipping' },

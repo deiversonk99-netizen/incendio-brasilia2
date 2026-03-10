@@ -16,7 +16,8 @@ export enum AppView {
   PLACAS = 'PLACAS',
   STOCK = 'STOCK',
   RENEWALS = 'RENEWALS',
-  SETTINGS = 'SETTINGS'
+  SETTINGS = 'SETTINGS',
+  TEAM_TASKS = 'TEAM_TASKS'
 }
 
 export interface Project {
