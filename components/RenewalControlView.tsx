@@ -7,6 +7,7 @@ import TaskDetailsModal from './TaskDetailsModal';
 import { useAuth } from '../contexts/AuthContext';
 
 const RenewalControlView: React.FC = () => {
+    const { user } = useAuth();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -37,12 +38,126 @@ const RenewalControlView: React.FC = () => {
         setLoading(false);
     };
 
-    useEffect(() => {
+    const syncExpiredRenewals = async () => {
+        if (!user) return;
+
+        const today = new Date().toISOString().split('T')[0];
+
+        // 1. Fetch expired manual renewals that haven't created a task yet
+        const { data: expiredManuals } = await supabase
+            .from('contract_renewals')
+            .select('*, projects(name), clients(name)')
+            .lte('end_date', today)
+            .eq('task_created', false);
+
+        // 2. Fetch expired annual tasks that haven't created a task yet
+        const { data: expiredTasks } = await supabase
+            .from('tasks')
+            .select('*, projects(name)')
+            .eq('is_annual', true)
+            .lte('expiration_date', today)
+            .eq('task_created', false);
+
+        if ((expiredManuals?.length || 0) === 0 && (expiredTasks?.length || 0) === 0) return;
+
+        // 3. Find the "Pendentes" group ID
+        // Try various strategies to find a suitable board/group
+        let groupIdToUse = null;
+
+        // Strategy A: Search for the "Monitoramento" board (common for central sync)
+        const { data: boards } = await supabase.from('task_boards').select('id, name');
+
+        const monitorBoard = boards?.find(b =>
+            b.name.toLowerCase().includes('monitor') ||
+            b.name.toLowerCase().includes('sync') ||
+            b.name.toLowerCase().includes('central')
+        );
+
+        if (monitorBoard) {
+            const { data: group } = await supabase.from('task_groups')
+                .select('id')
+                .eq('board_id', monitorBoard.id)
+                .ilike('name', '%Pendente%')
+                .limit(1)
+                .maybeSingle();
+            if (group) groupIdToUse = group.id;
+        }
+
+        if (!groupIdToUse) {
+            // Strategy B: Search in "Quadro Geral"
+            const generalBoard = boards?.find(b => b.name.toLowerCase().includes('geral'));
+            if (generalBoard) {
+                const { data: group } = await supabase.from('task_groups')
+                    .select('id')
+                    .eq('board_id', generalBoard.id)
+                    .ilike('name', '%Pendente%')
+                    .limit(1)
+                    .maybeSingle();
+                if (group) groupIdToUse = group.id;
+            }
+        }
+
+        if (!groupIdToUse) {
+            // Strategy C: Fallback: Find ANY Pending group visible to user
+            const { data: group } = await supabase.from('task_groups').select('id').ilike('name', '%Pendente%').limit(1).maybeSingle();
+            if (group) groupIdToUse = group.id;
+        }
+
+        if (!groupIdToUse) return;
+
+        // 4. Process Manual Renewals
+        for (const manual of (expiredManuals || [])) {
+            const title = `[RENOVAÇÃO] ${manual.projects?.name || manual.clients?.name || 'Cliente Avulso'}`;
+            const description = `Contrato vencido em ${new Date(manual.end_date).toLocaleDateString('pt-BR')}.\nValor: R$ ${manual.value?.toLocaleString('pt-BR')}\nNotas: ${manual.notes || ''}`;
+
+            const { error: insertError } = await supabase.from('tasks').insert({
+                title,
+                description,
+                group_id: groupIdToUse,
+                user_id: user.id,
+                project_id: manual.project_id,
+                status: 'PENDING',
+                priority: 'HIGH'
+            });
+
+            if (!insertError) {
+                await supabase.from('contract_renewals').update({ task_created: true }).eq('id', manual.id);
+            }
+        }
+
+        // 5. Process Annual Tasks
+        for (const task of (expiredTasks || [])) {
+            const title = `[RENOVAÇÃO ANUAL] ${task.title}`;
+            const description = `Tarefa anual vencida em ${new Date(task.expiration_date).toLocaleDateString('pt-BR')}.\nOriginal: ${task.description || ''}`;
+
+            const { error: insertError } = await supabase.from('tasks').insert({
+                title,
+                description,
+                group_id: groupIdToUse,
+                user_id: user.id,
+                project_id: task.project_id,
+                status: 'PENDING',
+                priority: 'HIGH'
+            });
+
+            if (!insertError) {
+                await supabase.from('tasks').update({ task_created: true }).eq('id', task.id);
+            }
+        }
+
         fetchRenewals();
-    }, []);
+    };
+
+    useEffect(() => {
+        const init = async () => {
+            await fetchRenewals();
+            await syncExpiredRenewals();
+        };
+        init();
+    }, [user?.id]);
 
     const filteredTasks = useMemo(() => {
-        return tasks.filter(t =>
+        return tasks.filter((t: any) =>
             t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (t as any).projects?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (t as any).projects?.clients?.name?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -55,7 +170,7 @@ const RenewalControlView: React.FC = () => {
         const thirtyDaysAhead = new Date(today);
         thirtyDaysAhead.setDate(today.getDate() + 30);
 
-        return tasks.filter(t => {
+        return tasks.filter((t: any) => {
             if (!t.expiration_date) return false;
             // Parse date manually to avoid timezone issues with string dates
             const [year, month, day] = t.expiration_date.split('-').map(Number);
@@ -70,7 +185,7 @@ const RenewalControlView: React.FC = () => {
         const thirtyDaysAhead = new Date(today);
         thirtyDaysAhead.setDate(today.getDate() + 30);
 
-        return manualRenewals.filter(m => {
+        return manualRenewals.filter((m: any) => {
             if (!m.end_date) return false;
             const [year, month, day] = m.end_date.split('-').map(Number);
             const exp = new Date(year, month - 1, day);
@@ -117,7 +232,7 @@ const RenewalControlView: React.FC = () => {
                                 className="bg-[#2d1b20] border border-[#46252c] text-white text-sm rounded-lg block w-64 pl-10 pr-3 py-2.5 outline-none focus:border-primary transition-all shadow-inner"
                                 placeholder="Buscar projeto ou título..."
                                 value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                             />
                         </div>
                         <div className="flex bg-black/30 p-1 rounded-xl border border-white/5 mr-2">
