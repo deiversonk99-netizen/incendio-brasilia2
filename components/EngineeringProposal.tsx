@@ -2431,21 +2431,18 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         </div>
                         <div>
                           <label className="text-slate-400 text-sm font-medium block mb-2">Validade (Dias)</label>
-                          <select
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="Ex: 30"
                             className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
-                            value={proposal.validity_days}
+                            value={proposal.validity_days || ''}
                             onChange={(e) => {
                               const val = Number(e.target.value);
                               setProposal({ ...proposal, validity_days: val });
                               savePdfSettings({ ...pdfSettings, validade: e.target.value });
                             }}
-                          >
-                            <option value={5}>05 dias</option>
-                            <option value={10}>10 dias</option>
-                            <option value={15}>15 dias</option>
-                            <option value={20}>20 dias</option>
-                            <option value={30}>30 dias</option>
-                          </select>
+                          />
                         </div>
                       </div>
                       <div>

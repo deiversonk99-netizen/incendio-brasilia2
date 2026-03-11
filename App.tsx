@@ -23,6 +23,8 @@ import SettingsView from './components/SettingsView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { isSuperAdmin, isStockAdmin, isFinanceAdmin, isProposalAdmin, canViewTab } from './lib/permissions';
 
+import AdminBoardsView from './components/AdminBoardsView';
+
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [engineeringProjectId, setEngineeringProjectId] = useState<string>('');
@@ -65,6 +67,8 @@ const AppContent: React.FC = () => {
         return <TasksView />;
       case AppView.TEAM_TASKS:
         return <TasksView isTeamMonitoring={true} />;
+      case AppView.ADMIN_BOARDS:
+        return <AdminBoardsView />;
       case AppView.CLIENTS:
         return <ClientsView />;
       case AppView.ENGINEERING_PHASE_A:

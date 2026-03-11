@@ -51,7 +51,7 @@ export const canViewTab = (viewId: string, email?: string, profile?: any) => {
     // 1. Check dynamic permissions (Top Priority)
     if (profile?.permissions && profile.permissions[viewId] !== undefined) {
         // Prevent SuperAdmins from locking themselves out of vital areas
-        if (isSuperAdmin(email, profile) && (viewId === 'SETTINGS' || viewId === 'DASHBOARD')) {
+        if (isSuperAdmin(email, profile) && (viewId === 'SETTINGS' || viewId === 'DASHBOARD' || viewId === 'ADMIN_BOARDS')) {
             return true;
         }
         return profile.permissions[viewId] === true;
@@ -87,7 +87,7 @@ export const canViewTab = (viewId: string, email?: string, profile?: any) => {
     // Tabs only visible to Staff by default
     const staffOnlyTabs = [
         'DASHBOARD', 'CLIENTS', 'TASKS', 'KITS', 'CATALOG',
-        'SERVICES', 'SERVICE_MODELS', 'RENEWALS', 'SETTINGS'
+        'SERVICES', 'SERVICE_MODELS', 'RENEWALS', 'SETTINGS', 'ADMIN_BOARDS'
     ];
 
     if (staffOnlyTabs.includes(viewId)) {

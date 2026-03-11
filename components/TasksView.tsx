@@ -91,7 +91,11 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     if (boardsData) {
       let allowedBoards = boardsData.filter(b => {
         if (isCentral) return true;
-        if (b.user_id === user?.id) return true;
+
+        // Regular users only see visible boards they own
+        if (b.user_id === user?.id) {
+          return b.is_visible !== false;
+        }
 
         // Check explicitly granted permissions
         const permKey = `BOARD_${b.id}`;
@@ -123,6 +127,22 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
     // Special Sync Board Handling
     if (selectedBoardId === SYNC_BOARD_ID) {
+      // First get visible board IDs
+      const { data: visibleBoards } = await supabase
+        .from('task_boards')
+        .select('id')
+        .eq('is_visible', true);
+
+      const visibleBoardIds = visibleBoards?.map(b => b.id) || [];
+
+      // Get groups belonging to these boards
+      const { data: visibleGroups } = await supabase
+        .from('task_groups')
+        .select('id')
+        .in('board_id', visibleBoardIds);
+
+      const visibleGroupIds = visibleGroups?.map(g => g.id) || [];
+
       const [{ data: syncData }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
         supabase
           .from('tasks')
@@ -131,6 +151,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             projects(name)
           `)
           .eq('status', 'PENDING')
+          .in('group_id', visibleGroupIds)
           .order('created_at', { ascending: false }),
         supabase
           .from('user_profiles')
@@ -239,6 +260,17 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
   useEffect(() => {
     fetchData();
+
+    // Set up real-time subscriptions
+    const channel = supabase.channel('tasks-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_groups' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_boards' }, () => fetchData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, selectedBoardId]);
 
   const handleConvertToProject = async (task: Task) => {
