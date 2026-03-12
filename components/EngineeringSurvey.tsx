@@ -889,21 +889,45 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
 
           {/* Project Selection */}
           <div className="bg-surface-dark p-6 rounded-xl border border-white/5 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-end gap-4">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-slate-400 mb-2">Selecione o Projeto</label>
+            <div className="flex flex-col md:flex-row md:items-end gap-6">
+              <div className="flex-1 space-y-4">
+                <div className="relative group">
+                  <label className="block text-xs font-bold text-primary uppercase tracking-widest mb-2 px-1">Busca Inteligente</label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors">search</span>
+                    <input
+                      type="text"
+                      placeholder="Pesquise por nome, PR0XX, ou cliente..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full bg-background-dark border border-white/10 rounded-lg pl-10 pr-4 py-3 text-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-600"
+                    />
+                    {searchTerm && (
+                      <button 
+                        onClick={() => setSearchTerm('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">close</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 px-1">Selecione o Projeto</label>
                 <select
                   value={selectedProjectId}
                   onChange={(e) => onSelectProject(e.target.value)}
                   className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                 >
                   <option value="">Selecione...</option>
-                  {projects.map(p => (
+                  {filteredProjects.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} / ` : ''}{p.client || 'Sem Cliente'}
+                      {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} / ` : ''}{p.client || 'Sem Cliente'} - {p.name}
                     </option>
                   ))}
                 </select>
+                </div>
               </div>
               <div className="flex items-center gap-2 h-11 shrink-0">
                 {selectedProjectId && (

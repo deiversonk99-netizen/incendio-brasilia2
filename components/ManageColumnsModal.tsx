@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { StatusColumn } from './DashboardView';
+export interface StatusColumn {
+    id: string;
+    label: string;
+    color: string;
+    shadow_class: string;
+    order_index: number;
+    project_types?: string[];
+}
 
 interface ManageColumnsModalProps {
     isOpen: boolean;
@@ -9,6 +16,13 @@ interface ManageColumnsModalProps {
     currentColumns: StatusColumn[];
     onSaved: (newColumns: StatusColumn[]) => void;
 }
+
+const PROJECT_TYPES = [
+    { id: 'business', label: 'Comercial' },
+    { id: 'factory', label: 'Industrial' },
+    { id: 'store', label: 'Loja' },
+    { id: 'residential', label: 'Residencial' },
+];
 
 const COLORS = [
     { color: 'bg-blue-400', shadow: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]' },
@@ -39,7 +53,8 @@ const ManageColumnsModal = ({ isOpen, onClose, currentColumns, onSaved }: Manage
             label: 'Nova Coluna',
             color: defaultColor.color,
             shadow_class: defaultColor.shadow,
-            order_index: columns.length
+            order_index: columns.length,
+            project_types: ['business', 'factory', 'store', 'residential']
         }]);
     };
 
@@ -98,14 +113,16 @@ const ManageColumnsModal = ({ isOpen, onClose, currentColumns, onSaved }: Manage
                         label: col.label,
                         color: col.color,
                         shadow_class: col.shadow_class,
-                        order_index: col.order_index
+                        order_index: col.order_index,
+                        project_types: col.project_types || ['business', 'factory', 'store', 'residential']
                     });
                 } else {
                     await supabase.from('project_status_columns').update({
                         label: col.label,
                         color: col.color,
                         shadow_class: col.shadow_class,
-                        order_index: col.order_index
+                        order_index: col.order_index,
+                        project_types: col.project_types || ['business', 'factory', 'store', 'residential']
                     }).eq('id', col.id);
                 }
             }
@@ -161,6 +178,25 @@ const ManageColumnsModal = ({ isOpen, onClose, currentColumns, onSaved }: Manage
                                     placeholder="Nome da Coluna"
                                     className="w-full bg-surface-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none transition-all"
                                 />
+                                <div className="mt-2 flex flex-wrap gap-2 text-[10px] uppercase font-bold text-slate-500">
+                                    {PROJECT_TYPES.map(type => (
+                                        <label key={type.id} className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded cursor-pointer hover:bg-white/10 transition-colors">
+                                            <input
+                                                type="checkbox"
+                                                checked={col.project_types?.includes(type.id) ?? true}
+                                                onChange={(e) => {
+                                                    const currentTypes = col.project_types || ['business', 'factory', 'store', 'residential'];
+                                                    const newTypes = e.target.checked
+                                                        ? [...currentTypes, type.id]
+                                                        : currentTypes.filter(t => t !== type.id);
+                                                    handleUpdateColumn(col.id, 'project_types', newTypes);
+                                                }}
+                                                className="accent-primary"
+                                            />
+                                            {type.label}
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="flex flex-wrap gap-2 sm:max-w-[150px] justify-center">

@@ -22,6 +22,7 @@ export interface StatusColumn {
   color: string;
   shadow_class: string;
   order_index: number;
+  project_types?: string[];
 }
 
 interface DashboardViewProps {
@@ -168,10 +169,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     if (currentCols.length === 0 && user) {
       // First time initialization (only if NO columns exist at all)
       const defaultCols = [
-        { user_id: user.id, label: 'Em Análise', color: 'bg-blue-400', shadow_class: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]', order_index: 0 },
-        { user_id: user.id, label: 'Aprovado', color: 'bg-yellow-400', shadow_class: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]', order_index: 1 },
-        { user_id: user.id, label: 'Execução', color: 'bg-primary', shadow_class: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]', order_index: 2 },
-        { user_id: user.id, label: 'Concluído', color: 'bg-emerald-400', shadow_class: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]', order_index: 3 },
+        { user_id: user.id, label: 'Em Análise', color: 'bg-blue-400', shadow_class: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]', order_index: 0, project_types: ['business', 'factory', 'store', 'residential'] },
+        { user_id: user.id, label: 'Aprovado', color: 'bg-yellow-400', shadow_class: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]', order_index: 1, project_types: ['business', 'factory', 'store', 'residential'] },
+        { user_id: user.id, label: 'Execução', color: 'bg-primary', shadow_class: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]', order_index: 2, project_types: ['business', 'factory', 'store', 'residential'] },
+        { user_id: user.id, label: 'Concluído', color: 'bg-emerald-400', shadow_class: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]', order_index: 3, project_types: ['business', 'factory', 'store', 'residential'] },
       ];
 
       const { data: insertedCols } = await supabase.from('project_status_columns').insert(defaultCols).select();
@@ -576,7 +577,15 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                       <span className={`w-2.5 h-2.5 rounded-full ${col.color} ${col.shadow}`}></span>
                       <h3 className="text-white font-bold text-sm uppercase tracking-wider">{col.label}</h3>
                       <span className="bg-[#46252c] text-text-muted text-xs font-bold px-2 py-0.5 rounded-full">
-                        {projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length}
+                        {projects.filter(p => {
+                          const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
+                          if (!matchesView) return false;
+                          // If status view, also check project_types filter
+                          if (viewMode === 'STATUS' && col.project_types && col.project_types.length > 0) {
+                            return col.project_types.includes(p.type);
+                          }
+                          return true;
+                        }).length}
                       </span>
                     </div>
                   </div>
@@ -586,7 +595,15 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                       <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
                     ) : (
                       projects
-                        .filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id)
+                        .filter(p => {
+                          const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
+                          if (!matchesView) return false;
+                          // If status view, also check project_types filter
+                          if (viewMode === 'STATUS' && col.project_types && col.project_types.length > 0) {
+                            return col.project_types.includes(p.type);
+                          }
+                          return true;
+                        })
                         .filter(p => {
                           // Filter by Type
                           if (filterType !== 'ALL' && p.type !== filterType) return false;
@@ -724,8 +741,22 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                           </div>
                         ))
                     )}
-                    {!loading && projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).length > 0 &&
-                      projects.filter(p => viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id).filter(p => {
+                    {!loading && projects.filter(p => {
+                      const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
+                      if (!matchesView) return false;
+                      if (viewMode === 'STATUS' && col.project_types && col.project_types.length > 0) {
+                        return col.project_types.includes(p.type);
+                      }
+                      return true;
+                    }).length > 0 &&
+                      projects.filter(p => {
+                        const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
+                        if (!matchesView) return false;
+                        if (viewMode === 'STATUS' && col.project_types && col.project_types.length > 0) {
+                          return col.project_types.includes(p.type);
+                        }
+                        return true;
+                      }).filter(p => {
                         if (filterType !== 'ALL' && p.type !== filterType) return false;
                         if (filterClient !== 'ALL' && p.client !== filterClient) return false;
 
