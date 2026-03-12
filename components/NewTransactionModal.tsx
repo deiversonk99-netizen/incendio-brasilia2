@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Project } from '../types';
+import { SearchableSelect } from './ui';
 
 interface NewTransactionModalProps {
     isOpen: boolean;
@@ -14,6 +15,7 @@ interface NewTransactionModalProps {
 interface Client {
     id: string;
     name: string;
+    fantasy_name?: string;
 }
 
 const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
@@ -84,7 +86,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
             prData
         ] = await Promise.all([
             supabase.from('projects').select('*').order('name'),
-            supabase.from('clients').select('id, name').order('name'),
+            supabase.from('clients').select('id, name, fantasy_name').order('name'),
             supabase.from('floors').select('project_id'),
             supabase.from('budget_items').select('project_id'),
             supabase.from('proposals').select('project_id')
@@ -337,30 +339,18 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-semibold uppercase text-slate-500 mb-1.5 font-bold">
-                                {formData.type === 'INCOME' ? 'Cliente' : 'Fornecedor'}
-                            </label>
-                            {formData.type === 'INCOME' ? (
-                                <select
+                                <SearchableSelect
+                                    label="Cliente"
                                     value={formData.entity}
-                                    onChange={e => setFormData({ ...formData, entity: e.target.value })}
-                                    className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none text-sm"
+                                    onChange={val => setFormData({ ...formData, entity: val })}
+                                    options={clients.map(c => ({
+                                        id: c.id,
+                                        label: c.name,
+                                        subLabel: c.fantasy_name
+                                    }))}
+                                    placeholder="Pesquisar cliente..."
                                     required
-                                >
-                                    <option value="">Selecione um cliente...</option>
-                                    {clients.map(c => (
-                                        <option key={c.id} value={c.name}>{c.name}</option>
-                                    ))}
-                                </select>
-                            ) : (
-                                <input
-                                    type="text"
-                                    value={formData.entity}
-                                    onChange={e => setFormData({ ...formData, entity: e.target.value })}
-                                    className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none text-sm"
-                                    placeholder="Nome da empresa/pessoa"
                                 />
-                            )}
                         </div>
                         <div>
                             <label className="block text-xs font-semibold uppercase text-slate-500 mb-1.5 font-bold">Categoria</label>
