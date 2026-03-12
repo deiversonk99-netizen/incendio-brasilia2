@@ -888,12 +888,14 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
 
     const filteredProducts = products.filter(p => {
         const supplierName = suppliers.find(s => s.id === p.supplier_id)?.name || '';
+        const searchLower = searchTerm.toLowerCase();
         return (
-            p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (p.category || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (p.storage_location || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (p.observation || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            supplierName.toLowerCase().includes(searchTerm.toLowerCase())
+            p.name.toLowerCase().includes(searchLower) ||
+            (p.category || '').toLowerCase().includes(searchLower) ||
+            (p.storage_location || '').toLowerCase().includes(searchLower) ||
+            (p.observation || '').toLowerCase().includes(searchLower) ||
+            supplierName.toLowerCase().includes(searchLower) ||
+            (p.is_signage && (searchLower === 'placa' || searchLower === 'placas' || searchLower === 'sinalização'))
         );
     });
 
@@ -1027,7 +1029,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     {product.is_signage ? (
-                                                        <span className="material-symbols-outlined text-amber-500 text-[18px]" title="Identificado como Placa">warning</span>
+                                                        <span className="material-symbols-outlined text-amber-500 text-[18px]" title="Sinalização / Placa">label</span>
                                                     ) : (
                                                         <span className="text-slate-600">-</span>
                                                     )}

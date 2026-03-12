@@ -2,8 +2,40 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import PageHeader from './PageHeader';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
+import { Product } from '../types';
+
+interface SignageItem extends Product {}
+
+interface StockMovement {
+    id: string;
+    product_id: string;
+    signage_id?: string; // For compatibility with existing state
+    movement_type: 'IN' | 'OUT' | 'ADJUST';
+    quantity: number;
+    user_id?: string;
+}
+
+interface OrderItem {
+    id: string;
+    signage_id: string;
+    quantity: number;
+    received_quantity: number;
+    status: 'PENDING' | 'PARTIAL' | 'RECEIVED';
+    signage?: { name: string; image?: string };
+    current_stock?: number;
+    signage_name?: string;
+}
+
+interface Order {
+    id: string;
+    supplier: string;
+    status: 'PENDING' | 'PARTIAL' | 'COMPLETED';
+    created_at: string;
+    items: OrderItem[];
+    delivery_date?: string; // Add delivery_date to Order interface
+}
 
 const InventoryView: React.FC = () => {
     const { user } = useAuth();
@@ -25,6 +57,12 @@ const InventoryView: React.FC = () => {
     const [newImage, setNewImage] = useState<string>('');
     const [newQuantity, setNewQuantity] = useState<number>(0);
 
+    // Edit Modal State
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingPlate, setEditingPlate] = useState<any>(null);
+    const [editName, setEditName] = useState('');
+    const [editImage, setEditImage] = useState<string>('');
+
     // Order Modal State
     const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
     const [editingOrder, setEditingOrder] = useState<any>(null);
@@ -44,8 +82,15 @@ const InventoryView: React.FC = () => {
     const fetchData = async () => {
         setLoading(true);
         // Fetch Catalog & Stock
-        const { data: signage } = await supabase.from('signage_catalog').select('*').order('name');
-        const { data: stockData } = await supabase.from('signage_stock').select('*');
+        const { data: signage } = await supabase
+            .from('product_catalog')
+            .select('*')
+            .eq('is_signage', true)
+            .order('name');
+        
+        const { data: stockData } = await supabase
+            .from('product_stock')
+            .select('*');
 
         // Fetch Orders with Items
         const { data: ordersData } = await supabase
@@ -54,28 +99,40 @@ const InventoryView: React.FC = () => {
                 *,
                 items:signage_order_items (
                     *,
-                    signage:signage_catalog (name, image)
+                    signage:product_catalog (name, image)
                 )
             `)
             .order('created_at', { ascending: false });
 
         if (signage) setSignageItems(signage);
-        if (stockData) setStock(stockData);
-        if (ordersData) setOrders(ordersData);
+        if (stockData) setStock(stockData.map((s: any) => ({ ...s, signage_id: s.product_id })));
+        if (ordersData && stockData) {
+            const currentStockForMap = stockData.map((s: any) => ({ ...s, signage_id: s.product_id }));
+            // Process ordersData to add current_stock to each item
+            const processedOrders = ordersData.map((order: any) => ({
+                ...order,
+                items: (order.items || []).map((item: any) => ({
+                    ...item,
+                    current_stock: computeQuantity(item.signage_id, currentStockForMap)
+                }))
+            }));
+            setOrders(processedOrders);
+        }
         setLoading(false);
     };
 
-    const computeQuantity = (id: string, currentStockData = stock) => {
-        const movements = currentStockData.filter((s) => s.signage_id === id);
-        return movements.reduce((sum, m) => {
+    const computeQuantity = (id: string, currentStockData: StockMovement[] = stock) => {
+        const movements = currentStockData.filter((s: StockMovement) => s.signage_id === id);
+        return movements.reduce((sum: number, m: StockMovement) => {
             if (m.movement_type === 'IN') return sum + m.quantity;
             if (m.movement_type === 'OUT') return sum - m.quantity;
-            return sum + m.quantity; // ADJUST
+            if (m.movement_type === 'ADJUST') return sum + m.quantity;
+            return sum;
         }, 0);
     };
 
     // ----- Stock Actions -----
-    const openStockModal = (item: any, action: 'IN' | 'OUT' | 'ADJUST') => {
+    const openStockModal = (item: SignageItem, action: 'IN' | 'OUT' | 'ADJUST') => {
         setSelectedItem(item);
         setStockModalAction(action);
         setQuantity(0);
@@ -92,29 +149,89 @@ const InventoryView: React.FC = () => {
                 return;
             }
         }
-        await supabase.from('signage_stock').insert([{ signage_id: selectedItem.id, movement_type: stockModalAction, quantity }]);
+        await supabase.from('product_stock').insert([{ 
+            product_id: selectedItem.id, 
+            movement_type: stockModalAction, 
+            quantity,
+            user_id: user?.id
+        }]);
         setIsStockModalOpen(false);
         fetchData();
     };
 
     // ----- Create Plate -----
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
         const file = e.target.files?.[0];
         if (file) {
             const reader = new FileReader();
-            reader.onloadend = () => setNewImage(reader.result as string);
+            reader.onloadend = () => {
+                if (isEdit) {
+                    setEditImage(reader.result as string);
+                } else {
+                    setNewImage(reader.result as string);
+                }
+            };
             reader.readAsDataURL(file);
         }
     };
 
+    const handleEditPlate = (plate: any) => {
+        setEditingPlate(plate);
+        setEditName(plate.name);
+        setEditImage(plate.image || '');
+        setIsEditModalOpen(true);
+    };
+
+    const handleEditSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingPlate) return;
+
+        setLoading(true);
+        const { error } = await supabase
+            .from('product_catalog')
+            .update({
+                name: editName,
+                image: editImage,
+                user_id: user?.id
+            })
+            .eq('id', editingPlate.id);
+
+        if (error) {
+            alert('Erro ao atualizar: ' + error.message);
+        } else {
+            setIsEditModalOpen(false);
+            setEditingPlate(null);
+            fetchData();
+            alert('Placa atualizada com sucesso!');
+        }
+        setLoading(false);
+    };
+
     const handleCreateSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const { data: newPlate, error } = await supabase.from('signage_catalog').insert([{ name: newName, image: newImage }]).select();
+        const { data: newPlate, error } = await supabase
+            .from('product_catalog')
+            .insert([{ 
+                name: newName, 
+                image: newImage,
+                is_signage: true,
+                category: 'Placas',
+                unit: 'un',
+                price: 20, // Preço padrão para placas
+                user_id: user?.id
+            }])
+            .select();
+
         if (error) return alert('Erro: ' + error.message);
 
         const inserted = (newPlate as any[])[0];
         if (newQuantity > 0) {
-            await supabase.from('signage_stock').insert([{ signage_id: inserted.id, movement_type: 'IN', quantity: newQuantity }]);
+            await supabase.from('product_stock').insert([{ 
+                product_id: inserted.id, 
+                movement_type: 'IN', 
+                quantity: newQuantity,
+                user_id: user?.id
+            }]);
         }
 
         setIsCreateModalOpen(false);
@@ -132,13 +249,13 @@ const InventoryView: React.FC = () => {
         // console.log('Added item:', newItem); // Debugging
     };
 
-    const handleEditOrder = (order: any) => {
+    const handleEditOrder = (order: Order) => {
         setEditingOrder(order);
         setNewOrder({
             supplier: order.supplier,
             delivery_date: order.delivery_date ? order.delivery_date.split('T')[0] : ''
         });
-        setOrderItems(order.items.map((item: any) => ({
+        setOrderItems(order.items.map((item: OrderItem) => ({
             signage_id: item.signage_id,
             quantity: item.quantity,
             signage_name: item.signage?.name || 'Unknown'
@@ -234,10 +351,11 @@ const InventoryView: React.FC = () => {
             if (updateError) throw updateError;
 
             // 2. Add to Stock
-            await supabase.from('signage_stock').insert([{
-                signage_id: itemSignageId,
+            await supabase.from('product_stock').insert([{
+                product_id: itemSignageId,
                 movement_type: 'IN',
-                quantity: itemQty
+                quantity: itemQty,
+                user_id: user?.id
             }]);
 
             // 3. Check if all items received to update Order Status
@@ -262,7 +380,7 @@ const InventoryView: React.FC = () => {
         }
     };
 
-    const generateOrderPDF = (order: any) => {
+    const generateOrderPDF = (order: Order) => {
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -292,13 +410,13 @@ const InventoryView: React.FC = () => {
         doc.text(`Status: ${order.status === 'COMPLETED' ? 'Concluído' : order.status === 'PARTIAL' ? 'Parcial' : 'Pendente'}`, 20, 88);
 
         // Table
-        const tableData = order.items.map((item: any) => [
+        const tableData = order.items.map((item: OrderItem) => [
             item.signage?.name || 'N/A',
             item.quantity,
             item.status === 'RECEIVED' ? `Recebido (${item.received_quantity})` : 'Pendente'
         ]);
 
-        autoTable(doc, {
+        (doc as any).autoTable({
             startY: 95,
             head: [['Descrição da Placa', 'Quantidade', 'Status']],
             body: tableData,
@@ -310,8 +428,8 @@ const InventoryView: React.FC = () => {
         doc.save(`Pedido_Placas_${order.supplier.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
     };
 
-    const filteredItems = signageItems.filter((item) =>
-        item.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredSignage = signageItems.filter((p: SignageItem) =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
@@ -396,7 +514,7 @@ const InventoryView: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredItems.map((item) => (
+                                {filteredSignage.map((item: SignageItem) => (
                                     <tr key={item.id} className="border-b border-white/5 hover:bg-primary/10">
                                         <td className="p-2">
                                             {item.image ? (
@@ -408,6 +526,10 @@ const InventoryView: React.FC = () => {
                                         <td className="p-2 font-bold">{item.name}</td>
                                         <td className="p-2 text-right font-mono">{computeQuantity(item.id)}</td>
                                         <td className="p-2 flex justify-center gap-2">
+                                            <button onClick={() => handleEditPlate(item)} className="p-1 px-2 text-slate-400 hover:text-primary transition-colors hover:bg-white/5 rounded" title="Editar Placa">
+                                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                                            </button>
+                                            <div className="w-[1px] h-4 bg-white/10 self-center mx-1"></div>
                                             <button onClick={() => openStockModal(item, 'IN')} className="px-2 py-1 bg-green-600 hover:bg-green-700 rounded text-xs">Entrada</button>
                                             <button onClick={() => openStockModal(item, 'OUT')} className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs">Saída</button>
                                             <button onClick={() => openStockModal(item, 'ADJUST')} className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-xs">Ajuste</button>
@@ -421,101 +543,107 @@ const InventoryView: React.FC = () => {
 
                 {activeTab === 'ORDERS' && (
                     <div className="space-y-4">
-                        {orders.length === 0 && (
-                            <div className="text-center py-12 text-slate-500">Nenhum pedido registrado.</div>
-                        )}
-                        {orders.map(order => (
-                            <div key={order.id} className="bg-surface-dark border border-white/10 rounded-xl overflow-hidden">
-                                <div
-                                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
-                                    onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${order.status === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-amber-500/20 text-amber-500'}`}>
-                                            <span className="material-symbols-outlined">{order.status === 'COMPLETED' ? 'check_circle' : 'pending'}</span>
-                                        </div>
-                                        <div>
-                                            <div className="font-bold text-white">{order.supplier}</div>
-                                            <div className="text-xs text-slate-400">Entrega: {order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('pt-BR') : 'N/A'}</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                                        <button onClick={() => handleEditOrder(order)} className="p-1 text-slate-400 hover:text-blue-400 transition-colors">
-                                            <span className="material-symbols-outlined text-[20px]">edit</span>
-                                        </button>
-                                        <button onClick={() => handleDeleteOrder(order.id)} className="p-1 text-slate-400 hover:text-red-400 transition-colors">
-                                            <span className="material-symbols-outlined text-[20px]">delete</span>
-                                        </button>
-                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${order.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-500' :
-                                            order.status === 'PARTIAL' ? 'bg-blue-500/10 text-blue-500' : 'bg-amber-500/10 text-amber-500'
-                                            }`}>
-                                            {order.status === 'COMPLETED' ? 'Concluído' : order.status === 'PARTIAL' ? 'Parcial' : 'Pendente'}
-                                        </span>
-                                        <span
-                                            className="material-symbols-outlined text-slate-400 transition-transform duration-200 cursor-pointer"
-                                            style={{ transform: expandedOrderId === order.id ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                        {orders.length === 0 ? (
+                            <div className="text-center py-12 text-slate-500">
+                                Nenhum pedido encontrado.
+                            </div>
+                        ) : (
+                            orders.map((order: Order) => {
+                                const unavailable = order.items.filter((item: OrderItem) => (item.current_stock || 0) < item.quantity);
+                                return (
+                                    <div key={order.id} className="bg-surface-dark border border-white/10 rounded-xl overflow-hidden">
+                                        <div
+                                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
                                             onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
                                         >
-                                            expand_more
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 pr-4" onClick={(e) => e.stopPropagation()}>
-                                        <button
-                                            onClick={() => generateOrderPDF(order)}
-                                            className="flex items-center gap-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all"
-                                            title="Gerar PDF do Pedido"
-                                        >
-                                            <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
-                                            PDF
-                                        </button>
-                                    </div>
-                                </div>
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${order.status === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-amber-500/20 text-amber-500'}`}>
+                                                    <span className="material-symbols-outlined">{order.status === 'COMPLETED' ? 'check_circle' : 'pending'}</span>
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold text-white">{order.supplier}</div>
+                                                    <div className="text-xs text-slate-400">Entrega: {order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('pt-BR') : 'N/A'}</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => handleEditOrder(order)} className="p-1 text-slate-400 hover:text-blue-400 transition-colors">
+                                                    <span className="material-symbols-outlined text-[20px]">edit</span>
+                                                </button>
+                                                <button onClick={() => handleDeleteOrder(order.id)} className="p-1 text-slate-400 hover:text-red-400 transition-colors">
+                                                    <span className="material-symbols-outlined text-[20px]">delete</span>
+                                                </button>
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${order.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-500' :
+                                                    order.status === 'PARTIAL' ? 'bg-blue-500/10 text-blue-500' : 'bg-amber-500/10 text-amber-500'
+                                                    }`}>
+                                                    {order.status === 'COMPLETED' ? 'Concluído' : order.status === 'PARTIAL' ? 'Parcial' : 'Pendente'}
+                                                </span>
+                                                <span
+                                                    className="material-symbols-outlined text-slate-400 transition-transform duration-200 cursor-pointer"
+                                                    style={{ transform: expandedOrderId === order.id ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                                                    onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
+                                                >
+                                                    expand_more
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2 pr-4" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => generateOrderPDF(order)}
+                                                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all"
+                                                    title="Gerar PDF do Pedido"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                                                    PDF
+                                                </button>
+                                            </div>
+                                        </div>
 
-                                {expandedOrderId === order.id && (
-                                    <div className="border-t border-white/5 bg-black/20 p-4">
-                                        <table className="w-full text-sm">
-                                            <thead>
-                                                <tr className="text-slate-500 text-xs uppercase text-left">
-                                                    <th className="pb-3">Placa</th>
-                                                    <th className="pb-3 text-center">Qtd. Pedida</th>
-                                                    <th className="pb-3 text-center">Status</th>
-                                                    <th className="pb-3 text-right">Ação</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {order.items.map((item: any) => (
-                                                    <tr key={item.id} className="border-b border-white/5 last:border-0 text-slate-300">
-                                                        <td className="py-3 flex items-center gap-3">
-                                                            {item.signage?.image && <img src={item.signage.image} className="w-8 h-8 object-contain rounded bg-white/5" />}
-                                                            <span>{item.signage?.name}</span>
-                                                        </td>
-                                                        <td className="py-3 text-center font-mono">{item.quantity}</td>
-                                                        <td className="py-3 text-center">
-                                                            {item.status === 'RECEIVED' ? (
-                                                                <span className="text-emerald-500 font-bold text-xs">Recebido ({item.received_quantity})</span>
-                                                            ) : (
-                                                                <span className="text-amber-500 font-bold text-xs">Pendente</span>
-                                                            )}
-                                                        </td>
-                                                        <td className="py-3 text-right">
-                                                            {item.status === 'PENDING' && (
-                                                                <button
-                                                                    onClick={() => handleReceiveItem(order.id, item.id, item.quantity, item.signage_id)}
-                                                                    className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-sm font-bold shadow-lg shadow-primary/20 transition-all active:scale-95"
-                                                                >
-                                                                    <span className="material-symbols-outlined text-[20px]">check_circle</span>
-                                                                    Receber Placas
-                                                                </button>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                        {expandedOrderId === order.id && (
+                                            <div className="border-t border-white/5 bg-black/20 p-4">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="text-slate-500 text-xs uppercase text-left">
+                                                            <th className="pb-3">Placa</th>
+                                                            <th className="pb-3 text-center">Qtd. Pedida</th>
+                                                            <th className="pb-3 text-center">Status</th>
+                                                            <th className="pb-3 text-right">Ação</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {order.items.map((item: OrderItem, idx: number) => (
+                                                            <tr key={idx} className="border-b border-white/5 last:border-0 text-slate-300">
+                                                                <td className="py-3 flex items-center gap-3">
+                                                                    {item.signage?.image && <img src={item.signage.image} className="w-8 h-8 object-contain rounded bg-white/5" />}
+                                                                    <span>{item.signage?.name}</span>
+                                                                </td>
+                                                                <td className="py-3 text-center font-mono">{item.quantity}</td>
+                                                                <td className="py-3 text-center">
+                                                                    {item.status === 'RECEIVED' ? (
+                                                                        <span className="text-emerald-500 font-bold text-xs">Recebido ({item.received_quantity})</span>
+                                                                    ) : (
+                                                                        <span className="text-amber-500 font-bold text-xs">Pendente</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="py-3 text-right">
+                                                                    {item.status === 'PENDING' && (
+                                                                        <button
+                                                                            onClick={() => handleReceiveItem(order.id, item.id, item.quantity, item.signage_id)}
+                                                                            className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-sm font-bold shadow-lg shadow-primary/20 transition-all active:scale-95"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                                                                            Receber Placas
+                                                                        </button>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                        ))}
+                                );
+                            })
+                        )}
                     </div>
                 )}
             </main>
@@ -560,7 +688,7 @@ const InventoryView: React.FC = () => {
                                 <div className="flex flex-col items-center gap-4">
                                     {newImage ? <img src={newImage} alt="Preview" className="w-32 h-32 object-contain" /> : <span className="material-symbols-outlined text-4xl text-slate-700">add_a_photo</span>}
                                     <label className="cursor-pointer bg-primary/20 hover:bg-primary/30 text-white py-1 px-3 rounded">
-                                        Selecionar <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                                        Selecionar <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e)} />
                                     </label>
                                 </div>
                             </div>
@@ -571,6 +699,46 @@ const InventoryView: React.FC = () => {
                             <div className="flex gap-4 pt-4">
                                 <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-3 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all">Cancelar</button>
                                 <button type="submit" disabled={loading} className="flex-1 py-3 bg-primary hover:bg-primary-dark rounded-xl text-white font-bold shadow-lg shadow-primary/20 transition-all disabled:opacity-50">Criar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {isEditModalOpen && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                    <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+                        <h2 className="text-xl font-bold mb-4 text-white">Editar Placa</h2>
+                        <form onSubmit={handleEditSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nome</label>
+                                <input 
+                                    type="text" 
+                                    required 
+                                    value={editName} 
+                                    onChange={(e) => setEditName(e.target.value)} 
+                                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-primary transition-all" 
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Imagem</label>
+                                <div className="flex flex-col items-center gap-4">
+                                    {editImage ? (
+                                        <img src={editImage} alt="Preview" className="w-32 h-32 object-contain rounded-lg border border-white/10 bg-white/5" />
+                                    ) : (
+                                        <div className="w-32 h-32 flex items-center justify-center border-2 border-dashed border-white/10 rounded-lg text-slate-600">
+                                            <span className="material-symbols-outlined text-4xl">image_not_supported</span>
+                                        </div>
+                                    )}
+                                    <label className="cursor-pointer bg-primary/20 hover:bg-primary/30 text-white py-1.5 px-4 rounded-lg text-sm font-bold transition-all">
+                                        Alterar Imagem 
+                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, true)} />
+                                    </label>
+                                </div>
+                            </div>
+                            <div className="flex gap-4 pt-4">
+                                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-4 border border-white/10 rounded-xl text-slate-300 font-bold hover:bg-white/5 transition-all">Cancelar</button>
+                                <button type="submit" disabled={loading} className="flex-1 py-4 bg-primary hover:bg-primary-dark rounded-xl text-white font-bold shadow-lg shadow-primary/20 transition-all disabled:opacity-50">Salvar Alterações</button>
                             </div>
                         </form>
                     </div>
@@ -631,8 +799,8 @@ const InventoryView: React.FC = () => {
                                     {showSearchList && itemSearchTerm && (
                                         <div className="absolute z-[60] w-full mt-2 bg-[#2D2D39] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
                                             {signageItems
-                                                .filter(item => item.name.toLowerCase().includes(itemSearchTerm.toLowerCase()))
-                                                .map(item => (
+                                                .filter((item: SignageItem) => item.name.toLowerCase().includes(itemSearchTerm.toLowerCase()))
+                                                .map((item: SignageItem) => (
                                                     <button
                                                         key={item.id}
                                                         onClick={() => {
@@ -649,7 +817,7 @@ const InventoryView: React.FC = () => {
                                                         <span className="material-symbols-outlined text-primary opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
                                                     </button>
                                                 ))}
-                                            {signageItems.filter(item => item.name.toLowerCase().includes(itemSearchTerm.toLowerCase())).length === 0 && (
+                                            {signageItems.filter((item: SignageItem) => item.name.toLowerCase().includes(itemSearchTerm.toLowerCase())).length === 0 && (
                                                 <div className="p-4 text-center text-slate-500 text-xs italic">Nenhuma placa encontrada.</div>
                                             )}
                                         </div>
@@ -690,7 +858,7 @@ const InventoryView: React.FC = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {orderItems.map((item, idx) => (
+                                            {orderItems.map((item, idx: number) => (
                                                 <tr key={idx} className="border-b border-white/5 last:border-0 text-slate-300">
                                                     <td className="p-3">{item.signage_name}</td>
                                                     <td className="p-3 text-center font-mono">{item.quantity}</td>
