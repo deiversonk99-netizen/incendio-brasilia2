@@ -253,7 +253,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     validity_days: 10,
     cost_material_base: 0,
     hide_services_pdf: false,
-    hide_products_pdf: false
+    hide_products_pdf: false,
+    separate_services_materials: false
   });
 
   // Modal State
@@ -492,6 +493,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         cost_material_base: totalCost, // Always refresh cost base from items
         hide_services_pdf: existingProposal.hide_services_pdf ?? false,
         hide_products_pdf: existingProposal.hide_products_pdf ?? false,
+        separate_services_materials: existingProposal.separate_services_materials ?? false,
         proposal_number: existingProposal.proposal_number // Load number
       });
     } else {
@@ -501,6 +503,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         cost_material_base: totalCost,
         hide_services_pdf: false,
         hide_products_pdf: false,
+        separate_services_materials: false,
         proposal_number: undefined
       }));
     }
@@ -518,6 +521,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     let totalProductsCost = 0;
     let totalServicesCost = 0;
+    let totalProductsFinal = 0;
+    let servicesList: any[] = [];
     let predictedVendaGlobal = 0;
     let actualVendaGlobal = 0;
 
@@ -536,22 +541,26 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         if (catalogItem && catalogItem.cost_price > 0) {
           cost = catalogItem.cost_price;
         } else if (currentSale > 0) {
-          // Absolute last resort: back-calculate from currentSale
-          // BUT we use a fixed factor of 1 if combinedFactor is weird, 
-          // and we don't let this update the 'cost' permanently unless handleRecalculate is called.
           cost = currentSale / (combinedFactor || 1);
         }
       }
 
       const lineCostTotal = cost * q;
+      const lineFinalPrice = currentSale * q;
+
       if (item.item_type === 'SERVICE') {
         totalServicesCost += lineCostTotal;
+        servicesList.push({
+          name: item.name,
+          finalPrice: lineFinalPrice
+        });
       } else {
         totalProductsCost += lineCostTotal;
+        totalProductsFinal += lineFinalPrice;
       }
 
       predictedVendaGlobal += lineCostTotal * combinedFactor;
-      actualVendaGlobal += currentSale * q;
+      actualVendaGlobal += lineFinalPrice;
     });
 
     const totalCostBase = totalProductsCost + totalServicesCost;
@@ -571,7 +580,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     return {
       productsBase: Number(totalProductsCost.toFixed(2)),
+      productsFinal: Number(totalProductsFinal.toFixed(2)),
       servicesTotal: Number(totalServicesCost.toFixed(2)),
+      servicesList: servicesList,
       bdiVal: Number(bdiVal.toFixed(2)),
       profitVal: Number(profitVal.toFixed(2)),
       discountVal: Number(discountVal.toFixed(2)),
@@ -1274,20 +1285,34 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       const financeBody = [];
 
-      if (pdfSettings.show_subtotal !== false) {
-        financeBody.push(['Subtotal de Materiais/Serviços', `R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
-      }
+      if (proposal.separate_services_materials) {
+        // --- SEPARATE MODE ---
+        if (vals.productsFinal > 0 && !proposal.hide_products_pdf) {
+          financeBody.push(['Total Materiais / Equipamentos', `R$ ${vals.productsFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        }
 
-      if (pdfSettings.show_bdi !== false) {
-        financeBody.push(['BDI (Bonificação e Despesas Indiretas)', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
-      }
+        if (!proposal.hide_services_pdf) {
+          vals.servicesList.forEach((service: any) => {
+            financeBody.push([service.name || 'Serviço', `R$ ${service.finalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+          });
+        }
+      } else {
+        // --- COMBINED MODE (Standard) ---
+        if (pdfSettings.show_subtotal !== false) {
+          financeBody.push(['Subtotal de Materiais/Serviços', `R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        }
 
-      if (pdfSettings.show_profit !== false) {
-        financeBody.push(['Margem e encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
-      }
+        if (pdfSettings.show_bdi !== false) {
+          financeBody.push(['BDI (Bonificação e Despesas Indiretas)', `R$ ${vals.bdiVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        }
 
-      if (vals.servicesTotal > 0 && !proposal.hide_services_pdf && pdfSettings.show_services_total !== false) {
-        financeBody.push(['Total de Mão de Obra / Serviços', `R$ ${vals.servicesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        if (pdfSettings.show_profit !== false) {
+          financeBody.push(['Margem e encargos', `R$ ${vals.profitVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        }
+
+        if (vals.servicesTotal > 0 && !proposal.hide_services_pdf && pdfSettings.show_services_total !== false) {
+          financeBody.push(['Total de Mão de Obra / Serviços', `R$ ${vals.servicesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        }
       }
 
       if (pdfSettings.show_discount !== false && vals.discountVal > 0) {
@@ -2378,6 +2403,21 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             <div className="flex flex-col">
                               <span className="text-sm font-bold text-white">Ocultar Serviços</span>
                               <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Não listar mão de obra</span>
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-3 cursor-pointer group bg-background-dark/50 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all">
+                            <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${proposal.separate_services_materials ? 'bg-primary border-primary' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                              {proposal.separate_services_materials && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                            </div>
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={proposal.separate_services_materials || false}
+                              onChange={e => setProposal({ ...proposal, separate_services_materials: e.target.checked })}
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-white">Serviços e materiais separados</span>
+                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Listar serviços individualmente</span>
                             </div>
                           </label>
                         </div>
