@@ -60,61 +60,48 @@ const RenewalControlView: React.FC = () => {
 
         if ((expiredManuals?.length || 0) === 0 && (expiredTasks?.length || 0) === 0) return;
 
-        // 3. Find the "Pendentes" group ID
-        // Try various strategies to find a suitable board/group
-        let groupIdToUse = null;
+        // 3. Process Manual Renewals
+        const userGroupCache: Record<string, string | null> = {};
 
-        // Strategy A: Search for the "Monitoramento" board (common for central sync)
-        const { data: boards } = await supabase.from('task_boards').select('id, name');
+        const getGroupForUser = async (targetUserId: string) => {
+            if (userGroupCache[targetUserId] !== undefined) return userGroupCache[targetUserId];
 
-        const monitorBoard = boards?.find(b =>
-            b.name.toLowerCase().includes('monitor') ||
-            b.name.toLowerCase().includes('sync') ||
-            b.name.toLowerCase().includes('central')
-        );
-
-        if (monitorBoard) {
-            const { data: group } = await supabase.from('task_groups')
-                .select('id')
-                .eq('board_id', monitorBoard.id)
-                .ilike('name', '%Pendente%')
-                .limit(1)
-                .maybeSingle();
-            if (group) groupIdToUse = group.id;
-        }
-
-        if (!groupIdToUse) {
-            // Strategy B: Search in "Quadro Geral"
-            const generalBoard = boards?.find(b => b.name.toLowerCase().includes('geral'));
-            if (generalBoard) {
-                const { data: group } = await supabase.from('task_groups')
+            // Strategy A: Find boards owned by this user
+            const { data: boards } = await supabase.from('task_boards').select('id').eq('user_id', targetUserId);
+            if (boards && boards.length > 0) {
+                const boardIds = boards.map(b => b.id);
+                const { data: groups } = await supabase.from('task_groups')
                     .select('id')
-                    .eq('board_id', generalBoard.id)
+                    .in('board_id', boardIds)
                     .ilike('name', '%Pendente%')
-                    .limit(1)
-                    .maybeSingle();
-                if (group) groupIdToUse = group.id;
+                    .limit(1);
+                if (groups && groups.length > 0) {
+                    userGroupCache[targetUserId] = groups[0].id;
+                    return groups[0].id;
+                }
             }
-        }
 
-        if (!groupIdToUse) {
-            // Strategy C: Fallback: Find ANY Pending group visible to user
-            const { data: group } = await supabase.from('task_groups').select('id').ilike('name', '%Pendente%').limit(1).maybeSingle();
-            if (group) groupIdToUse = group.id;
-        }
-
-        if (!groupIdToUse) return;
+            // Strategy B: Fallback to any "Pendentes" group
+            const { data: fallbackGroup } = await supabase.from('task_groups').select('id').ilike('name', '%Pendente%').limit(1).maybeSingle();
+            userGroupCache[targetUserId] = fallbackGroup?.id || null;
+            return userGroupCache[targetUserId];
+        };
 
         // 4. Process Manual Renewals
         for (const manual of (expiredManuals || [])) {
+            const targetUserId = manual.user_id || user.id;
+            const groupId = await getGroupForUser(targetUserId);
+
+            if (!groupId) continue;
+
             const title = `[RENOVAÇÃO] ${manual.projects?.name || manual.clients?.name || 'Cliente Avulso'}`;
             const description = `Contrato vencido em ${new Date(manual.end_date).toLocaleDateString('pt-BR')}.\nValor: R$ ${manual.value?.toLocaleString('pt-BR')}\nNotas: ${manual.notes || ''}`;
 
             const { error: insertError } = await supabase.from('tasks').insert({
                 title,
                 description,
-                group_id: groupIdToUse,
-                user_id: user.id,
+                group_id: groupId,
+                user_id: targetUserId,
                 project_id: manual.project_id,
                 status: 'PENDING',
                 priority: 'HIGH'
@@ -127,14 +114,19 @@ const RenewalControlView: React.FC = () => {
 
         // 5. Process Annual Tasks
         for (const task of (expiredTasks || [])) {
+            const targetUserId = task.user_id || user.id;
+            const groupId = await getGroupForUser(targetUserId);
+
+            if (!groupId) continue;
+
             const title = `[RENOVAÇÃO ANUAL] ${task.title}`;
             const description = `Tarefa anual vencida em ${new Date(task.expiration_date).toLocaleDateString('pt-BR')}.\nOriginal: ${task.description || ''}`;
 
             const { error: insertError } = await supabase.from('tasks').insert({
                 title,
                 description,
-                group_id: groupIdToUse,
-                user_id: user.id,
+                group_id: groupId,
+                user_id: targetUserId,
                 project_id: task.project_id,
                 status: 'PENDING',
                 priority: 'HIGH'

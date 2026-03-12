@@ -135,6 +135,22 @@ const AdminBoardsView: React.FC = () => {
         }
     };
 
+    const renameBoard = async (boardId: string, currentName: string) => {
+        const newName = prompt('Novo nome para o quadro:', currentName);
+        if (!newName || newName === currentName) return;
+
+        const { error } = await supabase
+            .from('task_boards')
+            .update({ name: newName })
+            .eq('id', boardId);
+
+        if (error) {
+            alert('Erro ao renomear quadro: ' + error.message);
+        } else {
+            setBoards(prev => prev.map(b => b.id === boardId ? { ...b, name: newName } : b));
+        }
+    };
+
     const createBoard = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newBoardName || !selectedUserId) return;
@@ -206,6 +222,13 @@ const AdminBoardsView: React.FC = () => {
                                         {board.user_email?.split('@')[0]}
                                     </div>
                                     <div className="flex gap-2">
+                                        <button
+                                            onClick={() => renameBoard(board.id, board.name)}
+                                            className="size-8 flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                                            title="Renomear Quadro"
+                                        >
+                                            <span className="material-symbols-outlined text-[20px]">edit</span>
+                                        </button>
                                         <button
                                             onClick={() => toggleVisibility(board.id, board.is_visible)}
                                             className={`size-8 flex items-center justify-center rounded-lg transition-all ${board.is_visible ? 'text-slate-500 hover:text-white hover:bg-white/10' : 'text-red-500 hover:text-red-400 bg-red-500/10'}`}
