@@ -11,6 +11,7 @@ interface ClientEntry {
     phone?: string;
     client_type?: string;
     fantasy_name?: string;
+    cnpj?: string;
 }
 
 interface ClientStats {
@@ -215,6 +216,11 @@ const ClientsView: React.FC = () => {
                                 {client.details?.fantasy_name && (
                                     <p className="text-[11px] text-primary font-bold italic mb-1 uppercase tracking-tight">
                                         {client.details.fantasy_name}
+                                    </p>
+                                )}
+                                {client.details?.cnpj && (
+                                    <p className="text-[10px] text-slate-400 italic mb-1 uppercase tracking-tight">
+                                        CNPJ/CPF: {client.details.cnpj}
                                     </p>
                                 )}
 

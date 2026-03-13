@@ -237,6 +237,63 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     setShowVisibilityModal(false);
   };
 
+  // Terms Management Handlers
+  const handleSaveTerm = async () => {
+    if (!newTermLabel.trim()) return;
+    setSavingTerm(true);
+    const table = termsModalTab === 'payment' ? 'payment_methods' : 'execution_schedules';
+
+    try {
+      if (termToEdit) {
+        const { error } = await supabase
+          .from(table)
+          .update({ label: newTermLabel })
+          .eq('id', termToEdit.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from(table)
+          .insert([{ label: newTermLabel }]);
+        if (error) throw error;
+      }
+
+      setNewTermLabel('');
+      setTermToEdit(null);
+      // Refresh lists
+      if (termsModalTab === 'payment') {
+        const { data } = await supabase.from('payment_methods').select('*').order('label');
+        if (data) setPaymentMethods(data);
+      } else {
+        const { data } = await supabase.from('execution_schedules').select('*').order('label');
+        if (data) setExecutionSchedules(data);
+      }
+    } catch (err: any) {
+      alert('Erro ao salvar: ' + err.message);
+    } finally {
+      setSavingTerm(false);
+    }
+  };
+
+  const handleDeleteTerm = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este item?')) return;
+    const table = termsModalTab === 'payment' ? 'payment_methods' : 'execution_schedules';
+    try {
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) throw error;
+
+      // Refresh lists
+      if (termsModalTab === 'payment') {
+        const { data } = await supabase.from('payment_methods').select('*').order('label');
+        if (data) setPaymentMethods(data);
+      } else {
+        const { data } = await supabase.from('execution_schedules').select('*').order('label');
+        if (data) setExecutionSchedules(data);
+      }
+    } catch (err: any) {
+      alert('Erro ao excluir: ' + err.message);
+    }
+  };
+
   const [saving, setSaving] = useState(false);
   const [budgetItems, setBudgetItems] = useState<any[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -261,12 +318,20 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+
+  // States for Terms Management
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+  const [termsModalTab, setTermsModalTab] = useState<'payment' | 'schedule'>('payment');
+  const [termToEdit, setTermToEdit] = useState<{ id: string; label: string } | null>(null);
+  const [newTermLabel, setNewTermLabel] = useState('');
+  const [savingTerm, setSavingTerm] = useState(false);
   const [modalTab, setModalTab] = useState<'product' | 'service' | 'custom'>('product');
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
   const [newItem, setNewItem] = useState({ name: '', quantity: 1, price: 0, cost_price: 0 });
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [showSearchList, setShowSearchList] = useState(false);
+  const [saveToCatalog, setSaveToCatalog] = useState(false);
   const [itemToReplace, setItemToReplace] = useState<any | null>(null);
   const [itemToEdit, setItemToEdit] = useState<any | null>(null);
   const [clientDetails, setClientDetails] = useState<any>(null);
@@ -725,9 +790,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       if (error) {
         alert('Erro ao atualizar item: ' + error.message);
       } else {
+        // If saveToCatalog is checked and it's a service/custom item, save to services_catalog
+        if (saveToCatalog && (newItemData.item_type === 'SERVICE' || modalTab === 'custom')) {
+          await supabase.from('services_catalog').insert({
+            name: newItemData.name,
+            description: newItemData.item_type === 'SERVICE' ? 'Adicionado via Proposta' : 'Item personalizado adicionado via Proposta'
+          });
+          fetchCatalogs();
+        }
+
         setBudgetItems(prev => prev.map(item => item.id === activeId ? data?.[0] : item));
         setIsAddItemModalOpen(false);
         setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0 });
+        setSaveToCatalog(false);
         setItemToReplace(null);
         setItemToEdit(null);
       }
@@ -738,9 +813,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       if (error) {
         alert('Erro ao adicionar item: ' + error.message);
       } else {
+        // If saveToCatalog is checked and it's a service/custom item, save to services_catalog
+        if (saveToCatalog && (newItemData.item_type === 'SERVICE' || modalTab === 'custom')) {
+          await supabase.from('services_catalog').insert({
+            name: newItemData.name,
+            description: newItemData.item_type === 'SERVICE' ? 'Adicionado via Proposta' : 'Item personalizado adicionado via Proposta'
+          });
+          fetchCatalogs();
+        }
+
         setBudgetItems(prev => [...prev, data?.[0]]);
         setIsAddItemModalOpen(false);
         setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0 });
+        setSaveToCatalog(false);
       }
     }
     setLoading(false);
@@ -934,6 +1019,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const clientText = project.client || 'N/A';
       const splitClient = doc.splitTextToSize(clientText, pageWidth - 40);
       doc.text(splitClient, 20, coverY);
+
+      if (clientDetails?.cnpj) {
+        coverY += (splitClient.length * 6);
+        doc.setFontSize(9);
+        doc.setTextColor(180, 180, 180);
+        doc.text(`CNPJ/CPF: ${clientDetails.cnpj}`, 20, coverY);
+      }
 
       coverY += (splitClient.length * 6);
       const projectNameText = pdfSettings.project_name_pdf || project.name;
@@ -2443,7 +2535,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       </div>
 
                       <div>
-                        <label className="text-slate-400 text-sm font-medium block mb-2">Condições de Pagamento</label>
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="text-slate-400 text-sm font-medium">Condições de Pagamento</label>
+                          <button
+                            onClick={() => {
+                              setTermsModalTab('payment');
+                              setIsTermsModalOpen(true);
+                            }}
+                            className="text-slate-500 hover:text-primary transition-colors flex items-center gap-1 text-[10px] font-bold uppercase"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">settings</span>
+                            Gerenciar
+                          </button>
+                        </div>
                         <select
                           className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
                           value={proposal.payment_conditions}
@@ -2457,7 +2561,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       </div>
                       <div className="grid grid-cols-2 gap-6">
                         <div>
-                          <label className="text-slate-400 text-sm font-medium block mb-2">Cronograma Estimado</label>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="text-slate-400 text-sm font-medium">Cronograma Estimado</label>
+                            <button
+                              onClick={() => {
+                                setTermsModalTab('schedule');
+                                setIsTermsModalOpen(true);
+                              }}
+                              className="text-slate-500 hover:text-primary transition-colors flex items-center gap-1 text-[10px] font-bold uppercase"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">settings</span>
+                              Gerenciar
+                            </button>
+                          </div>
                           <select
                             className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
                             value={proposal.execution_schedule}
@@ -2794,6 +2910,24 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                   />
                   <p className="text-[10px] text-slate-500 mt-1 italic">Este valor é usado para calcular o lucro real da proposta.</p>
                 </div>
+
+                {(modalTab === 'service' || modalTab === 'custom') && (
+                  <label className="flex items-center gap-3 p-4 bg-indigo-500/5 border border-indigo-500/20 rounded-xl cursor-pointer hover:bg-indigo-500/10 transition-all group">
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${saveToCatalog ? 'bg-indigo-600 border-indigo-600' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                      {saveToCatalog && <span className="material-symbols-outlined text-white text-[16px]">check</span>}
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="hidden"
+                      checked={saveToCatalog}
+                      onChange={e => setSaveToCatalog(e.target.checked)}
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-white uppercase tracking-wide">Salvar no catálogo de serviços?</span>
+                      <span className="text-[10px] text-slate-500">Torna este nome disponível para seleções futuras</span>
+                    </div>
+                  </label>
+                )}
               </div>
 
               <div className="flex gap-4 mt-8">
@@ -2831,6 +2965,96 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           onSelectProject(id);
         }}
       />
+
+      {/* Terms avoidance management modal */}
+      {isTermsModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl relative">
+            <button
+              onClick={() => {
+                setIsTermsModalOpen(false);
+                setTermToEdit(null);
+                setNewTermLabel('');
+              }}
+              className="absolute top-4 right-4 text-slate-500 hover:text-white"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+
+            <h3 className="text-xl font-bold text-white mb-6 uppercase tracking-wider">
+              {termsModalTab === 'payment' ? 'Gerenciar Formas de Pagamento' : 'Gerenciar Cronogramas'}
+            </h3>
+
+            <div className="space-y-6">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="flex-1 bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-primary transition-all"
+                  placeholder={termsModalTab === 'payment' ? "Ex: 50% Entrada + 50% Entrega" : "Ex: 15 dias úteis"}
+                  value={newTermLabel}
+                  onChange={e => setNewTermLabel(e.target.value)}
+                />
+                <button
+                  onClick={handleSaveTerm}
+                  disabled={!newTermLabel.trim() || savingTerm}
+                  className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50"
+                >
+                  {termToEdit ? 'Salvar' : 'Adicionar'}
+                </button>
+              </div>
+
+              <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden max-h-60 overflow-y-auto">
+                <table className="w-full text-left text-sm">
+                  <tbody className="divide-y divide-white/5">
+                    {(termsModalTab === 'payment' ? paymentMethods : executionSchedules).map((item: any) => (
+                      <tr key={item.id} className="hover:bg-white/5 transition-colors group">
+                        <td className="px-4 py-3 text-slate-200">{item.label}</td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                            <button
+                              onClick={() => {
+                                setTermToEdit(item);
+                                setNewTermLabel(item.label);
+                              }}
+                              className="p-1.5 hover:bg-white/10 rounded text-slate-400 hover:text-white"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">edit</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTerm(item.id)}
+                              className="p-1.5 hover:bg-rose-500/10 rounded text-rose-500"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">delete</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {(termsModalTab === 'payment' ? paymentMethods : executionSchedules).length === 0 && (
+                      <tr>
+                        <td className="px-4 py-8 text-center text-slate-500 italic">Nenhum item cadastrado.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <button
+                onClick={() => {
+                  setIsTermsModalOpen(false);
+                  setTermToEdit(null);
+                  setNewTermLabel('');
+                }}
+                className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-300 font-bold transition-all"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 };

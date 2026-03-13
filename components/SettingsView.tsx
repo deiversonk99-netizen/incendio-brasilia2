@@ -19,9 +19,17 @@ interface TaskBoard {
 
 const SettingsView: React.FC = () => {
     const { user, profile } = useAuth();
-    const [activeTab, setActiveTab] = useState<'users' | 'pdf'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'pdf' | 'terms'>('users');
     const [profiles, setProfiles] = useState<UserProfile[]>([]);
     const [taskBoards, setTaskBoards] = useState<TaskBoard[]>([]);
+
+    // Terms Management State
+    const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+    const [executionSchedules, setExecutionSchedules] = useState<any[]>([]);
+    const [termsTab, setTermsTab] = useState<'payment' | 'schedule'>('payment');
+    const [termToEdit, setTermToEdit] = useState<{ id: string; label: string } | null>(null);
+    const [newTermLabel, setNewTermLabel] = useState('');
+    const [savingTerm, setSavingTerm] = useState(false);
     const [pdfSettings, setPdfSettings] = useState<any>({
         validity_days: 10,
         footer_text: 'Incêndio Brasília - Gestão de Tecnologias de Segurança',
@@ -80,6 +88,13 @@ const SettingsView: React.FC = () => {
         // 2. Fetch PDF Settings
         const { data: appData } = await supabase.from('app_settings').select('*').eq('key', 'pdf_global_config').single();
         if (appData) setPdfSettings(appData.value);
+
+        // 3. Fetch Terms
+        const { data: pmData } = await supabase.from('payment_methods').select('*').order('label');
+        if (pmData) setPaymentMethods(pmData);
+
+        const { data: esData } = await supabase.from('execution_schedules').select('*').order('label');
+        if (esData) setExecutionSchedules(esData);
 
         setLoading(false);
     };
@@ -192,6 +207,54 @@ const SettingsView: React.FC = () => {
         }
     };
 
+    const handleSaveTerm = async () => {
+        if (!newTermLabel.trim()) return;
+        setSavingTerm(true);
+        const table = termsTab === 'payment' ? 'payment_methods' : 'execution_schedules';
+
+        try {
+            if (termToEdit) {
+                const { error } = await supabase
+                    .from(table)
+                    .update({ label: newTermLabel })
+                    .eq('id', termToEdit.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from(table)
+                    .insert([{ label: newTermLabel }]);
+                if (error) throw error;
+            }
+
+            setNewTermLabel('');
+            setTermToEdit(null);
+            // Refresh lists
+            const { data } = await supabase.from(table).select('*').order('label');
+            if (termsTab === 'payment') setPaymentMethods(data || []);
+            else setExecutionSchedules(data || []);
+        } catch (err: any) {
+            alert('Erro ao salvar: ' + err.message);
+        } finally {
+            setSavingTerm(false);
+        }
+    };
+
+    const handleDeleteTerm = async (id: string) => {
+        if (!confirm('Tem certeza que deseja excluir este item?')) return;
+        const table = termsTab === 'payment' ? 'payment_methods' : 'execution_schedules';
+        try {
+            const { error } = await supabase.from(table).delete().eq('id', id);
+            if (error) throw error;
+
+            // Refresh lists
+            const { data } = await supabase.from(table).select('*').order('label');
+            if (termsTab === 'payment') setPaymentMethods(data || []);
+            else setExecutionSchedules(data || []);
+        } catch (err: any) {
+            alert('Erro ao excluir: ' + err.message);
+        }
+    };
+
     return (
         <div className="flex-1 overflow-y-auto p-8 bg-background-dark">
             <div className="mx-auto max-w-5xl flex flex-col gap-8">
@@ -205,6 +268,7 @@ const SettingsView: React.FC = () => {
                     {[
                         { id: 'users', label: 'Usuários e Acessos', icon: 'group' },
                         { id: 'pdf', label: 'Configurações de PDF', icon: 'picture_as_pdf' },
+                        { id: 'terms', label: 'Termos e Condições', icon: 'gavel' },
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -365,6 +429,90 @@ const SettingsView: React.FC = () => {
                                         <span className="material-symbols-outlined text-[40px] text-slate-600 mb-2">cloud_upload</span>
                                         <p className="text-xs text-slate-500">Alterar imagem padrão do logotipo</p>
                                         <button className="mt-4 text-xs font-bold text-primary hover:underline">Selecionar Arquivo</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Terms Tab */}
+                        {activeTab === 'terms' && (
+                            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="bg-surface-dark border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+                                    <div className="flex bg-black/40 p-1 border-b border-white/5">
+                                        <button
+                                            onClick={() => {
+                                                setTermsTab('payment');
+                                                setTermToEdit(null);
+                                                setNewTermLabel('');
+                                            }}
+                                            className={`flex-1 py-3 text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all ${termsTab === 'payment' ? 'bg-primary text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                        >
+                                            Formas de Pagamento
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setTermsTab('schedule');
+                                                setTermToEdit(null);
+                                                setNewTermLabel('');
+                                            }}
+                                            className={`flex-1 py-3 text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all ${termsTab === 'schedule' ? 'bg-primary text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                        >
+                                            Cronogramas
+                                        </button>
+                                    </div>
+
+                                    <div className="p-8 space-y-8">
+                                        <div className="flex gap-4">
+                                            <div className="flex-1 relative">
+                                                <input
+                                                    type="text"
+                                                    className="w-full bg-background-dark border border-white/10 rounded-2xl px-6 py-4 text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-lg font-medium"
+                                                    placeholder={termsTab === 'payment' ? "Ex: 50% Entrada + 50% Entrega" : "Ex: 15 dias úteis"}
+                                                    value={newTermLabel}
+                                                    onChange={e => setNewTermLabel(e.target.value)}
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={handleSaveTerm}
+                                                disabled={!newTermLabel.trim() || savingTerm}
+                                                className="bg-primary hover:bg-primary-dark text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest transition-all shadow-xl shadow-primary/20 disabled:opacity-50 active:scale-95"
+                                            >
+                                                {termToEdit ? 'Salvar' : 'Adicionar'}
+                                            </button>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 gap-3">
+                                            {(termsTab === 'payment' ? paymentMethods : executionSchedules).map((item: any) => (
+                                                <div key={item.id} className="group flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl hover:bg-white/[0.06] hover:border-white/10 transition-all">
+                                                    <span className="text-white font-medium text-lg pl-2">{item.label}</span>
+                                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                                                        <button
+                                                            onClick={() => {
+                                                                setTermToEdit(item);
+                                                                setNewTermLabel(item.label);
+                                                            }}
+                                                            className="size-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl text-slate-400 hover:text-white transition-all"
+                                                            title="Editar"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[20px]">edit</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteTerm(item.id)}
+                                                            className="size-10 flex items-center justify-center bg-rose-500/5 hover:bg-rose-500/10 rounded-xl text-rose-500 transition-all"
+                                                            title="Excluir"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[20px]">delete</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {(termsTab === 'payment' ? paymentMethods : executionSchedules).length === 0 && (
+                                                <div className="py-20 text-center">
+                                                    <span className="material-symbols-outlined text-slate-800 text-6xl mb-4">inventory_2</span>
+                                                    <p className="text-slate-500 font-bold uppercase tracking-widest">Nenhum item configurado</p>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>

@@ -10,6 +10,7 @@ interface Client {
     notes?: string;
     client_type?: string;
     fantasy_name?: string;
+    cnpj?: string;
 }
 
 interface NewClientModalProps {
@@ -28,7 +29,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
         phone: '',
         notes: '',
         client_type: '',
-        fantasy_name: ''
+        fantasy_name: '',
+        cnpj: ''
     });
 
     React.useEffect(() => {
@@ -39,10 +41,11 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                 phone: client.phone || '',
                 notes: client.notes || '',
                 client_type: client.client_type || '',
-                fantasy_name: client.fantasy_name || ''
+                fantasy_name: client.fantasy_name || '',
+                cnpj: client.cnpj || ''
             });
         } else {
-            setFormData({ name: '', email: '', phone: '', notes: '', client_type: 'Condomínio', fantasy_name: '' }); // Default to Condomínio? Or empty.
+            setFormData({ name: '', email: '', phone: '', notes: '', client_type: 'Condomínio', fantasy_name: '', cnpj: '' }); // Default to Condomínio? Or empty.
         }
     }, [client, isOpen]);
 
@@ -72,7 +75,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
 
             onSuccess();
             onClose();
-            setFormData({ name: '', email: '', phone: '', notes: '', client_type: '', fantasy_name: '' });
+            setFormData({ name: '', email: '', phone: '', notes: '', client_type: '', fantasy_name: '', cnpj: '' });
         } catch (error: any) {
             console.error('Error saving client:', error);
             alert('Erro ao salvar cliente: ' + error.message);
@@ -114,6 +117,17 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                             onChange={e => setFormData({ ...formData, fantasy_name: e.target.value })}
                             className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none transition-all"
                             placeholder="Ex: Alfa Construções"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1.5 tracking-widest">CNPJ / CPF (Opcional)</label>
+                        <input
+                            type="text"
+                            value={formData.cnpj}
+                            onChange={e => setFormData({ ...formData, cnpj: e.target.value })}
+                            className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none transition-all"
+                            placeholder="00.000.000/0000-00"
                         />
                     </div>
 
