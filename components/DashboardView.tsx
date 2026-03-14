@@ -23,6 +23,8 @@ export interface StatusColumn {
   shadow_class: string;
   order_index: number;
   project_types?: string[];
+  allowed_labels?: string[];
+  allowed_clients?: string[];
 }
 
 interface DashboardViewProps {
@@ -56,7 +58,16 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [labelDefinitions, setLabelDefinitions] = useState<{ color: string, label: string }[]>([]);
   const [showLabelSettings, setShowLabelSettings] = useState(false);
   const [editingLabels, setEditingLabels] = useState<{ color: string, label: string }[]>([]);
-  const { user } = useAuth();
+  
+  // Task Assignment States
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [projectForTask, setProjectForTask] = useState<Project | null>(null);
+  const [isColorModalOpen, setIsColorModalOpen] = useState(false);
+  const [projectForColor, setProjectForColor] = useState<Project | null>(null);
+  const [allProfiles, setAllProfiles] = useState<any[]>([]);
+  const [selectedAssignee, setSelectedAssignee] = useState<string>('');
+  
+  const { user, profile } = useAuth();
 
   const highlightText = (text: string, highlight: string) => {
     if (!highlight.trim()) return <span>{text}</span>;
@@ -125,13 +136,16 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       setProjectsWithCalculatedItems(new Set(itemsData.map(i => i.project_id)));
     }
 
-    // 6. Label Definitions
-    if (user) {
-      const { data: labelData } = await supabase.from('project_label_definitions').select('*').eq('user_id', user.id);
+    // 6. Label Definitions (Global/Admin-based)
+    // We fetch from the 'contato@incendiobrasilia.com.br' or first admin to act as global central legend
+    const { data: adminProfile } = await supabase.from('user_profiles').select('id').eq('role', 'ADMIN').limit(1).single();
+    
+    if (adminProfile) {
+      const { data: labelData } = await supabase.from('project_label_definitions').select('*').eq('user_id', adminProfile.id);
       if (labelData && labelData.length > 0) {
         setLabelDefinitions(labelData);
       } else {
-        // Default definitions if none exist
+        // Default definitions
         setLabelDefinitions([
           { color: 'bg-red-500', label: 'Crítico' },
           { color: 'bg-orange-500', label: 'Urgente' },
@@ -142,6 +156,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
         ]);
       }
     }
+
+    // Fetch all profiles for task assignment
+    const { data: profilesData } = await supabase.from('user_profiles').select('id, email, role');
+    if (profilesData) setAllProfiles(profilesData);
 
     // 7. Fetch Quick Tasks (group_id IS NULL)
     if (user) {
@@ -308,19 +326,70 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     if (!user) return;
 
     try {
-      // Delete existing definitions
-      await supabase.from('project_label_definitions').delete().eq('user_id', user.id);
+      // Find the admin representing global settings
+      const { data: adminProfile } = await supabase.from('user_profiles').select('id').eq('role', 'ADMIN').limit(1).single();
+      const targetUserId = adminProfile ? adminProfile.id : user.id;
+
+      // Delete existing definitions for target
+      await supabase.from('project_label_definitions').delete().eq('user_id', targetUserId);
 
       // Insert new definitions
-      const inserts = editingLabels.map(d => ({ ...d, user_id: user.id }));
+      const inserts = editingLabels.map(d => ({ ...d, user_id: targetUserId }));
       await supabase.from('project_label_definitions').insert(inserts);
 
       setLabelDefinitions(editingLabels);
       setShowLabelSettings(false);
-      alert('Configurações de sinalização salvas com sucesso!');
+      alert('Configurações de sinalização salvas globalmente!');
     } catch (error: any) {
       console.error('Error saving label definitions:', error);
       alert('Erro ao salvar configurações: ' + error.message);
+    }
+  };
+
+  const handleCreateTaskForUser = async () => {
+    if (!projectForTask || !selectedAssignee) return;
+
+    try {
+      // Find the "Pendentes" group ID for the selected user.
+      const { data: group } = await supabase
+        .from('task_groups')
+        .select('id')
+        .eq('user_id', selectedAssignee)
+        .ilike('name', '%Pendentes%')
+        .limit(1)
+        .single();
+
+      let targetGroupId = group?.id;
+
+      // Fallback: If no "Pendentes" group, look for ANY group of that user, or just no group
+      if (!targetGroupId) {
+        const { data: anyGroup } = await supabase
+          .from('task_groups')
+          .select('id')
+          .eq('user_id', selectedAssignee)
+          .limit(1)
+          .single();
+        targetGroupId = anyGroup?.id;
+      }
+
+      const { error } = await supabase.from('tasks').insert({
+        title: `Projeto: ${projectForTask.name}`,
+        description: `Cliente: ${projectForTask.client}\nValor: R$ ${projectForTask.value}\nGerado a partir do Dashboard.`,
+        group_id: targetGroupId,
+        user_id: selectedAssignee,
+        project_id: projectForTask.id,
+        status: 'PENDING'
+      });
+
+      if (error) throw error;
+
+      alert('Tarefa criada com sucesso para o usuário!');
+      setIsTaskModalOpen(false);
+      setProjectForTask(null);
+      setSelectedAssignee('');
+    } catch (error: any) {
+      console.error('Error creating task:', error);
+      alert('Erro ao criar tarefa: ' + error.message);
     }
   };
 
@@ -476,7 +545,18 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
           {/* Kanban Board */}
           <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 px-1 gap-4">
-              <h3 className="text-lg font-bold text-white">Gestão de Projetos</h3>
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-bold text-white">Gestão de Projetos</h3>
+                {/* Horizontal Legend */}
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {labelDefinitions.map(def => (
+                    <div key={def.color} className="flex items-center gap-1.5">
+                      <div className={`size-2 rounded-full ${def.color} shadow-sm`}></div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{def.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                 <div className="relative flex-1 min-w-[200px] md:max-w-[300px]">
@@ -518,12 +598,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                     <select
                       value={filterType}
                       onChange={(e) => setFilterType(e.target.value)}
-                      className="appearance-none bg-surface-dark border border-white/10 rounded-xl py-2 pl-4 pr-10 text-sm text-white focus:border-primary outline-none transition-all cursor-pointer min-w-[140px]"
+                      className="appearance-none bg-[#1a1315] border border-white/10 rounded-xl py-2 pl-4 pr-10 text-sm text-white focus:border-primary outline-none transition-all cursor-pointer min-w-[140px]"
                     >
-                      <option value="ALL">Todos os Tipos</option>
-                      <option value="business">Comercial</option>
-                      <option value="factory">Industrial</option>
-                      <option value="residential">Residencial</option>
+                      <option value="ALL" className="bg-[#1a1315] text-white">Todos os Tipos</option>
+                      <option value="business" className="bg-[#1a1315] text-white">Comercial</option>
+                      <option value="factory" className="bg-[#1a1315] text-white">Industrial</option>
+                      <option value="residential" className="bg-[#1a1315] text-white">Residencial</option>
                     </select>
                     <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-[18px]">expand_more</span>
                   </div>
@@ -532,11 +612,11 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                     <select
                       value={filterClient}
                       onChange={(e) => setFilterClient(e.target.value)}
-                      className="appearance-none bg-surface-dark border border-white/10 rounded-xl py-2 pl-4 pr-10 text-sm text-white focus:border-primary outline-none transition-all cursor-pointer max-w-[200px]"
+                      className="appearance-none bg-[#1a1315] border border-white/10 rounded-xl py-2 pl-4 pr-10 text-sm text-white focus:border-primary outline-none transition-all cursor-pointer max-w-[200px]"
                     >
-                      <option value="ALL">Todos os Clientes</option>
+                      <option value="ALL" className="bg-[#1a1315] text-white">Todos os Clientes</option>
                       {uniqueClients.map(client => (
-                        <option key={client} value={client}>{client}</option>
+                        <option key={client} value={client} className="bg-[#1a1315] text-white">{client}</option>
                       ))}
                     </select>
                     <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-[18px]">expand_more</span>
@@ -580,10 +660,20 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                         {projects.filter(p => {
                           const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
                           if (!matchesView) return false;
-                          // If status view, also check project_types filter
-                          if (viewMode === 'STATUS' && col.project_types && col.project_types.length > 0) {
-                            return col.project_types.includes(p.type);
+                          if (viewMode === 'STATUS' && col.project_types) {
+                            if (!col.project_types.includes(p.type)) return false;
                           }
+                          
+                          // Label Filter
+                          if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
+                            if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
+                          }
+
+                          // Client Filter
+                          if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
+                            if (!col.allowed_clients.includes(p.client)) return false;
+                          }
+
                           return true;
                         }).length}
                       </span>
@@ -598,10 +688,19 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                         .filter(p => {
                           const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
                           if (!matchesView) return false;
-                          // If status view, also check project_types filter
-                          if (viewMode === 'STATUS' && col.project_types && col.project_types.length > 0) {
-                            return col.project_types.includes(p.type);
-                          }
+                        if (viewMode === 'STATUS' && col.project_types) {
+                          if (!col.project_types.includes(p.type)) return false;
+                        }
+
+                        // Label Filter
+                        if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
+                          if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
+                        }
+
+                        // Client Filter
+                        if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
+                          if (!col.allowed_clients.includes(p.client)) return false;
+                        }
                           return true;
                         })
                         .filter(p => {
@@ -638,7 +737,17 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                           <div
                             key={proj.id}
                             onClick={() => handleProjectClick(proj)}
-                            className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative"
+                            className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative overflow-hidden flex flex-col min-h-[170px]"
+                            style={{
+                              backgroundColor: proj.label_color && proj.label_color !== 'transparent' 
+                                ? `rgba(${proj.label_color.includes('red') ? '239, 68, 68' : 
+                                   proj.label_color.includes('orange') ? '249, 115, 22' :
+                                   proj.label_color.includes('yellow') ? '234, 179, 8' :
+                                   proj.label_color.includes('green') ? '34, 197, 94' :
+                                   proj.label_color.includes('blue') ? '59, 130, 246' :
+                                   proj.label_color.includes('purple') ? '168, 85, 247' : '0, 0, 0'}, 0.08)` 
+                                : undefined
+                            }}
                           >
                             {/* Color Label Indicator */}
                             {proj.label_color && proj.label_color !== 'transparent' && (
@@ -649,78 +758,75 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                             )}
 
                             <div className="flex justify-between items-start mb-2">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
                                 {proj.project_number && (
-                                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-primary text-white border border-primary/20">
+                                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary text-white border border-primary/20 leading-none">
                                     PR{String(proj.project_number).padStart(3, '0')}
                                   </span>
                                 )}
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/5 text-slate-500 border border-white/5 leading-none uppercase tracking-wider">
                                   {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
                                 </span>
                               </div>
 
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
-                                {/* Send to Pending Button (New Feature) */}
+                                {/* Send to Pending Button */}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleSendToPending(proj);
+                                    setProjectForTask(proj);
+                                    setIsTaskModalOpen(true);
                                   }}
-                                  className="size-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
-                                  title="Enviar para Pendentes (Tarefas)"
+                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 hover:text-indigo-300 transition-all border border-indigo-500/30"
+                                  title="Transformar em Tarefa"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">move_to_inbox</span>
+                                  <span className="material-symbols-outlined text-[14px]">assignment_turned_in</span>
+                                  <span className="text-[9px] font-black uppercase tracking-tight">Tarefa</span>
                                 </button>
 
-                                {/* Inline Color Label Selector */}
-                                <div className="flex items-center gap-1.5 bg-surface-dark border border-white/10 rounded-lg p-1.5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUpdateProjectColor(proj.id, 'transparent');
-                                    }}
-                                    className={`size-3.5 rounded-full border border-white/20 transition-all hover:scale-125 ${proj.label_color === 'transparent' || !proj.label_color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-40 hover:opacity-100'}`}
-                                    title="Remover Sinalização"
-                                  ></button>
-                                  {labelDefinitions.map(def => (
-                                    <button
-                                      key={def.color}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateProjectColor(proj.id, def.color);
-                                      }}
-                                      className={`size-3.5 rounded-full ${def.color} transition-all hover:scale-125 ${proj.label_color === def.color ? 'ring-2 ring-white scale-110 opacity-100' : 'opacity-40 hover:opacity-100'}`}
-                                      title={def.label}
-                                    ></button>
-                                  ))}
-                                </div>
+                                {/* Color Label Button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setProjectForColor(proj);
+                                    setIsColorModalOpen(true);
+                                  }}
+                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-white/10"
+                                  title="Sinalizar Projeto"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">palette</span>
+                                  <span className="text-[9px] font-black uppercase tracking-tight">Sinal</span>
+                                </button>
                               </div>
                             </div>
-                            <h4 className="text-white font-bold text-base mb-1 truncate flex items-center gap-2">
-                              {highlightText(proj.name, searchTerm)}
-                              {proj.internal_observations && (
-                                <span className="material-symbols-outlined text-amber-500 text-[16px]" title="Dica: Possui observações internas">info</span>
-                              )}
-                            </h4>
-                            {proj.internal_observations && (
-                              <p className="text-[10px] text-amber-500/80 italic mb-2 line-clamp-1 border-l border-amber-500/30 pl-2">
-                                {proj.internal_observations}
+
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-white font-bold text-sm mb-0.5 mt-1 truncate flex items-center gap-2">
+                                {highlightText(proj.name, searchTerm)}
+                                {proj.internal_observations && (
+                                  <span className="material-symbols-outlined text-amber-500 text-[14px]" title="Dica: Possui observações internas">info</span>
+                                )}
+                              </h4>
+                              
+                              <p className="text-[9px] text-amber-500/90 italic mb-1 line-clamp-1 border-l border-amber-500/30 pl-2 leading-tight h-3 overflow-hidden">
+                                {proj.internal_observations || ""}
                               </p>
-                            )}
-                            <div className="flex items-center gap-1.5 mb-3">
-                              <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
-                              <p className="text-text-muted text-xs font-medium truncate">
-                                {highlightText(proj.client, searchTerm)}
-                              </p>
+
+                              <div className="flex items-center gap-1.5 mb-2 h-4">
+                                <span className="material-symbols-outlined text-slate-500 text-[14px]">apartment</span>
+                                <p className="text-slate-400 text-[11px] font-medium truncate">
+                                  {highlightText(proj.client, searchTerm)}
+                                </p>
+                              </div>
                             </div>
-                            <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
-                            <div className="flex justify-between items-center">
+
+                            <div className="h-px bg-white/5 w-full mb-2"></div>
+                            <div className="flex justify-between items-center mt-auto">
                               <div className="text-right w-full flex justify-between items-center">
                                 <div className="text-left">
-                                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">Valor Global</p>
-                                  <p className="text-white text-sm font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                  <p className="text-text-muted text-[10px]">Vence em {proj.deadline}</p>
+                                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-0">Valor Global</p>
+                                  <p className="text-white text-[13px] font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-slate-500 text-[9px] uppercase font-bold tracking-tight">Vence em {proj.deadline}</p>
                                 </div>
                                 {projectsWithProposals.has(proj.id) && (
                                   <button
@@ -729,10 +835,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                                       onSelectProject(proj.id);
                                       onViewChange(AppView.ENGINEERING_PHASE_C);
                                     }}
-                                    className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-lg border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[10px] font-black uppercase"
+                                    className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[9px] font-black uppercase"
                                     title="Ir para a Proposta"
                                   >
-                                    <span className="material-symbols-outlined text-[16px]">description</span>
+                                    <span className="material-symbols-outlined text-[14px]">description</span>
                                     Proposta
                                   </button>
                                 )}
@@ -744,17 +850,38 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                     {!loading && projects.filter(p => {
                       const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
                       if (!matchesView) return false;
-                      if (viewMode === 'STATUS' && col.project_types && col.project_types.length > 0) {
-                        return col.project_types.includes(p.type);
+                      if (viewMode === 'STATUS' && col.project_types) {
+                        if (!col.project_types.includes(p.type)) return false;
+                      }
+
+                      // Label Filter
+                      if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
+                        if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
+                      }
+
+                      // Client Filter
+                      if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
+                        if (!col.allowed_clients.includes(p.client)) return false;
                       }
                       return true;
                     }).length > 0 &&
                       projects.filter(p => {
                         const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
                         if (!matchesView) return false;
-                        if (viewMode === 'STATUS' && col.project_types && col.project_types.length > 0) {
-                          return col.project_types.includes(p.type);
+                        if (viewMode === 'STATUS' && col.project_types) {
+                          if (!col.project_types.includes(p.type)) return false;
                         }
+
+                        // Label Filter
+                        if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
+                          if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
+                        }
+
+                        // Client Filter
+                        if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
+                          if (!col.allowed_clients.includes(p.client)) return false;
+                        }
+
                         return true;
                       }).filter(p => {
                         if (filterType !== 'ALL' && p.type !== filterType) return false;
@@ -892,7 +1019,127 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
             setStatusColumns(newCols);
             fetchData();
           }}
+          availableLabels={labelDefinitions}
+          availableClients={Array.from(new Set(projects.map(p => p.client))).filter(Boolean).sort()}
         />
+      )}
+
+      {/* Task Assignment Modal */}
+      {isTaskModalOpen && projectForTask && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
+                  <span className="material-symbols-outlined text-indigo-500 text-[24px]">assignment_add</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white uppercase tracking-tight">Delegar Tarefa</h3>
+                  <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{projectForTask.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsTaskModalOpen(false)}
+                className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4 mb-8">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Selecionar Usuário / Quadro</label>
+                <select
+                  value={selectedAssignee}
+                  onChange={(e) => setSelectedAssignee(e.target.value)}
+                  className="w-full bg-[#1a1315] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-all cursor-pointer"
+                >
+                  <option value="" className="bg-[#1a1315] text-white">Escolha um usuário...</option>
+                  {allProfiles.map(p => (
+                    <option key={p.id} value={p.id} className="bg-[#1a1315] text-white">
+                      {p.email} ({p.role})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-500 mt-2 italic">* A tarefa será enviada para a coluna "Pendentes" do usuário selecionado.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setIsTaskModalOpen(false)}
+                className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-slate-400 hover:text-white transition-all uppercase"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCreateTaskForUser}
+                disabled={!selectedAssignee}
+                className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-bold text-white transition-all shadow-lg shadow-indigo-900/20 uppercase"
+              >
+                Criar Tarefa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Color Selection Modal */}
+      {isColorModalOpen && projectForColor && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                  <span className="material-symbols-outlined text-primary text-[24px]">palette</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white uppercase tracking-tight">Sinalização</h3>
+                  <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{projectForColor.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsColorModalOpen(false)}
+                className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-8">
+              <button
+                onClick={() => {
+                  handleUpdateProjectColor(projectForColor.id, 'transparent');
+                  setIsColorModalOpen(false);
+                }}
+                className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${!projectForColor.label_color || projectForColor.label_color === 'transparent' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/5 text-slate-500 hover:bg-white/10'}`}
+              >
+                <div className="size-4 rounded-full border border-white/20"></div>
+                <span className="text-[11px] font-bold uppercase tracking-wider">Nenhuma</span>
+              </button>
+              {labelDefinitions.map(def => (
+                <button
+                  key={def.color}
+                  onClick={() => {
+                    handleUpdateProjectColor(projectForColor.id, def.color);
+                    setIsColorModalOpen(false);
+                  }}
+                  className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${projectForColor.label_color === def.color ? 'bg-white/10 border-white/30 text-white shadow-lg' : 'bg-white/5 border-white/5 text-slate-500 hover:bg-white/10'}`}
+                >
+                  <div className={`size-4 rounded-full ${def.color} shadow-sm`}></div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider truncate">{def.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setIsColorModalOpen(false)}
+              className="w-full px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-slate-400 hover:text-white transition-all uppercase"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
       )}
     </>
   );
