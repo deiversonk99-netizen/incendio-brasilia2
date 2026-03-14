@@ -495,6 +495,17 @@ const ServiceModelsView: React.FC = () => {
                                                 </tr>
                                             )}
                                         </tbody>
+                                        {formData.name.toLowerCase().includes('placa') && formData.items.length > 0 && (
+                                            <tfoot className="bg-emerald-500/5 border-t border-white/10">
+                                                <tr className="font-bold text-white">
+                                                    <td className="px-6 py-4 text-emerald-400">TOTAL DE COMPONENTES</td>
+                                                    <td className="px-6 py-4 text-center text-emerald-400 font-mono text-lg">
+                                                        {formData.items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('pt-BR')}
+                                                    </td>
+                                                    <td colSpan={3}></td>
+                                                </tr>
+                                            </tfoot>
+                                        )}
                                     </table>
                                 </div>
                             </div>
