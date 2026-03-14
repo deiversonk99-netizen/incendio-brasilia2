@@ -311,7 +311,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     cost_material_base: 0,
     hide_services_pdf: false,
     hide_products_pdf: false,
-    separate_services_materials: false
+    separate_services_materials: false,
+    proposal_date: new Date().toISOString().split('T')[0]
   });
 
   // Modal State
@@ -556,10 +557,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       setProposal({
         ...existingProposal,
         cost_material_base: totalCost, // Always refresh cost base from items
-        hide_services_pdf: existingProposal.hide_services_pdf ?? false,
         hide_products_pdf: existingProposal.hide_products_pdf ?? false,
         separate_services_materials: existingProposal.separate_services_materials ?? false,
-        proposal_number: existingProposal.proposal_number // Load number
+        proposal_number: existingProposal.proposal_number,
+        proposal_date: existingProposal.proposal_date || new Date().toISOString().split('T')[0]
       });
     } else {
       setProposal(prev => ({
@@ -949,7 +950,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         let headerY = 52;
         const currentProjNum = project.project_number || proposal.proposal_number;
         const prNumber = currentProjNum ? `PR${String(currentProjNum).padStart(3, '0')}` : '';
-        const numberText = currentProjNum ? `Nº ${currentProjNum}/${new Date().getFullYear()}` : '';
+        const propYear = proposal.proposal_date && proposal.proposal_date.includes('-')
+          ? proposal.proposal_date.split('-')[0]
+          : new Date().getFullYear();
+        const numberText = currentProjNum ? `Nº ${currentProjNum}/${propYear}` : '';
 
         if (numberText) {
           doc.text(numberText, pageWidth - 20, headerY, { align: 'right' });
@@ -989,7 +993,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       let coverNumY = 130;
       const currentProjNumCover = project.project_number || proposal.proposal_number;
       const prNumberCover = currentProjNumCover ? `PR${String(currentProjNumCover).padStart(3, '0')}` : '';
-      const coverNumText = currentProjNumCover ? `Nº ${currentProjNumCover}/${new Date().getFullYear()}` : '';
+      const coverPropYear = proposal.proposal_date && proposal.proposal_date.includes('-')
+        ? proposal.proposal_date.split('-')[0]
+        : new Date().getFullYear();
+      const coverNumText = currentProjNumCover ? `Nº ${currentProjNumCover}/${coverPropYear}` : '';
 
       if (coverNumText) {
         doc.setFontSize(18);
@@ -1033,7 +1040,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.text(splitProject, 20, coverY);
 
       doc.setFontSize(10);
-      doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 20, pageHeight - 20);
+      const displayDate = proposal.proposal_date 
+        ? new Date(proposal.proposal_date + 'T12:00:00').toLocaleDateString('pt-BR')
+        : new Date().toLocaleDateString('pt-BR');
+      doc.text(`Data: ${displayDate}`, 20, pageHeight - 20);
       doc.text(`Validade: ${proposal.validity_days || 10} dias`, pageWidth - 20, pageHeight - 20, { align: 'right' });
 
       // --- PAGE 2: SCOPE & OBJECTIVE (Dynamic) ---
@@ -2598,6 +2608,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                               setProposal({ ...proposal, validity_days: val });
                               savePdfSettings({ ...pdfSettings, validade: e.target.value });
                             }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-400 text-sm font-medium block mb-2">Data da Proposta</label>
+                          <input
+                            type="date"
+                            className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
+                            value={proposal.proposal_date || ''}
+                            onChange={e => setProposal({ ...proposal, proposal_date: e.target.value })}
                           />
                         </div>
                       </div>

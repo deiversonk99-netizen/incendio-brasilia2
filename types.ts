@@ -125,6 +125,7 @@ export interface Proposal {
   status: 'DRAFT' | 'SENT' | 'APPROVED';
   created_at?: string;
   proposal_number?: number;
+  proposal_date?: string;
 }
 
 export interface BudgetItem {

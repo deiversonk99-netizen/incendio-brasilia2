@@ -5,10 +5,12 @@ import PageHeader from './PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 
 const ProductsView: React.FC = () => {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+
+    const hasPriceAccess = profile?.role === 'ADMIN' || profile?.role === 'MANAGER';
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [selectedProductForDetails, setSelectedProductForDetails] = useState<Product | null>(null);
@@ -966,8 +968,12 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                         <th className="px-6 py-4">Categoria</th>
                                         <th className="px-6 py-4">Fornecedor</th>
                                         <th className="px-6 py-4 text-center">Unidade</th>
-                                        <th className="px-6 py-4 text-right">Preço Unit.</th>
-                                        <th className="px-6 py-4 text-right">Preço Custo</th>
+                                        {hasPriceAccess && (
+                                            <>
+                                                <th className="px-6 py-4 text-right">Preço Unit.</th>
+                                                <th className="px-6 py-4 text-right">Preço Custo</th>
+                                            </>
+                                        )}
                                         <th className="px-6 py-4">Cadastro</th>
                                         <th className="px-6 py-4">Localização (Depósito)</th>
                                         <th className="px-6 py-4">Observação</th>
@@ -1043,12 +1049,16 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                     {suppliers.find(s => s.id === product.supplier_id)?.name || '-'}
                                                 </td>
                                                 <td className="px-6 py-4 text-center text-slate-400">{product.unit || 'un'}</td>
-                                                <td className="px-6 py-4 text-right font-medium text-emerald-400">
-                                                    R$ {product.price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </td>
-                                                <td className="px-6 py-4 text-right font-medium text-slate-400">
-                                                    R$ {Number(product.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </td>
+                                                {hasPriceAccess && (
+                                                    <>
+                                                        <td className="px-6 py-4 text-right font-medium text-emerald-400">
+                                                            R$ {product.price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        </td>
+                                                        <td className="px-6 py-4 text-right font-medium text-slate-400">
+                                                            R$ {Number(product.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        </td>
+                                                    </>
+                                                )}
                                                 <td className="px-6 py-4 text-slate-400 text-sm">
                                                     {product.registration_date ? new Date(product.registration_date).toLocaleDateString('pt-BR') : '-'}
                                                 </td>
@@ -1170,31 +1180,33 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Preço Venda (R$)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        required
-                                        className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
-                                        value={formData.price}
-                                        onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
-                                    />
+                            {hasPriceAccess && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-400 mb-1">Preço Venda (R$)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            required
+                                            className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
+                                            value={formData.price}
+                                            onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-400 mb-1">Preço Custo (R$)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
+                                            value={formData.cost_price}
+                                            onChange={e => setFormData({ ...formData, cost_price: parseFloat(e.target.value) })}
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Preço Custo (R$)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
-                                        value={formData.cost_price}
-                                        onChange={e => setFormData({ ...formData, cost_price: parseFloat(e.target.value) })}
-                                    />
-                                </div>
-                            </div>
+                            )}
 
                             <div className="flex items-center gap-3 bg-white/5 p-3 rounded-lg border border-white/10">
                                 <input
@@ -1277,10 +1289,12 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                         )}
                                     </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-[10px] text-slate-500 uppercase font-black mb-1">Preço Sugerido</p>
-                                    <p className="text-2xl font-black text-emerald-400">R$ {selectedProductForDetails.price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                </div>
+                                {hasPriceAccess && (
+                                    <div className="text-right">
+                                        <p className="text-[10px] text-slate-500 uppercase font-black mb-1">Preço Sugerido</p>
+                                        <p className="text-2xl font-black text-emerald-400">R$ {selectedProductForDetails.price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Stock Management Section */}

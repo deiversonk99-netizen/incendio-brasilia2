@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import PageHeader from './PageHeader';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { Product } from '../types';
 
 interface SignageItem extends Product {}
@@ -74,6 +74,11 @@ const InventoryView: React.FC = () => {
     // Smart Search State
     const [itemSearchTerm, setItemSearchTerm] = useState('');
     const [showSearchList, setShowSearchList] = useState(false);
+
+    // Calendar State
+    const [showCalendar, setShowCalendar] = useState(false);
+    const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+    const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
 
     useEffect(() => {
         fetchData();
@@ -203,6 +208,27 @@ const InventoryView: React.FC = () => {
             setEditingPlate(null);
             fetchData();
             alert('Placa atualizada com sucesso!');
+        }
+        setLoading(false);
+    };
+
+    const handleDeletePlate = async (plate: any) => {
+        if (!confirm(`Tem certeza que deseja excluir a placa "${plate.name}"? Esta ação não pode ser desfeita.`)) return;
+
+        setLoading(true);
+        try {
+            // Delete related stock movements first
+            await supabase.from('product_stock').delete().eq('product_id', plate.id);
+            // Delete related order items
+            await supabase.from('signage_order_items').delete().eq('signage_id', plate.id);
+            // Delete the plate
+            const { error } = await supabase.from('product_catalog').delete().eq('id', plate.id);
+            if (error) throw error;
+
+            fetchData();
+            alert('Placa excluída com sucesso!');
+        } catch (e: any) {
+            alert('Erro ao excluir placa: ' + e.message);
         }
         setLoading(false);
     };
@@ -409,20 +435,78 @@ const InventoryView: React.FC = () => {
         doc.text(`Previsão de Entrega: ${order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('pt-BR') : 'N/A'}`, 20, 82);
         doc.text(`Status: ${order.status === 'COMPLETED' ? 'Concluído' : order.status === 'PARTIAL' ? 'Parcial' : 'Pendente'}`, 20, 88);
 
-        // Table
+        // Calculate total quantity
+        const totalQuantity = order.items.reduce((sum: number, item: OrderItem) => sum + item.quantity, 0);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Total de Placas: ${totalQuantity}`, 20, 94);
+        doc.setFont('helvetica', 'normal');
+
+        // Collect image data for each row
+        const imageDataMap: { [row: number]: string } = {};
+        order.items.forEach((item: OrderItem, idx: number) => {
+            if (item.signage?.image) {
+                imageDataMap[idx] = item.signage.image;
+            }
+        });
+
+        // Table data: placeholder for image column, then name, quantity, status
         const tableData = order.items.map((item: OrderItem) => [
+            '', // Image placeholder
             item.signage?.name || 'N/A',
             item.quantity,
             item.status === 'RECEIVED' ? `Recebido (${item.received_quantity})` : 'Pendente'
         ]);
 
-        (doc as any).autoTable({
-            startY: 95,
-            head: [['Descrição da Placa', 'Quantidade', 'Status']],
+        // Add total row
+        tableData.push([
+            '',
+            'TOTAL',
+            totalQuantity,
+            ''
+        ]);
+
+        autoTable(doc, {
+            startY: 100,
+            head: [['Imagem', 'Descrição da Placa', 'Quantidade', 'Status']],
             body: tableData,
             headStyles: { fillColor: [0, 0, 0], textColor: [255, 255, 255], fontStyle: 'bold' },
             alternateRowStyles: { fillColor: [245, 245, 245] },
-            margin: { left: 20, right: 20 }
+            columnStyles: {
+                0: { cellWidth: 22, halign: 'center' as const },
+                1: { cellWidth: 'auto' as const },
+                2: { cellWidth: 30, halign: 'center' as const },
+                3: { cellWidth: 40, halign: 'center' as const }
+            },
+            styles: {
+                minCellHeight: 20,
+                valign: 'middle' as const
+            },
+            margin: { left: 20, right: 20 },
+            didDrawCell: (data: any) => {
+                // Draw thumbnail images in the first column (body rows only, not header or total row)
+                if (data.section === 'body' && data.column.index === 0 && imageDataMap[data.row.index]) {
+                    try {
+                        const imgData = imageDataMap[data.row.index];
+                        const imgSize = 14;
+                        const x = data.cell.x + (data.cell.width - imgSize) / 2;
+                        const y = data.cell.y + (data.cell.height - imgSize) / 2;
+                        doc.addImage(imgData, 'PNG', x, y, imgSize, imgSize);
+                    } catch (e) {
+                        // If image fails to load, just skip it
+                    }
+                }
+                // Style total row
+                if (data.section === 'body' && data.row.index === order.items.length) {
+                    doc.setFont('helvetica', 'bold');
+                }
+            },
+            didParseCell: (data: any) => {
+                // Style total row cells
+                if (data.section === 'body' && data.row.index === order.items.length) {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [220, 220, 220];
+                }
+            }
         });
 
         doc.save(`Pedido_Placas_${order.supplier.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
@@ -529,6 +613,9 @@ const InventoryView: React.FC = () => {
                                             <button onClick={() => handleEditPlate(item)} className="p-1 px-2 text-slate-400 hover:text-primary transition-colors hover:bg-white/5 rounded" title="Editar Placa">
                                                 <span className="material-symbols-outlined text-[18px]">edit</span>
                                             </button>
+                                            <button onClick={() => handleDeletePlate(item)} className="p-1 px-2 text-slate-400 hover:text-red-400 transition-colors hover:bg-red-500/5 rounded" title="Excluir Placa">
+                                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                            </button>
                                             <div className="w-[1px] h-4 bg-white/10 self-center mx-1"></div>
                                             <button onClick={() => openStockModal(item, 'IN')} className="px-2 py-1 bg-green-600 hover:bg-green-700 rounded text-xs">Entrada</button>
                                             <button onClick={() => openStockModal(item, 'OUT')} className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs">Saída</button>
@@ -564,6 +651,10 @@ const InventoryView: React.FC = () => {
                                                     <div className="font-bold text-white">{order.supplier}</div>
                                                     <div className="text-xs text-slate-400">Entrega: {order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('pt-BR') : 'N/A'}</div>
                                                 </div>
+                                                <span className="px-2.5 py-1 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[14px]">inventory_2</span>
+                                                    {order.items.reduce((sum: number, item: OrderItem) => sum + item.quantity, 0)} placas
+                                                </span>
                                             </div>
                                             <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
                                                 <button onClick={() => handleEditOrder(order)} className="p-1 text-slate-400 hover:text-blue-400 transition-colors">
@@ -765,14 +856,157 @@ const InventoryView: React.FC = () => {
                                     onChange={e => setNewOrder({ ...newOrder, supplier: e.target.value })}
                                 />
                             </div>
-                            <div>
+                            <div className="relative">
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Previsão de Entrega</label>
-                                <input
-                                    type="date"
-                                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-primary"
-                                    value={newOrder.delivery_date}
-                                    onChange={e => setNewOrder({ ...newOrder, delivery_date: e.target.value })}
-                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!showCalendar) {
+                                            // Initialize calendar to selected date or today
+                                            if (newOrder.delivery_date) {
+                                                const d = new Date(newOrder.delivery_date + 'T12:00:00');
+                                                setCalendarMonth(d.getMonth());
+                                                setCalendarYear(d.getFullYear());
+                                            } else {
+                                                setCalendarMonth(new Date().getMonth());
+                                                setCalendarYear(new Date().getFullYear());
+                                            }
+                                        }
+                                        setShowCalendar(!showCalendar);
+                                    }}
+                                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-left outline-none focus:border-primary transition-all flex items-center justify-between hover:border-white/20"
+                                >
+                                    <span className={newOrder.delivery_date ? 'text-white' : 'text-slate-500'}>
+                                        {newOrder.delivery_date
+                                            ? new Date(newOrder.delivery_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+                                            : 'Selecionar data...'}
+                                    </span>
+                                    <span className="material-symbols-outlined text-slate-400 text-[20px]">calendar_month</span>
+                                </button>
+
+                                {showCalendar && (
+                                    <div className="absolute z-[70] top-full mt-2 right-0 bg-[#1E1E2A] border border-white/10 rounded-2xl shadow-2xl p-4 w-[320px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                        {/* Month/Year Navigation */}
+                                        <div className="flex items-center justify-between mb-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(calendarYear - 1); }
+                                                    else setCalendarMonth(calendarMonth - 1);
+                                                }}
+                                                className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+                                            </button>
+                                            <span className="text-sm font-bold text-white capitalize">
+                                                {new Date(calendarYear, calendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(calendarYear + 1); }
+                                                    else setCalendarMonth(calendarMonth + 1);
+                                                }}
+                                                className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+                                            </button>
+                                        </div>
+
+                                        {/* Weekday Headers */}
+                                        <div className="grid grid-cols-7 mb-1">
+                                            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+                                                <div key={d} className="text-center text-[10px] font-bold text-slate-500 uppercase py-1">{d}</div>
+                                            ))}
+                                        </div>
+
+                                        {/* Calendar Days */}
+                                        <div className="grid grid-cols-7 gap-0.5">
+                                            {(() => {
+                                                const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+                                                const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+                                                const today = new Date();
+                                                const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                                                const cells = [];
+
+                                                // Empty cells for days before the 1st
+                                                for (let i = 0; i < firstDay; i++) {
+                                                    cells.push(<div key={`empty-${i}`} />);
+                                                }
+
+                                                for (let day = 1; day <= daysInMonth; day++) {
+                                                    const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                                    const isSelected = newOrder.delivery_date === dateStr;
+                                                    const isToday = dateStr === todayStr;
+
+                                                    cells.push(
+                                                        <button
+                                                            key={day}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setNewOrder({ ...newOrder, delivery_date: dateStr });
+                                                                setShowCalendar(false);
+                                                            }}
+                                                            className={`w-full aspect-square rounded-lg text-xs font-medium flex items-center justify-center transition-all
+                                                                ${isSelected
+                                                                    ? 'bg-primary text-white font-bold shadow-lg shadow-primary/30 scale-110'
+                                                                    : isToday
+                                                                        ? 'bg-primary/15 text-primary font-bold ring-1 ring-primary/30'
+                                                                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                                                                }`}
+                                                        >
+                                                            {day}
+                                                        </button>
+                                                    );
+                                                }
+                                                return cells;
+                                            })()}
+                                        </div>
+
+                                        {/* Quick Select */}
+                                        <div className="flex gap-2 mt-3 pt-3 border-t border-white/5">
+                                            {[
+                                                { label: 'Hoje', days: 0 },
+                                                { label: '+7d', days: 7 },
+                                                { label: '+15d', days: 15 },
+                                                { label: '+30d', days: 30 },
+                                            ].map(opt => {
+                                                const d = new Date();
+                                                d.setDate(d.getDate() + opt.days);
+                                                const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                                return (
+                                                    <button
+                                                        key={opt.label}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setNewOrder({ ...newOrder, delivery_date: val });
+                                                            setCalendarMonth(d.getMonth());
+                                                            setCalendarYear(d.getFullYear());
+                                                            setShowCalendar(false);
+                                                        }}
+                                                        className="flex-1 py-1.5 text-[11px] font-bold rounded-lg bg-white/5 hover:bg-primary/20 text-slate-300 hover:text-primary transition-all"
+                                                    >
+                                                        {opt.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Clear */}
+                                        {newOrder.delivery_date && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setNewOrder({ ...newOrder, delivery_date: '' });
+                                                    setShowCalendar(false);
+                                                }}
+                                                className="w-full mt-2 py-1.5 text-[11px] font-bold rounded-lg text-red-400 hover:bg-red-500/10 transition-all"
+                                            >
+                                                Limpar data
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
