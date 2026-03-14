@@ -397,7 +397,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const analysisColId = statusColumns.find(c => c.label === 'Em Análise')?.id || 'ANALYSIS';
   const executionColId = statusColumns.find(c => c.label === 'Execução')?.id || 'EXECUTION';
 
-  const activeProjects = projects.filter(p => p.status === executionColId || p.status === analysisColId).length;
+  const activeProjects = projects.filter(p => {
+    const col = statusColumns.find(c => c.id === p.status);
+    return col ? col.label !== 'Concluído' : true;
+  }).length;
   const pendingQuotes = projects.filter(p => p.status === analysisColId).length;
   const totalValue = projects.reduce((acc, curr) => acc + Number(curr.value || 0), 0);
 
@@ -949,6 +952,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
           setIsNewProjectModalOpen(true);
           setIsDetailsModalOpen(false);
         }}
+        statusColumns={statusColumns}
       />
 
       {/* Label Settings Modal */}

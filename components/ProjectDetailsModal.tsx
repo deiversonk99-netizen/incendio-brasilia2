@@ -11,6 +11,7 @@ interface ProjectDetailsModalProps {
     onSelectProject: (id: string) => void;
     onEdit?: (project: Project) => void;
     hasProposal?: boolean;
+    statusColumns?: any[];
 }
 
 const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
@@ -21,7 +22,8 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
     onViewChange,
     onSelectProject,
     onEdit,
-    hasProposal
+    hasProposal,
+    statusColumns = []
 }) => {
     const [updating, setUpdating] = useState(false);
     const [projectServices, setProjectServices] = useState<any[]>([]);
@@ -53,7 +55,7 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
 
     if (!isOpen || !project) return null;
 
-    const handleStatusChange = async (newStatus: 'ANALYSIS' | 'APPROVED' | 'EXECUTION' | 'DONE') => {
+    const handleStatusChange = async (newStatus: string) => {
         setUpdating(true);
         try {
             const { error: updateError } = await supabase
@@ -63,7 +65,10 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
 
             if (updateError) throw updateError;
 
-            if (newStatus === 'DONE') {
+            // Find the selected column to check its label
+            const selectedCol = statusColumns.find(c => c.id === newStatus);
+            
+            if (selectedCol && selectedCol.label === 'Concluído') {
                 const { data: existingEntry } = await supabase
                     .from('financial_transactions')
                     .select('id')
@@ -148,41 +153,26 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
 
                 // Verify deletion succeeded
                 if (count === 0) {
-                    throw new Error('Nenhum projeto foi excluído. Verifique se você tem permissão para excluir este projeto.');
+                    throw new Error('O projeto não pôde ser excluído ou já foi removido.');
                 }
-
-                console.log(`Successfully deleted ${count} project(s)`);
-                alert('Projeto excluído com sucesso!');
-                onUpdate();
-                onClose();
-            } else {
-                alert('Fase limpa com sucesso!');
-                onUpdate();
-                setShowDeleteChoice(false);
             }
+
+            onUpdate();
+            onClose();
         } catch (error: any) {
-            console.error(error);
-            alert('Erro ao realizar ação: ' + (error.message || 'Verifique as dependências.'));
-            console.error('Delete error:', error);
+            console.error('Error during deletion:', error);
+            alert('Erro ao processar exclusão: ' + error.message);
         } finally {
             setUpdating(false);
         }
     };
 
-    const handleDelete = () => setShowDeleteChoice(!showDeleteChoice);
-
-    const statusColors = {
-        ANALYSIS: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-        APPROVED: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-        EXECUTION: 'bg-primary/10 text-primary border-primary/20',
-        DONE: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-    };
-
-    const statusLabels = {
-        ANALYSIS: 'Em Análise',
-        APPROVED: 'Aprovado',
-        EXECUTION: 'Em Execução',
-        DONE: 'Concluído'
+    const handleDelete = () => {
+        if (!showDeleteChoice) {
+            setShowDeleteChoice(true);
+        } else {
+            setShowDeleteChoice(false);
+        }
     };
 
     return (
@@ -200,25 +190,24 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                     </button>
                 </div>
 
-                {/* Content */}
-                <div className="p-6 overflow-y-auto flex-1">
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
 
-                    {/* Status Bar */}
                     <div className="mb-8">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Status Atual</label>
-                        <div className="grid grid-cols-4 gap-2">
-                            {(Object.keys(statusLabels) as Array<keyof typeof statusLabels>).map((statusKey) => (
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Status do Projeto</label>
+                        <div className="flex flex-wrap gap-2">
+                            {statusColumns.map((col) => (
                                 <button
-                                    key={statusKey}
-                                    onClick={() => handleStatusChange(statusKey)}
+                                    key={col.id}
+                                    onClick={() => handleStatusChange(col.id)}
                                     disabled={updating}
-                                    className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${project.status === statusKey
-                                        ? `${statusColors[statusKey]} ring-1 ring-inset ring-white/10`
-                                        : 'bg-background-dark border-white/5 text-slate-500 hover:bg-white/5'
-                                        } ${updating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${project.status === col.id
+                                        ? `${col.color} text-white border-transparent shadow-lg scale-105`
+                                        : 'bg-background-dark border-white/5 text-slate-500 hover:border-white/20 hover:text-white'
+                                        }`}
                                 >
-                                    <span className="text-xs font-bold uppercase">{statusLabels[statusKey]}</span>
-                                    {project.status === statusKey && <span className="material-symbols-outlined text-[16px] mt-1">check_circle</span>}
+                                    <span className="text-[10px] uppercase font-black tracking-tight">{col.label}</span>
+                                    {project.status === col.id && <span className="material-symbols-outlined text-[16px] mt-0.5">check_circle</span>}
                                 </button>
                             ))}
                         </div>
@@ -297,198 +286,61 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                             <span className="material-symbols-outlined text-[18px]">delete</span>
                             {showDeleteChoice ? 'Sair da Exclusão' : 'Excluir Projeto'}
                         </button>
-
-                        {showDeleteChoice && (
-                            <div className="absolute bottom-full left-0 mb-2 w-64 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-2 z-[60] animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                <div className="text-[10px] font-bold text-slate-500 uppercase px-3 py-2 border-b border-white/5 mb-1">
-                                    O que deseja limpar?
-                                </div>
-                                <button
-                                    onClick={() => handleDeletePhase('A')}
-                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
-                                >
-                                    <div className="h-8 w-8 rounded bg-yellow-500/10 flex items-center justify-center text-yellow-500 group-hover/item:scale-110 transition-transform">
-                                        <span className="material-symbols-outlined text-[18px]">architecture</span>
-                                    </div>
-                                    <div>
-                                        <div className="text-white text-[13px] font-bold">Limpar Levantamento</div>
-                                        <div className="text-[10px] text-slate-500">Remove todos os pavimentos</div>
-                                    </div>
-                                </button>
-
-                                <button
-                                    onClick={() => handleDeletePhase('B')}
-                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
-                                >
-                                    <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-primary group-hover/item:scale-110 transition-transform">
-                                        <span className="material-symbols-outlined text-[18px]">engineering</span>
-                                    </div>
-                                    <div>
-                                        <div className="text-white text-[13px] font-bold">Limpar Composição</div>
-                                        <div className="text-[10px] text-slate-500">Remove itens calculados</div>
-                                    </div>
-                                </button>
-
-                                <button
-                                    onClick={() => handleDeletePhase('C')}
-                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
-                                >
-                                    <div className="h-8 w-8 rounded bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover/item:scale-110 transition-transform">
-                                        <span className="material-symbols-outlined text-[18px]">description</span>
-                                    </div>
-                                    <div>
-                                        <div className="text-white text-[13px] font-bold">Limpar Proposta</div>
-                                        <div className="text-[10px] text-slate-500">Remove settings e itens manuais</div>
-                                    </div>
-                                </button>
-
-                                <div className="border-t border-white/5 my-1"></div>
-
-                                <button
-                                    onClick={() => handleDeletePhase('ALL')}
-                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-red-500/20 transition-colors text-left group/item text-red-500"
-                                >
-                                    <div className="h-8 w-8 rounded bg-red-500/10 flex items-center justify-center group-hover/item:scale-110 transition-transform">
-                                        <span className="material-symbols-outlined text-[18px]">delete_forever</span>
-                                    </div>
-                                    <div>
-                                        <div className="text-[13px] font-bold">Excluir Tudo</div>
-                                        <div className="text-[10px] text-red-500/60 font-bold uppercase">Ação Irreversível</div>
-                                    </div>
-                                </button>
-                            </div>
-                        )}
                     </div>
 
                     <div className="flex gap-3">
-                        <div className="relative group">
-                            <button
-                                onClick={() => setShowEditChoice(!showEditChoice)}
-                                className={`px-4 py-2 border rounded-lg font-bold text-sm transition-all flex items-center gap-2 ${showEditChoice ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' : 'bg-surface-dark border-white/10 text-white hover:bg-white/5'}`}
-                            >
-                                <span className="material-symbols-outlined text-[18px]">edit</span>
-                                {showEditChoice ? 'Sair da Edição' : 'Editar Projeto'}
-                            </button>
-
-                            {showEditChoice && (
-                                <div className="absolute bottom-full right-0 mb-2 w-64 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-2 z-[60] animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                    <div className="text-[10px] font-bold text-slate-500 uppercase px-3 py-2 border-b border-white/5 mb-1">
-                                        Selecione o que editar
-                                    </div>
-                                    <button
-                                        onClick={() => {
-                                            onEdit?.(project);
-                                            setShowEditChoice(false);
-                                        }}
-                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
-                                    >
-                                        <div className="h-8 w-8 rounded bg-blue-500/10 flex items-center justify-center text-blue-500 group-hover/item:scale-110 transition-transform">
-                                            <span className="material-symbols-outlined text-[18px]">info</span>
-                                        </div>
-                                        <div>
-                                            <div className="text-white text-[13px] font-bold">Informações Básicas</div>
-                                            <div className="text-[10px] text-slate-500">Nome, cliente, tipo e obs.</div>
-                                        </div>
-                                    </button>
-
-                                    <button
-                                        onClick={() => {
-                                            onSelectProject(project.id);
-                                            onViewChange(AppView.ENGINEERING_PHASE_A);
-                                            onClose();
-                                        }}
-                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
-                                    >
-                                        <div className="h-8 w-8 rounded bg-yellow-500/10 flex items-center justify-center text-yellow-500 group-hover/item:scale-110 transition-transform">
-                                            <span className="material-symbols-outlined text-[18px]">architecture</span>
-                                        </div>
-                                        <div>
-                                            <div className="text-white text-[13px] font-bold">Levantamento (Fase A)</div>
-                                            <div className="text-[10px] text-slate-500">Pavimentos e especificações</div>
-                                        </div>
-                                    </button>
-
-                                    <button
-                                        onClick={() => {
-                                            onSelectProject(project.id);
-                                            onViewChange(AppView.ENGINEERING_PHASE_B);
-                                            onClose();
-                                        }}
-                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
-                                    >
-                                        <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-primary group-hover/item:scale-110 transition-transform">
-                                            <span className="material-symbols-outlined text-[18px]">engineering</span>
-                                        </div>
-                                        <div>
-                                            <div className="text-white text-[13px] font-bold">Composição (Fase B)</div>
-                                            <div className="text-[10px] text-slate-500">Cálculos e dimensionamento</div>
-                                        </div>
-                                    </button>
-
-                                    <button
-                                        onClick={() => {
-                                            onSelectProject(project.id);
-                                            onViewChange(AppView.ENGINEERING_PHASE_C);
-                                            onClose();
-                                        }}
-                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group/item"
-                                    >
-                                        <div className="h-8 w-8 rounded bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover/item:scale-110 transition-transform">
-                                            <span className="material-symbols-outlined text-[18px]">description</span>
-                                        </div>
-                                        <div>
-                                            <div className="text-white text-[13px] font-bold">Proposta (Fase C)</div>
-                                            <div className="text-[10px] text-slate-500">Itens, valores e PDF final</div>
-                                        </div>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
                         <button
-                            onClick={() => {
-                                if (project) {
-                                    onSelectProject(project.id);
-                                    onViewChange(AppView.ENGINEERING_PHASE_A);
-                                    onClose();
-                                }
-                            }}
-                            className="px-4 py-2 bg-surface-dark border border-white/10 text-white rounded-lg font-bold text-sm hover:bg-white/5 transition-colors"
+                            onClick={onClose}
+                            className="px-6 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all font-bold text-xs uppercase"
                         >
-                            Ver Levantamento
+                            Fechar
                         </button>
-
-                        {hasProposal && (
-                            <button
-                                onClick={() => {
-                                    if (project) {
-                                        onSelectProject(project.id);
-                                        onViewChange(AppView.ENGINEERING_PHASE_C);
-                                        onClose();
-                                    }
-                                }}
-                                className="px-4 py-2 bg-emerald-600 border border-emerald-500/20 text-white rounded-lg font-bold text-sm hover:bg-emerald-500 transition-colors flex items-center gap-2"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">description</span>
-                                Ver Proposta
-                            </button>
-                        )}
-
                         <button
-                            onClick={() => {
-                                if (project) {
-                                    onSelectProject(project.id);
-                                    onViewChange(AppView.ENGINEERING_PHASE_B);
-                                    onClose();
-                                }
-                            }}
-                            className="px-6 py-2 bg-primary text-white rounded-lg font-bold text-sm hover:bg-primary-dark shadow-lg shadow-primary/20 transition-all flex items-center gap-2"
+                            onClick={() => onEdit?.(project)}
+                            className="bg-primary hover:bg-primary-dark text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-primary/20 transition-all flex items-center gap-2 text-xs uppercase"
                         >
-                            <span className="material-symbols-outlined text-[18px]">engineering</span>
-                            Ir para Engenharia
+                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                            Editar Detalhes
                         </button>
                     </div>
                 </div>
 
+                {/* Delete Sub-menu */}
+                {showDeleteChoice && (
+                    <div className="p-6 pt-0 border-t border-white/5 bg-background-dark/80 backdrop-blur-md">
+                        <p className="text-[10px] font-black uppercase text-red-500 tracking-widest mb-4 mt-4 text-center">Zona de Perigo: Escolha o que excluir</p>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <button
+                                onClick={() => handleDeletePhase('A')}
+                                className="flex flex-col items-center gap-2 p-3 rounded-xl border border-white/5 bg-white/5 hover:bg-red-500/10 hover:border-red-500/30 transition-all group"
+                            >
+                                <span className="material-symbols-outlined text-slate-500 group-hover:text-red-500">architecture</span>
+                                <span className="text-[10px] font-bold text-slate-400 group-hover:text-white uppercase">Fase A</span>
+                            </button>
+                            <button
+                                onClick={() => handleDeletePhase('B')}
+                                className="flex flex-col items-center gap-2 p-3 rounded-xl border border-white/5 bg-white/5 hover:bg-red-500/10 hover:border-red-500/30 transition-all group"
+                            >
+                                <span className="material-symbols-outlined text-slate-500 group-hover:text-red-500">dataset_linked</span>
+                                <span className="text-[10px] font-bold text-slate-400 group-hover:text-white uppercase">Fase B</span>
+                            </button>
+                            <button
+                                onClick={() => handleDeletePhase('C')}
+                                className="flex flex-col items-center gap-2 p-3 rounded-xl border border-white/5 bg-white/5 hover:bg-red-500/10 hover:border-red-500/30 transition-all group"
+                            >
+                                <span className="material-symbols-outlined text-slate-500 group-hover:text-red-500">description</span>
+                                <span className="text-[10px] font-bold text-slate-400 group-hover:text-white uppercase">Fase C</span>
+                            </button>
+                            <button
+                                onClick={() => handleDeletePhase('ALL')}
+                                className="flex flex-col items-center gap-2 p-3 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500 hover:border-red-500 transition-all group"
+                            >
+                                <span className="material-symbols-outlined text-red-500 group-hover:text-white font-black">delete_forever</span>
+                                <span className="text-[10px] font-black text-red-500 group-hover:text-white uppercase">Excluir Tudo</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

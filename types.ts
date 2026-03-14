@@ -21,6 +21,17 @@ export enum AppView {
   ADMIN_BOARDS = 'ADMIN_BOARDS'
 }
 
+export interface StatusColumn {
+  id: string;
+  label: string;
+  color: string;
+  shadow_class: string;
+  order_index: number;
+  project_types?: string[];
+  allowed_labels?: string[];
+  allowed_clients?: string[];
+}
+
 export interface Project {
   id: string;
   name: string;
