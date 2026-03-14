@@ -213,6 +213,7 @@ const SettingsView: React.FC = () => {
         const table = termsTab === 'payment' ? 'payment_methods' : 'execution_schedules';
 
         try {
+            console.log(`SettingsView: Saving term to ${table}:`, newTermLabel);
             if (termToEdit) {
                 const { error } = await supabase
                     .from(table)
@@ -222,18 +223,24 @@ const SettingsView: React.FC = () => {
             } else {
                 const { error } = await supabase
                     .from(table)
-                    .insert([{ label: newTermLabel }]);
+                    .insert([{ label: newTermLabel, active: true }]);
                 if (error) throw error;
             }
 
             setNewTermLabel('');
             setTermToEdit(null);
-            // Refresh lists
-            const { data } = await supabase.from(table).select('*').order('label');
+            
+            // Refresh specific list
+            const { data, error: fetchError } = await supabase.from(table).select('*').order('label');
+            if (fetchError) throw fetchError;
+            
             if (termsTab === 'payment') setPaymentMethods(data || []);
             else setExecutionSchedules(data || []);
+            
+            alert('Salvo com sucesso!');
         } catch (err: any) {
-            alert('Erro ao salvar: ' + err.message);
+            console.error('SettingsView: Erro ao salvar termo:', err);
+            alert('Erro ao salvar: ' + (err.message || 'Erro desconhecido'));
         } finally {
             setSavingTerm(false);
         }
@@ -243,15 +250,21 @@ const SettingsView: React.FC = () => {
         if (!confirm('Tem certeza que deseja excluir este item?')) return;
         const table = termsTab === 'payment' ? 'payment_methods' : 'execution_schedules';
         try {
+            console.log(`SettingsView: Deleting term from ${table}:`, id);
             const { error } = await supabase.from(table).delete().eq('id', id);
             if (error) throw error;
 
-            // Refresh lists
-            const { data } = await supabase.from(table).select('*').order('label');
+            // Refresh specific list
+            const { data, error: fetchError } = await supabase.from(table).select('*').order('label');
+            if (fetchError) throw fetchError;
+            
             if (termsTab === 'payment') setPaymentMethods(data || []);
             else setExecutionSchedules(data || []);
+            
+            alert('Excluído com sucesso!');
         } catch (err: any) {
-            alert('Erro ao excluir: ' + err.message);
+            console.error('SettingsView: Erro ao excluir termo:', err);
+            alert('Erro ao excluir: ' + (err.message || 'Erro desconhecido'));
         }
     };
 

@@ -244,6 +244,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const table = termsModalTab === 'payment' ? 'payment_methods' : 'execution_schedules';
 
     try {
+      console.log(`Saving term to ${table}:`, newTermLabel);
       if (termToEdit) {
         const { error } = await supabase
           .from(table)
@@ -253,22 +254,22 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       } else {
         const { error } = await supabase
           .from(table)
-          .insert([{ label: newTermLabel }]);
+          .insert([{ label: newTermLabel, active: true }]);
         if (error) throw error;
       }
 
       setNewTermLabel('');
       setTermToEdit(null);
-      // Refresh lists
+      
+      // Refresh lists using common functions
       if (termsModalTab === 'payment') {
-        const { data } = await supabase.from('payment_methods').select('*').order('label');
-        if (data) setPaymentMethods(data);
+        await fetchPaymentMethods();
       } else {
-        const { data } = await supabase.from('execution_schedules').select('*').order('label');
-        if (data) setExecutionSchedules(data);
+        await fetchExecutionSchedules();
       }
     } catch (err: any) {
-      alert('Erro ao salvar: ' + err.message);
+      console.error('Erro ao salvar termo:', err);
+      alert('Erro ao salvar: ' + (err.message || 'Erro desconhecido'));
     } finally {
       setSavingTerm(false);
     }
@@ -278,19 +279,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     if (!confirm('Tem certeza que deseja excluir este item?')) return;
     const table = termsModalTab === 'payment' ? 'payment_methods' : 'execution_schedules';
     try {
+      console.log(`Deleting term from ${table}:`, id);
       const { error } = await supabase.from(table).delete().eq('id', id);
       if (error) throw error;
 
-      // Refresh lists
+      // Refresh lists using common functions
       if (termsModalTab === 'payment') {
-        const { data } = await supabase.from('payment_methods').select('*').order('label');
-        if (data) setPaymentMethods(data);
+        await fetchPaymentMethods();
       } else {
-        const { data } = await supabase.from('execution_schedules').select('*').order('label');
-        if (data) setExecutionSchedules(data);
+        await fetchExecutionSchedules();
       }
     } catch (err: any) {
-      alert('Erro ao excluir: ' + err.message);
+      console.error('Erro ao excluir termo:', err);
+      alert('Erro ao excluir: ' + (err.message || 'Erro desconhecido'));
     }
   };
 
