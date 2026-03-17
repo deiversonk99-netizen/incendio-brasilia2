@@ -164,6 +164,24 @@ const ProductsView: React.FC = () => {
         setIsModalOpen(true);
     };
 
+    const handleDuplicate = (product: Product) => {
+        setEditingProduct(null); // Ensure it creates a new product
+        setFormData({
+            name: `${product.name} (Cópia)`,
+            category: product.category,
+            unit: product.unit,
+            price: product.price,
+            supplier_id: product.supplier_id || '',
+            is_signage: !!product.is_signage,
+            cost_price: product.cost_price || 0,
+            observation: product.observation || '',
+            registration_date: new Date().toISOString().split('T')[0],
+            image: product.image || '',
+            storage_location: product.storage_location || ''
+        });
+        setIsModalOpen(true);
+    };
+
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setEditingProduct(null);
@@ -1014,6 +1032,13 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                             title="Editar"
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">edit</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDuplicate(product)}
+                                                            className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                                            title="Duplicar"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[18px]">content_copy</span>
                                                         </button>
                                                         <button
                                                             onClick={() => handleDelete(product.id)}
