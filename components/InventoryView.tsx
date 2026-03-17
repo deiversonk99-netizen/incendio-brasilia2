@@ -430,7 +430,7 @@ const InventoryView: React.FC = () => {
 
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Fornecedor: ${order.supplier}`, 20, 70);
+        doc.text(`Estabelecimento: ${order.supplier}`, 20, 70);
         doc.text(`Data do Pedido: ${new Date(order.created_at).toLocaleDateString('pt-BR')}`, 20, 76);
         doc.text(`Previsão de Entrega: ${order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('pt-BR') : 'N/A'}`, 20, 82);
         doc.text(`Status: ${order.status === 'COMPLETED' ? 'Concluído' : order.status === 'PARTIAL' ? 'Parcial' : 'Pendente'}`, 20, 88);
@@ -520,7 +520,7 @@ const InventoryView: React.FC = () => {
         <div className="flex flex-col h-full overflow-hidden">
             <PageHeader
                 title="Gestão de Placas"
-                subtitle="Controle de estoque e pedidos de compra."
+                subtitle="Controle de estoque e pedidos."
                 actions={
                     <div className="flex gap-2">
                         {activeTab === 'CATALOG' ? (
@@ -562,7 +562,7 @@ const InventoryView: React.FC = () => {
                     onClick={() => setActiveTab('ORDERS')}
                     className={`py-4 text-sm font-bold border-b-2 transition-all ${activeTab === 'ORDERS' ? 'border-primary text-primary' : 'border-transparent text-slate-400 hover:text-white'}`}
                 >
-                    Pedidos de Compra
+                    Pedidos
                 </button>
             </div>
 
@@ -842,12 +842,12 @@ const InventoryView: React.FC = () => {
                     <div className="bg-surface-dark border border-white/10 rounded-2xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
                         <h2 className="text-xl font-bold mb-6 text-white flex items-center gap-2">
                             <span className="material-symbols-outlined">{editingOrder ? 'edit' : 'shopping_cart'}</span>
-                            {editingOrder ? 'Editar Pedido de Compra' : 'Novo Pedido de Compra'}
+                            {editingOrder ? 'Editar Pedido' : 'Novo Pedido'}
                         </h2>
 
                         <div className="grid grid-cols-2 gap-4 mb-6">
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fornecedor</label>
+                                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Estabelecimento</label>
                                 <input
                                     type="text"
                                     placeholder="Nome da empresa..."

@@ -619,47 +619,70 @@ const FinanceView: React.FC = () => {
           title="Fluxo de Caixa"
           description={`Detalhamento de lançamentos para ${activeMonthLabel} / ${selectedYear}`}
         >
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-            <div className="relative min-w-[300px] flex-1 max-w-md">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
-              <input
-                type="text"
-                placeholder="Pesquisar por descrição, entidade ou categoria..."
-                className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:border-primary outline-none transition-all placeholder:text-slate-600"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-
-            <div className="flex items-center gap-2 bg-background-dark p-1 rounded-xl border border-white/5">
-              <button
-                onClick={() => setSelectedYear((y: number) => y - 1)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
-              >
-                <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-              </button>
-              <span className="text-sm font-black text-white px-2 italic">{selectedYear}</span>
-              <button
-                onClick={() => setSelectedYear((y: number) => y + 1)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-all"
-              >
-                <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-              </button>
-            </div>
-
-            <div className="flex flex-wrap bg-background-dark p-1 rounded-xl border border-white/5 gap-1">
-              {monthsList.map((m, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedMonthIdx(idx)}
-                  className={`px-3 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${selectedMonthIdx === idx
-                    ? 'bg-primary text-white shadow-lg'
-                    : 'text-slate-500 hover:text-white hover:bg-white/5'
-                    }`}
+          <div className="flex flex-col gap-4 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center gap-4">
+              <div className="relative flex-1">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
+                <input
+                  type="text"
+                  placeholder="Pesquisar por descrição, entidade ou categoria..."
+                  className="w-full bg-background-dark border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-primary outline-none transition-all placeholder:text-slate-600"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2">
+                <select
+                  className="bg-background-dark border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:border-primary outline-none"
+                  value={filterType}
+                  onChange={(e: any) => setFilterType(e.target.value)}
                 >
-                  {m.substring(0, 3)}
-                </button>
-              ))}
+                  <option value="ALL">Todas Lançamentos</option>
+                  <option value="INCOME">Somente Entradas</option>
+                  <option value="EXPENSE">Somente Saídas</option>
+                </select>
+                <select
+                   className="bg-background-dark border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:border-primary outline-none"
+                   value={filterStatus}
+                   onChange={(e: any) => setFilterStatus(e.target.value)}
+                >
+                  <option value="ALL">Todos os Status</option>
+                  <option value="PAID">Pago/Recebido</option>
+                  <option value="PENDING">Pendente</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 bg-background-dark/50 p-3 rounded-xl border border-white/5">
+                <div className="flex items-center gap-3">
+                   <div className="flex flex-col">
+                     <span className="text-[10px] text-slate-500 uppercase font-bold px-1 mb-1">Data Inicial</span>
+                     <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-background-dark border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-primary" />
+                   </div>
+                   <div className="flex flex-col">
+                     <span className="text-[10px] text-slate-500 uppercase font-bold px-1 mb-1">Data Final</span>
+                     <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-background-dark border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-primary" />
+                   </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-background-dark p-1 rounded-lg border border-white/10">
+                    <button onClick={() => setSelectedYear((y: number) => y - 1)} className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-white hover:bg-white/5"><span className="material-symbols-outlined text-[16px]">chevron_left</span></button>
+                    <span className="text-xs font-black text-white px-2 italic">{selectedYear}</span>
+                    <button onClick={() => setSelectedYear((y: number) => y + 1)} className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-white hover:bg-white/5"><span className="material-symbols-outlined text-[16px]">chevron_right</span></button>
+                  </div>
+                  <div className="flex flex-wrap gap-1 bg-background-dark p-1 rounded-lg border border-white/10">
+                    {monthsList.map((m, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setSelectedMonthIdx(idx)}
+                        className={`px-2 py-1.5 rounded-md text-[9px] font-bold uppercase tracking-widest transition-all ${selectedMonthIdx === idx ? 'bg-primary text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                      >
+                        {m.substring(0, 3)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
             </div>
           </div>
           <div className="overflow-x-auto">

@@ -420,7 +420,15 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     return 'NEW';
   };
 
-  const dynamicColumnsMapped = statusColumns.map(c => ({ id: c.id, label: c.label, color: c.color, shadow: c.shadow_class }));
+  const dynamicColumnsMapped = statusColumns.map(c => ({ 
+    id: c.id, 
+    label: c.label, 
+    color: c.color, 
+    shadow: c.shadow_class,
+    project_types: c.project_types,
+    allowed_labels: c.allowed_labels,
+    allowed_clients: c.allowed_clients
+  }));
   const activeColumns = viewMode === 'STATUS' ? dynamicColumnsMapped : phaseColumns;
 
   return (

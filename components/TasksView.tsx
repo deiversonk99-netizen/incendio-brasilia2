@@ -590,6 +590,22 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       </header>
 
       <div className="flex-1 overflow-x-auto p-4 z-10">
+        {/* Info Banner for Central Admin */}
+        {isCentral && (
+          <div className="mb-6 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex gap-3 text-sm text-blue-300">
+            <span className="material-symbols-outlined text-blue-400 shrink-0">info</span>
+            <div className="flex flex-col gap-2">
+              <p className="font-bold text-blue-400 mb-1">Guia de Gestão de Tarefas (Admin Central)</p>
+              <ul className="list-disc pl-5 space-y-1 text-xs opacity-90">
+                <li><strong className="text-blue-300 pointer-events-none">Aba de Tarefas Pessoais:</strong> Cada usuário visualiza apenas seus próprios quadros. Se o usuário não possuir nenhum, uma mensagem orienta o contato com a administração.</li>
+                <li><strong className="text-blue-300 pointer-events-none">Monitoramento da Equipe:</strong> Gestores podem alternar entre a visão de qualquer usuário. O "Quadro Geral (Pendências)" exibe as tarefas de todos agrupadas.</li>
+                <li><strong className="text-blue-300 pointer-events-none">Gerenciamento de Quadros:</strong> Localizado no menu lateral, permite criar, excluir, alternar visibilidade e renomear quadros da equipe.</li>
+                <li><strong className="text-blue-300 pointer-events-none">Automação de Renovações:</strong> Renovações expiradas ou no prazo se convertem automaticamente em tarefas no quadro de quem as gerou, sem duplicidade.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         {!selectedBoardId && boards.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <div className="size-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
@@ -863,6 +879,20 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                                       {g.name}
                                     </button>
                                   ))}
+
+                                  <div className="h-px bg-white/5 my-0.5"></div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete(task.id);
+                                      setOpenMenuTaskId(null);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-3 py-2 hover:bg-red-500/10 rounded-lg text-[10px] font-bold text-red-400 hover:text-red-300 text-left uppercase tracking-wider"
+                                    title="Excluir esta tarefa"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">delete</span>
+                                    Excluir Tarefa
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -886,7 +916,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           })}
 
           {/* Add Group Column Placeholder */}
-          {isCentral && selectedBoardId && selectedBoardId !== SYNC_BOARD_ID && (
+          {selectedBoardId && selectedBoardId !== SYNC_BOARD_ID && (
             <div className={`${isCompact ? 'w-[260px]' : 'w-[320px]'} shrink-0 h-full flex flex-col items-center justify-center px-8 border-2 border-dashed border-white/5 rounded-2xl bg-white/[0.01] transition-all hover:bg-white/[0.03] hover:border-primary/20 group`}>
               <button
                 onClick={handleAddGroup}

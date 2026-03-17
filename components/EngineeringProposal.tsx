@@ -87,6 +87,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         .eq('id', user?.id)
         .single();
 
+      // 3. Load Global App Settings (footer_text, etc.)
+      const { data: appData } = await supabase
+        .from('app_settings')
+        .select('*')
+        .eq('key', 'pdf_global_config')
+        .single();
+      
+      const globalAppConfig = appData?.value || {};
+
       if (data) {
         setPdfSettings({
           show_assinatura: true,
@@ -111,7 +120,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           credentials: data.variables.credentials || profile?.credentials || '',
           credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
           carimbo: data.variables.carimbo || profile?.carimbo || '',
-          carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || ''
+          carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || '',
+          footer_text: data.variables.footer_text || globalAppConfig.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança'
         });
       } else {
         setPdfSettings({
@@ -127,6 +137,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_carimbo: true,
           carimbo: profile?.carimbo || '',
           carimbo_img: profile?.carimbo_img || '',
+          footer_text: globalAppConfig.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança',
           validade: '10',
           show_cost: true,
           show_cost_column: false,
@@ -302,8 +313,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   // Proposal State
   const [proposal, setProposal] = useState<Partial<Proposal>>({
-    bdi_percent: 25,
-    profit_percent: 15,
+    bdi_percent: 0,
+    profit_percent: 0,
     discount_type: 'FIXED',
     discount_value: 0,
     payment_conditions: '',
@@ -924,7 +935,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         let safeProjectName = (pdfSettings.project_name_pdf || project.name || '').replace(/[\r\n]+/g, ' ').trim();
         if (safeProjectName.length > 80) safeProjectName = safeProjectName.substring(0, 77) + '...';
 
-        const footerText = `Proposta Comercial - ${safeProjectName} | Página ${pageNum} de ${totalPages}`;
+        const customFooter = pdfSettings.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança';
+        const footerText = `${customFooter} | Proposta Comercial - ${safeProjectName} | Página ${pageNum} de ${totalPages}`;
         doc.text(footerText, pageWidth / 2, footerY, { align: 'center' });
       };
 
@@ -1607,7 +1619,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       } else {
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.download = `Proposta_${project.name.replace(/\s+/g, '_')}.pdf`;
+        const clientNameForFile = project.client ? project.client.trim() : project.name.trim();
+        const currentProjNumFile = project.project_number || proposal?.proposal_number;
+        const prNumberFile = currentProjNumFile ? ` - PR${String(currentProjNumFile).padStart(3, '0')}` : '';
+        const safeFileName = `${clientNameForFile}${prNumberFile}`.replace(/[/\\?%*:|"<>]/g, '-');
+        link.download = `${safeFileName}.pdf`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
