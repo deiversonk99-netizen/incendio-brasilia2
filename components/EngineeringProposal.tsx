@@ -2903,7 +2903,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                   <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Descrição da Proposta (Subjetiva)</label>
                     <textarea
-                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 h-24 resize-none"
+                      className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 min-h-[120px] resize-y"
                       placeholder="Ex: Fornecimento de uma ampliação de uma tubulação enterrada..."
                       value={newItem.name}
                       onChange={e => setNewItem({ ...newItem, name: e.target.value })}
