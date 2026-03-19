@@ -23,12 +23,12 @@ const FinanceView: React.FC = () => {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   const canLaunch = useMemo(() => {
-    const allowedEmails = [
-      'incendiobrasilia@gmail.com',
-      'contato@incendiobrasilia.com.br',
-      'cleodson.batata@gmail.com'
+    const allowedIds = [
+      '30c7f748-9e2e-4632-9950-4bff1311aa44', // incendiobrasilia@gmail.com
+      'fccae473-8363-4d73-8a12-f4a295229a3e', // contato@incendiobrasilia.com.br
+      'd0de3a9e-c949-4665-9101-298f4a11c314'  // cleodson.batata@gmail.com
     ];
-    return user?.email && allowedEmails.includes(user.email.toLowerCase());
+    return user?.id && allowedIds.includes(user.id);
   }, [user]);
 
   // Advanced Filters State
