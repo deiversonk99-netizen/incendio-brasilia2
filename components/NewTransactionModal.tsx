@@ -169,6 +169,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                         category: formData.category,
                         status: formData.status,
                         project_id: formData.project_id || null,
+                        user_id: user.id,
                     })
                     .eq('id', editingTransaction.id);
 
@@ -221,9 +222,9 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                 project_id: '',
                 installments: '1',
             });
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error creating transaction:', error);
-            alert('Erro ao registrar transação. Verifique se a tabela foi criada.');
+            alert(`Erro ao registrar transação: ${error.message || 'Verifique sua conexão'}`);
         } finally {
             setLoading(false);
         }
