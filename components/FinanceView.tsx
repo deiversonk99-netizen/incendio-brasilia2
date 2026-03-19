@@ -8,8 +8,10 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ReportFilterModal, { ReportFilters } from './ReportFilterModal';
 import { Button, Card } from './ui';
+import { useAuth } from '../contexts/AuthContext';
 
 const FinanceView: React.FC = () => {
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +21,15 @@ const FinanceView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+  const canLaunch = useMemo(() => {
+    const allowedEmails = [
+      'incendiobrasilia@gmail.com',
+      'contato@incendiobrasilia.com.br',
+      'cleodson.batata@gmail.com'
+    ];
+    return user?.email && allowedEmails.includes(user.email.toLowerCase());
+  }, [user]);
 
   // Advanced Filters State
   const [startDate, setStartDate] = useState(
@@ -432,21 +443,25 @@ const FinanceView: React.FC = () => {
               Gerar Relatório
             </Button>
 
-            <Button
-              variant="secondary"
-              onClick={() => openModal('EXPENSE')}
-            >
-              <span className="material-symbols-outlined mr-2 text-primary">remove_circle</span>
-              Nova Despesa
-            </Button>
+            {canLaunch && (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => openModal('EXPENSE')}
+                >
+                  <span className="material-symbols-outlined mr-2 text-primary">remove_circle</span>
+                  Nova Despesa
+                </Button>
 
-            <Button
-              onClick={() => openModal('INCOME')}
-              className="bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20"
-            >
-              <span className="material-symbols-outlined mr-2">add_circle</span>
-              Nova Venda
-            </Button>
+                <Button
+                  onClick={() => openModal('INCOME')}
+                  className="bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20"
+                >
+                  <span className="material-symbols-outlined mr-2">add_circle</span>
+                  Nova Venda
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
