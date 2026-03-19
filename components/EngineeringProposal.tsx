@@ -1619,10 +1619,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       } else {
         const link = document.createElement('a');
         link.href = blobUrl;
-        const clientNameForFile = project.client ? project.client.trim() : project.name.trim();
+        const clientNameForFile = clientDetails?.fantasy_name 
+          ? clientDetails.fantasy_name.trim() 
+          : (project.client ? project.client.trim() : project.name.trim());
         const currentProjNumFile = project.project_number || proposal?.proposal_number;
-        const prNumberFile = currentProjNumFile ? ` - PR${String(currentProjNumFile).padStart(3, '0')}` : '';
-        const safeFileName = `${clientNameForFile}${prNumberFile}`.replace(/[/\\?%*:|"<>]/g, '-');
+        const prNumberFile = currentProjNumFile ? `PRO${String(currentProjNumFile).padStart(3, '0')}` : 'PRO';
+        const safeFileName = `Incêndio Brasília Engenharia ${prNumberFile} ${clientNameForFile}`.replace(/[/\\?%*:|"<>]/g, '-');
         link.download = `${safeFileName}.pdf`;
         document.body.appendChild(link);
         link.click();
