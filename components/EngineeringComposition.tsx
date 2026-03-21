@@ -40,6 +40,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState(0);
+  const [addItemSearch, setAddItemSearch] = useState('');
   const [replicationSummary, setReplicationSummary] = useState<{ name: string, factor: number, type: string }[]>([]);
 
   // Service Models State
@@ -60,7 +61,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     crq: '',
     credentials: '',
     referencias: '',
-    validade: '10'
+    validade: '10',
+    footer_text: ''
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
 
@@ -81,6 +83,15 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         .eq('id', (await supabase.auth.getUser()).data.user?.id)
         .single();
 
+      // 3. Load Global App Settings (footer_text, etc.)
+      const { data: appData } = await supabase
+        .from('app_settings')
+        .select('*')
+        .eq('key', 'pdf_global_config')
+        .single();
+      
+      const globalAppConfig = appData?.value || {};
+
       if (data) {
         setPdfSettings({
           show_assinatura: true,
@@ -95,7 +106,11 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           credentials: data.variables.credentials || profile?.credentials || '',
           credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
           carimbo: data.variables.carimbo || profile?.carimbo || '',
-          carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || ''
+          carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || '',
+          // Improved Footer Text logic
+          footer_text: (data.variables.footer_text && data.variables.footer_text !== 'Incêndio Brasília - Gestão de Tecnologias de Segurança')
+            ? data.variables.footer_text 
+            : (globalAppConfig.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança')
         });
       } else {
         setPdfSettings({
@@ -111,7 +126,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           show_carimbo: true,
           carimbo: profile?.carimbo || '',
           carimbo_img: profile?.carimbo_img || '',
-          validade: '10'
+          validade: '10',
+          footer_text: globalAppConfig.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança'
         });
       }
     } catch (e) {
@@ -539,7 +555,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   };
 
   const calculateTotal = () => {
-    return items.reduce((acc, item) => acc + (item.quantity_final * item.unit_price), 0);
+    return items.reduce((acc, item) => acc + (item.quantity_final * (item.unit_price || 0)), 0);
   };
 
   const handleAddItem = async () => {
@@ -686,11 +702,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
     // Utility for adding footer
     const addFooter = (doc: any, pageNum: number, totalPages: number) => {
-      const footerY = pageHeight - 10;
-
       // --- Company Stamps/Credentials on EVERY Page ---
       let stampX = 20;
-      const stampY = pageHeight - 35;
+      const stampY = pageHeight - 48; // Middle ground to avoid both table and footer overlap
 
       if (pdfSettings.show_credentials) {
         if (pdfSettings.credentials_img) {
@@ -699,9 +713,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
             stampX += 35;
           } catch (e) { console.warn('Error adding credentials_img to footer:', e); }
         } else if (pdfSettings.credentials) {
-          doc.setFontSize(7);
+          doc.setFontSize(6.5); // Smaller font
           doc.setTextColor(150);
-          doc.text(pdfSettings.credentials, stampX, stampY + 10);
+          doc.text(pdfSettings.credentials, stampX, stampY + 12);
           stampX += 40;
         }
       }
@@ -712,16 +726,32 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
             doc.addImage(pdfSettings.carimbo_img, 'PNG', stampX, stampY, 30, 15);
           } catch (e) { console.warn('Error adding carimbo_img to footer:', e); }
         } else if (pdfSettings.carimbo) {
-          doc.setFontSize(7);
+          doc.setFontSize(6.5); // Smaller font
           doc.setTextColor(150);
-          doc.text(pdfSettings.carimbo, stampX, stampY + 10);
+          doc.text(pdfSettings.carimbo, stampX, stampY + 12);
         }
       }
 
-      doc.setFontSize(8);
+      // --- Page Number Footer with Auto-Wrap ---
+      doc.setFontSize(6.5); // Smaller footer font
       doc.setTextColor(150);
-      const footerText = `Composição de Materiais - ${project.name} | Página ${pageNum} de ${totalPages}`;
-      doc.text(footerText, pageWidth / 2, footerY, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+
+      const customFooter = pdfSettings.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança';
+      const footerContent = `Composição de Materiais - ${project.name} | Página ${pageNum} de ${totalPages}`;
+      
+      const fullFooter = `${customFooter} | ${footerContent}`;
+      const maxWidth = pageWidth - 20; // More horizontal spread
+      const lines = doc.splitTextToSize(fullFooter, maxWidth);
+      
+      const lineHeight = 3.2; // Smaller line height
+      const finalMargin = 10;
+      const totalHeight = lines.length * lineHeight;
+      const startY = pageHeight - finalMargin - (totalHeight - lineHeight);
+
+      lines.forEach((line: string, index: number) => {
+        doc.text(line, pageWidth / 2, startY + (index * lineHeight), { align: 'center' });
+      });
     };
 
     // --- Page 1: Header and Summary ---
@@ -764,7 +794,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         { content: `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } }]
       ],
       theme: 'grid',
-      margin: { bottom: 40 },
+      margin: { bottom: 55 },
       headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
       styles: { fontSize: 10, cellPadding: 4 }
     });
@@ -793,8 +823,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           item.name,
           'Sistema',
           item.quantity_final,
-          `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-          `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+          `R$ ${(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+          `R$ ${(item.quantity_final * (item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
         ]);
       });
     }
@@ -812,7 +842,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
 
         tableData.push([{
-          content: `MODELO DE SERVIÇO: ${modelName.toUpperCase()}  (Total: R$ ${modelTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`,
+          content: `MODELO DE SERVIÇO: ${modelName.toUpperCase()}  (Total: R$ ${(modelTotal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`,
           colSpan: 5,
           styles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold' } // Indigo color
         }]);
@@ -825,8 +855,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
             cleanName + (isLabor ? ' (Serviço)' : ''),
             'Modelo',
             item.quantity_final,
-            `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-            `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+            `R$ ${(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+            `R$ ${(item.quantity_final * (item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
           ]);
         });
       });
@@ -850,8 +880,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
             cleanName,
             'Infra',
             item.quantity_final,
-            `R$ ${item.unit_price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-            `R$ ${(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+            `R$ ${(item.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+            `R$ ${(item.quantity_final * (item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
           ]);
         });
       });
@@ -862,7 +892,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       head: [['Produto', 'Origem', 'Qtd Final', 'Custo Unit.', 'Total']],
       body: tableData,
       theme: 'grid',
-      margin: { bottom: 40 },
+      margin: { bottom: 55 },
       headStyles: { fillColor: [30, 41, 59], fontSize: 9 },
       styles: { fontSize: 9 },
       columnStyles: {
@@ -1375,7 +1405,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                     </div>
                                   </td>
                                   <td className="px-6 py-4 text-right font-bold text-white">
-                                    R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    R$ {(item.quantity_final * (item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                   </td>
                                   <td className="px-6 py-4 text-center">
                                     <button
@@ -1482,7 +1512,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                       </div>
                                     </td>
                                     <td className="px-6 py-4 text-right font-bold text-white">
-                                      R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      R$ {(item.quantity_final * (item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </td>
                                     <td className="px-6 py-4 text-center">
                                       <button
@@ -1510,7 +1540,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                             return acc;
                           }, {} as Record<string, BudgetItem[]>)) as [string, BudgetItem[]][]).map(([modelName, modelItems]) => {
                             // Calculate Model Total
-                            const modelTotal = modelItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+                            const modelTotal = modelItems.reduce((acc, i) => acc + (i.quantity_final * (i.unit_price || 0)), 0);
 
                             return (
                               <React.Fragment key={modelName}>
@@ -1601,7 +1631,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                         </div>
                                       </td>
                                       <td className="px-6 py-4 text-right font-bold text-white">
-                                        R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        R$ {(item.quantity_final * (item.unit_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                       </td>
                                       <td className="px-6 py-4 text-center">
                                         <button
@@ -1674,22 +1704,61 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
             <div className="flex flex-col gap-4">
               <div>
-                <label className="text-slate-400 text-sm font-medium block mb-2">Produto</label>
-                <select
-                  className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none"
-                  value={newItemName}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    const prod = catalogProducts?.find(p => p.name === name);
-                    setNewItemName(name);
-                    if (prod) setNewItemPrice(prod.price);
-                  }}
-                >
-                  <option value="">Selecione do catálogo...</option>
-                  {catalogProducts?.map(p => (
-                    <option key={p.id} value={p.name}>{p.name}</option>
-                  ))}
-                </select>
+                <label className="text-slate-400 text-sm font-medium block mb-2">Buscar Produto no Catálogo</label>
+                <div className="relative mb-3">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Digite o nome do produto..."
+                    className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 pl-10 pr-4 text-white focus:border-primary outline-none"
+                    value={addItemSearch}
+                    onChange={(e) => setAddItemSearch(e.target.value)}
+                  />
+                </div>
+                
+                <div className="max-h-48 overflow-y-auto divide-y divide-white/5 border border-white/5 rounded-lg bg-black/20">
+                  {catalogProducts
+                    .filter(p => !addItemSearch || p.name.toLowerCase().includes(addItemSearch.toLowerCase()))
+                    .map((p, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setNewItemName(p.name);
+                          setNewItemPrice(p.price);
+                          setAddItemSearch(''); // Clear search on select
+                        }}
+                        className={`w-full flex items-center justify-between p-3 transition-colors text-left group ${
+                          newItemName === p.name ? 'bg-primary/20 border-l-2 border-primary' : 'hover:bg-primary/10'
+                        }`}
+                      >
+                        <span className={`text-sm ${newItemName === p.name ? 'text-primary font-bold' : 'text-white'}`}>{p.name}</span>
+                        <span className="text-emerald-500 font-bold text-[10px] uppercase">R$ {(p.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      </button>
+                    ))
+                  }
+                  {catalogProducts.filter(p => !addItemSearch || p.name.toLowerCase().includes(addItemSearch.toLowerCase())).length === 0 && (
+                    <div className="p-4 text-center text-slate-500 italic text-sm">Nenhum produto encontrado.</div>
+                  )}
+                </div>
+
+                {newItemName && (
+                  <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Selecionado</span>
+                      <span className="text-sm text-white font-medium">{newItemName}</span>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setNewItemName('');
+                        setNewItemPrice(0);
+                      }}
+                      className="text-slate-500 hover:text-white"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1767,12 +1836,12 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                               {model.name}
                               {isAlreadyAdded && <span className="ml-2 text-red-400 text-xs uppercase font-bold">(Já adicionado)</span>}
                             </span>
-                            <span className="text-emerald-400 font-bold">R$ {model.total_price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            <span className="text-emerald-400 font-bold">R$ {(model.total_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                           </div>
                           <div className="flex justify-between text-xs mt-1">
                             <span className="text-slate-400">{model.description || 'Sem descrição'}</span>
                             <span className="text-slate-500">
-                              (M.O.: R$ {model.labor_price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                              (M.O.: R$ {(model.labor_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
                             </span>
                           </div>
                         </div>
@@ -1848,7 +1917,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                       className="w-full flex items-center justify-between p-3 hover:bg-primary/10 transition-colors text-left group"
                     >
                       <span className="text-white group-hover:text-primary transition-colors">{p.name}</span>
-                      <span className="text-emerald-500 font-bold text-xs uppercase">R$ {p.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-emerald-500 font-bold text-xs uppercase">R$ {(p.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     </button>
                   ))
                 }

@@ -406,6 +406,7 @@ const SettingsView: React.FC = () => {
                                                 onChange={(e) => setPdfSettings({ ...pdfSettings, footer_text: e.target.value })}
                                                 className="bg-background-dark border border-white/10 rounded-lg p-3 text-white focus:border-primary outline-none resize-none"
                                             />
+                                            <p className="text-[10px] text-slate-500 italic mt-1">Este texto será usado como padrão em todos os PDFs (Propostas e Composições), a menos que seja alterado individualmente em um projeto.</p>
                                         </div>
                                     </div>
 

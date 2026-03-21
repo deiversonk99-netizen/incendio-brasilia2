@@ -68,16 +68,21 @@ const FinanceView: React.FC = () => {
   };
 
   const handleStatusUpdate = async (id: string, newStatus: 'PAID' | 'PENDING') => {
-    const { error } = await supabase
-      .from('financial_transactions')
-      .update({ status: newStatus })
-      .eq('id', id);
+    try {
+      const { error } = await supabase
+        .from('financial_transactions')
+        .update({ status: newStatus })
+        .eq('id', id);
 
-    if (error) {
-      console.error('Error updating status:', error);
-      alert('Erro ao atualizar status.');
-    } else {
-      setTransactions((prev: Transaction[]) => prev.map((t: Transaction) => t.id === id ? { ...t, status: newStatus } : t));
+      if (error) {
+        console.error('Erro ao atualizar status:', error);
+        alert(`Erro ao atualizar lançamento: ${error.message}`);
+      } else {
+        setTransactions((prev: Transaction[]) => prev.map((t: Transaction) => t.id === id ? { ...t, status: newStatus } : t));
+      }
+    } catch (err: any) {
+      console.error('Erro inesperado:', err);
+      alert('Ocorreu um erro inesperado ao atualizar o lançamento.');
     }
   };
 

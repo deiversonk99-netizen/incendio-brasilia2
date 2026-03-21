@@ -121,7 +121,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
           carimbo: data.variables.carimbo || profile?.carimbo || '',
           carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || '',
-          footer_text: data.variables.footer_text || globalAppConfig.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança'
+          // Improved Footer Text logic: use global if project is empty or identical to legacy default
+          footer_text: (data.variables.footer_text && data.variables.footer_text !== 'Incêndio Brasília - Gestão de Tecnologias de Segurança')
+            ? data.variables.footer_text 
+            : (globalAppConfig.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança')
         });
       } else {
         setPdfSettings({
@@ -137,7 +140,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           show_carimbo: true,
           carimbo: profile?.carimbo || '',
           carimbo_img: profile?.carimbo_img || '',
+          validity_days: globalAppConfig.validity_days || 10,
           footer_text: globalAppConfig.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança',
+          show_logo: globalAppConfig.show_logo !== undefined ? globalAppConfig.show_logo : true,
           validade: '10',
           show_cost: true,
           show_cost_column: false,
@@ -895,12 +900,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const vals = calculateValues();
 
       // Utility for adding footer
-      const addFooter = (doc: any, pageNum: number, totalPages: number) => {
-        const footerY = pageHeight - 10;
-
-        // --- Company Stamps/Credentials on EVERY Page ---
+        const addFooter = (doc: any, pageNum: number, totalPages: number) => {
+        // Stamps/Credentials logic
         let stampX = 20;
-        const stampY = pageHeight - 35; // Position above footer text
+        const stampY = pageHeight - 48; // Middle ground to avoid both table and footer overlap
 
         if (pdfSettings.show_credentials) {
           if (pdfSettings.credentials_img) {
@@ -909,9 +912,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
               stampX += 35;
             } catch (e) { console.warn('Error adding credentials_img to footer:', e); }
           } else if (pdfSettings.credentials) {
-            doc.setFontSize(7);
+            doc.setFontSize(6.5); // Smaller font
             doc.setTextColor(150);
-            doc.text(pdfSettings.credentials, stampX, stampY + 10);
+            doc.text(pdfSettings.credentials, stampX, stampY + 12);
             stampX += 40;
           }
         }
@@ -922,22 +925,35 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
               doc.addImage(pdfSettings.carimbo_img, 'PNG', stampX, stampY, 30, 15);
             } catch (e) { console.warn('Error adding carimbo_img to footer:', e); }
           } else if (pdfSettings.carimbo) {
-            doc.setFontSize(7);
+            doc.setFontSize(6.5); // Smaller font
             doc.setTextColor(150);
-            doc.text(pdfSettings.carimbo, stampX, stampY + 10);
+            doc.text(pdfSettings.carimbo, stampX, stampY + 12);
           }
         }
 
-        // --- Page Number Footer ---
-        doc.setFontSize(8);
+        // --- Page Number Footer with Auto-Wrap ---
+        doc.setFontSize(6.5); // Smaller footer font
         doc.setTextColor(150);
+        doc.setFont('helvetica', 'normal');
 
         let safeProjectName = (pdfSettings.project_name_pdf || project.name || '').replace(/[\r\n]+/g, ' ').trim();
-        if (safeProjectName.length > 80) safeProjectName = safeProjectName.substring(0, 77) + '...';
+        if (safeProjectName.length > 60) safeProjectName = safeProjectName.substring(0, 57) + '...';
 
         const customFooter = pdfSettings.footer_text || 'Incêndio Brasília - Gestão de Tecnologias de Segurança';
-        const footerText = `${customFooter} | Proposta Comercial - ${safeProjectName} | Página ${pageNum} de ${totalPages}`;
-        doc.text(footerText, pageWidth / 2, footerY, { align: 'center' });
+        const pageInfo = `| Proposta Comercial - ${safeProjectName} | Página ${pageNum} de ${totalPages}`;
+        
+        const fullFooter = `${customFooter} ${pageInfo}`;
+        const maxWidth = pageWidth - 20; // More space horizontally
+        const lines = doc.splitTextToSize(fullFooter, maxWidth);
+        
+        const lineHeight = 3.2; // Smaller line height
+        const finalMargin = 10;
+        const totalHeight = lines.length * lineHeight;
+        const startY = pageHeight - finalMargin - (totalHeight - lineHeight);
+
+        lines.forEach((line: string, index: number) => {
+          doc.text(line, pageWidth / 2, startY + (index * lineHeight), { align: 'center' });
+        });
       };
 
       const drawHeader = (doc: any, title: string) => {
@@ -1355,7 +1371,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             // It's a header row. colSpan is already set in tableBody generation.
           }
         },
-        margin: { top: 70, bottom: 40 },
+        margin: { top: 70, bottom: 55 },
         didDrawPage: (data) => {
           if (data.pageNumber > 1) {
             drawHeader(doc, 'DETALHAMENTO DO INVESTIMENTO (CONT.)');
@@ -1445,7 +1461,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         body: financeBody,
         theme: 'grid',
         styles: { fontSize: 10 },
-        margin: { bottom: 40 },
+        margin: { bottom: 55 },
         columnStyles: { 1: { halign: 'right', cellWidth: 60 } }
       });
 
@@ -1459,7 +1475,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       autoTable(doc, {
         startY: 70,
         body: [
-          ['Cronograma de Execução', proposal.execution_schedule || 'A combinar'],
+          ['Cronograma e Prazo', proposal.execution_schedule || 'A combinar'],
           ['Condições de Pagamento', proposal.payment_conditions || 'A combinar'],
           ['Validade da Proposta', `${proposal.validity_days || 10} dias a partir desta data`]
         ],
