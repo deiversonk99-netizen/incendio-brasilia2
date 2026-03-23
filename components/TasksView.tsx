@@ -92,7 +92,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
     if (boardsData) {
       let allowedBoards = boardsData.filter(b => {
-        if (isCentral) return true;
+        if (isTeamMonitoring && isCentral) return true;
 
         // Regular users only see visible boards they own
         if (b.user_id === user?.id) {
@@ -108,7 +108,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         // In team monitoring, we add the Sync Board as a virtual option
         const syncBoardOption = {
           id: SYNC_BOARD_ID,
-          name: '🔄 Pendências (Equipe Geral)',
+          name: '🔄 Quadro Geral (Pendências)',
           user_id: undefined
         };
         
@@ -122,12 +122,27 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           return;
         }
       } else {
-        setBoards(allowedBoards);
+        if (isCentral) {
+          const listViewOption = {
+            id: 'lista-pendencias-global',
+            name: '📋 Lista de Pendências Global',
+            user_id: undefined
+          };
+          setBoards([listViewOption, ...allowedBoards]);
 
-        if (!selectedBoardId && allowedBoards.length > 0) {
-          setSelectedBoardId(allowedBoards[0].id);
-          setLoading(false);
-          return;
+          if (!selectedBoardId) {
+            setSelectedBoardId('lista-pendencias-global');
+            setLoading(false);
+            return;
+          }
+        } else {
+          setBoards(allowedBoards);
+
+          if (!selectedBoardId && allowedBoards.length > 0) {
+            setSelectedBoardId(allowedBoards[0].id);
+            setLoading(false);
+            return;
+          }
         }
       }
     }
@@ -137,8 +152,8 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       return;
     }
 
-    // Special Sync Board Handling
-    if (selectedBoardId === SYNC_BOARD_ID) {
+    // Special Sync Board and List View Handling
+    if (selectedBoardId === SYNC_BOARD_ID || selectedBoardId === 'lista-pendencias-global') {
       // First get visible board IDs
       const { data: visibleBoards } = await supabase
         .from('task_boards')
@@ -490,11 +505,13 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           <div className="flex flex-col gap-1">
             <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
               <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                <span className="material-symbols-outlined text-primary text-[24px]">task_alt</span>
+                <span className="material-symbols-outlined text-primary text-[24px]">
+                  {isTeamMonitoring ? 'groups' : 'task_alt'}
+                </span>
               </div>
-              Gestão de Tarefas
+              {isTeamMonitoring ? 'Monitoramento da Equipe' : 'Minhas Tarefas'}
             </h2>
-            {isTeamMonitoring || isCentral ? (
+            {boards.length > 1 || isTeamMonitoring ? (
               <div className="flex items-center gap-3">
                 <div className="relative group">
                   <select
@@ -511,7 +528,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
                 <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
-                  {isTeamMonitoring ? 'Monitoramento de Pendências da Equipe' : 'Controle de fluxos e processos'}
+                  {isTeamMonitoring ? 'Visão global e por membro da equipe' : 'Controle de seus fluxos e processos'}
                 </p>
               </div>
             ) : (
@@ -521,30 +538,16 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                     {boards.find((b: TaskBoard) => b.id === selectedBoardId)?.name || 'MEU QUADRO'}
                   </div>
                 </div>
+                <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
+                  Controle de seus fluxos e processos
+                </p>
               </div>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Board Management Tools */}
-            {isCentral && selectedBoardId !== SYNC_BOARD_ID && (
-              <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
-                <button
-                  onClick={handleRenameBoard}
-                  className="flex items-center justify-center rounded-lg w-9 h-9 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
-                  title="Renomear Quadro"
-                >
-                  <span className="material-symbols-outlined text-[20px]">edit_note</span>
-                </button>
-                <button
-                  onClick={handleDeleteBoard}
-                  className="flex items-center justify-center rounded-lg w-9 h-9 hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-all"
-                  title="Excluir Quadro"
-                >
-                  <span className="material-symbols-outlined text-[20px]">delete</span>
-                </button>
-              </div>
-            )}
+
 
             {/* View Controls */}
             <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
@@ -555,15 +558,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                 <span className="material-symbols-outlined text-[18px]">{isCompact ? 'view_kanban' : 'view_headline'}</span>
                 <span>{isCompact ? 'Ver Padrão' : 'Ver Compacto'}</span>
               </button>
-              {isCentral && (
-                <button
-                  onClick={handleAddBoardClick}
-                  className="flex items-center justify-center gap-2 rounded-lg h-9 px-4 transition-all text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white hover:bg-white/5"
-                >
-                  <span className="material-symbols-outlined text-[18px]">add_box</span>
-                  <span>Novo Quadro</span>
-                </button>
-              )}
+
             </div>
 
             {/* Search & Action */}
@@ -577,13 +572,15 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="flex items-center justify-center gap-2 rounded-xl h-10 px-6 bg-primary hover:bg-red-600 text-white text-[11px] font-black uppercase tracking-[0.15em] transition-all shadow-xl shadow-primary/20 active:scale-95"
-              >
-                <span className="material-symbols-outlined text-[20px]">add</span>
-                <span>Nova Tarefa</span>
-              </button>
+              {selectedBoardId !== 'lista-pendencias-global' && (
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="flex items-center justify-center gap-2 rounded-xl h-10 px-6 bg-primary hover:bg-red-600 text-white text-[11px] font-black uppercase tracking-[0.15em] transition-all shadow-xl shadow-primary/20 active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-[20px]">add</span>
+                  <span>Nova Tarefa</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -613,7 +610,96 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             </div>
             <div className="text-center">
               <h3 className="text-lg font-bold text-white mb-1">Nenhum quadro encontrado</h3>
-              <p className="text-slate-400 max-w-xs mx-auto">Entre em contato com o ADM para criar um quadro de tarefas para você.</p>
+              <p className="text-slate-400 max-w-xs mx-auto">Entre em contato com a administração para criar ou habilitar um quadro de tarefas para você.</p>
+            </div>
+          </div>
+        ) : selectedBoardId === 'lista-pendencias-global' ? (
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+              <table className="w-full text-left">
+                <thead className="bg-black/40 uppercase tracking-widest text-slate-500 font-black text-[10px]">
+                  <tr>
+                    <th className="px-6 py-4 rounded-tl-xl w-[60px] text-center">Status</th>
+                    <th className="px-6 py-4">Tarefa</th>
+                    <th className="px-6 py-4">Projeto / Cliente</th>
+                    <th className="px-6 py-4">Responsável</th>
+                    <th className="px-6 py-4">Prazo</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={5} className="py-20 text-center">
+                        <div className="flex flex-col items-center justify-center gap-4 opacity-40">
+                          <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Carregando...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredTasks.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-20 text-center text-slate-500 font-black tracking-widest uppercase text-[10px] bg-black/10">
+                        <div className="flex flex-col items-center gap-3 opacity-60">
+                          <span className="material-symbols-outlined text-[32px]">task_alt</span>
+                          Nenhuma tarefa pendente encontrada.
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTasks.map((task: any) => {
+                      const isExpired = task.expiration_date && new Date(task.expiration_date) < new Date();
+                      const userName = task.user_profiles?.email?.split('@')[0] || 'Desconhecido';
+                      const initials = userName.charAt(0).toUpperCase();
+
+                      return (
+                        <tr 
+                          key={task.id} 
+                          onClick={() => { setSelectedTask(task); setIsModalOpen(true); }} 
+                          className="hover:bg-white/[0.04] transition-colors cursor-pointer group bg-black/20"
+                        >
+                          <td className="px-6 py-4 text-center">
+                            <span className={`material-symbols-outlined text-[18px] ${isExpired ? 'text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'text-slate-500 group-hover:text-primary transition-colors'}`}>
+                              {isExpired ? 'warning' : 'assignment'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="font-black text-white text-[12px] group-hover:text-primary transition-colors">{task.title}</div>
+                            {task.company_name && <div className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">{task.company_name}</div>}
+                          </td>
+                          <td className="px-6 py-4">
+                            {task.projects?.name ? (
+                              <div className="bg-primary/10 text-primary border border-primary/20 rounded-lg px-3 py-1.5 inline-flex items-center gap-1.5 font-black uppercase tracking-widest text-[9px] shadow-sm">
+                                <span className="material-symbols-outlined text-[14px]">apartment</span>
+                                {task.projects.name}
+                              </div>
+                            ) : (
+                              <span className="text-slate-600 font-bold uppercase tracking-widest">—</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="size-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-black text-primary border border-primary/30 shadow-inner">
+                                {initials}
+                              </div>
+                              <span className="text-slate-300 font-black uppercase tracking-widest text-[10px]">{userName}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            {task.expiration_date ? (
+                              <div className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${isExpired ? 'text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20 inline-flex' : 'text-slate-400'}`}>
+                                <span className="material-symbols-outlined text-[14px]">calendar_today</span>
+                                {new Date(task.expiration_date).toLocaleDateString()}
+                              </div>
+                            ) : (
+                              <span className="text-slate-600 font-bold uppercase tracking-widest">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         ) : (
