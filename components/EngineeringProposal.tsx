@@ -61,7 +61,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     cert_crq_file: null, // Base64 or URL. If null, try default
     show_cert_regularity: true,
     cert_regularity_file: null,
-    show_services_total: true // New: Toggle Services total in financial summary
+    show_services_total: true, // New: Toggle Services total in financial summary
+    group_products_as_service: false, // New: Group products as a single service
+    group_products_name: '' // New: Custom name for the grouped service
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [showVisibilityModal, setShowVisibilityModal] = useState(false);
@@ -121,6 +123,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
           carimbo: data.variables.carimbo || profile?.carimbo || '',
           carimbo_img: data.variables.carimbo_img || profile?.carimbo_img || '',
+          group_products_as_service: data.variables.group_products_as_service || false,
+          group_products_name: data.variables.group_products_name || '',
           // Improved Footer Text logic: use global if project is empty or identical to legacy default
           footer_text: (data.variables.footer_text && data.variables.footer_text !== 'Incêndio Brasília - Gestão de Tecnologias de Segurança')
             ? data.variables.footer_text 
@@ -158,7 +162,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           cert_crq_file: null,
           cert_regularity_file: null,
           project_name_pdf: '',
-          show_services_total: true
+          show_services_total: true,
+          group_products_as_service: false,
+          group_products_name: ''
         });
       }
     } catch (e) {
@@ -1212,9 +1218,31 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const tableBody: any[] = [];
       let majorIndex = 0;
 
-      // Add Central Items
-      if (centralItems.length > 0) {
+      // --- GROUP PRODUCTS AS SERVICE (NEW OPTION) ---
+      if (pdfSettings.group_products_as_service && vals.productsFinal > 0) {
         majorIndex++;
+        const groupName = pdfSettings.group_products_name || 'Fornecimento de Equipamentos e Materiais';
+        
+        let colSpan = 2;
+        if (pdfSettings.show_cost) colSpan += 2;
+        if (pdfSettings.show_cost_column) colSpan += 2;
+
+        tableBody.push([{ content: `${majorIndex}. ${groupName.toUpperCase()}`, colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+
+        const row = [`${majorIndex}.1 ${groupName}`, 1];
+        if (pdfSettings.show_cost_column) {
+          row.push(`R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+          row.push(`R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+        }
+        if (pdfSettings.show_cost) {
+          row.push(`R$ ${vals.productsFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+          row.push(`R$ ${vals.productsFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+        }
+        tableBody.push(row);
+      } else {
+        // Add Central Items
+        if (centralItems.length > 0) {
+          majorIndex++;
         let colSpan = 2;
         if (pdfSettings.show_cost) colSpan += 2;
         if (pdfSettings.show_cost_column) colSpan += 2;
@@ -1323,6 +1351,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           });
         });
       }
+      } // End of group_products_as_service else block
 
       const tableHead = ['Descrição', 'Qtd'];
       // Only show cost columns if global show_cost is true AND we are NOT hiding product values specifically
@@ -1418,8 +1447,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       if (proposal.separate_services_materials) {
         // --- SEPARATE MODE ---
-        if (vals.productsFinal > 0 && !proposal.hide_products_pdf) {
-          financeBody.push(['Total Materiais / Equipamentos', `R$ ${vals.productsFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+        if (vals.productsFinal > 0 && (!proposal.hide_products_pdf || pdfSettings.group_products_as_service)) {
+          const productsLabel = pdfSettings.group_products_as_service ? (pdfSettings.group_products_name || 'Fornecimento de Equipamentos e Materiais') : 'Total Materiais / Equipamentos';
+          financeBody.push([productsLabel, `R$ ${vals.productsFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
         }
 
         if (!proposal.hide_services_pdf) {

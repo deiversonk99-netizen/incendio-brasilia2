@@ -10,6 +10,7 @@ interface NewTransactionModalProps {
     onSuccess: () => void;
     initialType?: 'INCOME' | 'EXPENSE';
     editingTransaction?: any; // Using any for simplicity as Transaction type might be slightly different here
+    isDuplicate?: boolean;
 }
 
 interface Client {
@@ -23,7 +24,8 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
     onClose,
     onSuccess,
     initialType = 'EXPENSE',
-    editingTransaction = null
+    editingTransaction = null,
+    isDuplicate = false
 }) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
@@ -45,7 +47,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
     useEffect(() => {
         if (isOpen) {
             fetchInitialData();
-            if (editingTransaction) {
+            if (editingTransaction && !isDuplicate) {
                 const totalVal = editingTransaction.value * (editingTransaction.total_installments || 1);
                 setFormData({
                     description: editingTransaction.description,
@@ -58,6 +60,20 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                     status: editingTransaction.status,
                     project_id: editingTransaction.project_id || '',
                     installments: (editingTransaction.total_installments || 1).toString(),
+                });
+            } else if (editingTransaction && isDuplicate) {
+                const totalVal = editingTransaction.value * (editingTransaction.total_installments || 1);
+                setFormData({
+                    description: `${editingTransaction.description} (Cópia)`,
+                    value: totalVal.toString(),
+                    installmentValue: totalVal.toString(), 
+                    type: editingTransaction.type,
+                    entity: editingTransaction.entity || '',
+                    date: new Date().toISOString().split('T')[0],
+                    category: editingTransaction.category || '',
+                    status: 'PENDING',
+                    project_id: editingTransaction.project_id || '',
+                    installments: '1', // Default to 1 so they can re-choose
                 });
             } else {
                 setFormData(prev => ({
@@ -144,6 +160,27 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         }));
     };
 
+    const handleAddNewClient = async () => {
+        const name = prompt('Digite o nome do novo cliente:');
+        if (!name || name.trim() === '') return;
+        
+        setLoading(true);
+        try {
+            const { data, error } = await supabase.from('clients').insert([{ name: name.trim() }]).select();
+            if (error) throw error;
+            
+            if (data && data[0]) {
+                const newClient = data[0];
+                setClients(prev => [...prev, newClient].sort((a, b) => a.name.localeCompare(b.name)));
+                setFormData(prev => ({ ...prev, entity: newClient.name }));
+            }
+        } catch (err: any) {
+            alert('Erro ao criar cliente: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     if (!isOpen) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -156,7 +193,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
             const totalValue = parseFloat(formData.value) || 0;
             const installmentValue = totalValue / numInstallments;
 
-            if (editingTransaction) {
+            if (editingTransaction && !isDuplicate) {
                 // Update specific transaction
                 const { error } = await supabase
                     .from('financial_transactions')
@@ -235,7 +272,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
             <div className="w-full max-w-lg rounded-2xl bg-surface-dark border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[95vh] md:max-h-[90vh]">
                 <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5">
                     <h2 className="text-xl font-bold text-white">
-                        {editingTransaction
+                        {editingTransaction && !isDuplicate
                             ? (formData.type === 'INCOME' ? 'Editar Venda' : 'Editar Despesa')
                             : (formData.type === 'INCOME' ? 'Nova Venda' : 'Nova Despesa')}
                     </h2>
@@ -245,10 +282,8 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
-                    {/* Type Toggle - Disable if editing? Usually better to keep as is but user might change it.
-                        Actually, let's keep it but maybe hide if it complicates things. For now keep.
-                    */}
-                    {!editingTransaction && (
+                    {/* Type Toggle */}
+                    {(!editingTransaction || isDuplicate) && (
                         <div className="flex p-1 bg-background-dark rounded-xl border border-white/5">
                             <button
                                 type="button"
@@ -318,7 +353,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                             <select
                                 value={formData.installments}
                                 onChange={e => handleInstallmentsChange(e.target.value)}
-                                disabled={!!editingTransaction}
+                                disabled={!!editingTransaction && !isDuplicate}
                                 className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary outline-none text-sm disabled:opacity-50"
                             >
                                 {[1, 2, 3, 4, 5, 6, 10, 12, 24, 36].map(n => (
@@ -340,10 +375,20 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                                <SearchableSelect
-                                    label="Cliente"
-                                    value={formData.entity}
-                                    onChange={val => setFormData({ ...formData, entity: val })}
+                            <div className="flex justify-between items-end mb-1.5">
+                                <label className="block text-xs font-semibold uppercase text-slate-500 font-bold mb-0">Cliente</label>
+                                <button
+                                    type="button"
+                                    onClick={handleAddNewClient}
+                                    className="text-[10px] text-primary hover:text-primary-dark font-bold uppercase flex items-center gap-1 transition-colors"
+                                >
+                                    <span className="material-symbols-outlined text-[14px]">add</span>
+                                    Novo
+                                </button>
+                            </div>
+                            <SearchableSelect
+                                value={formData.entity}
+                                onChange={val => setFormData({ ...formData, entity: val })}
                                     options={clients.map(c => ({
                                         id: c.id,
                                         label: c.name,

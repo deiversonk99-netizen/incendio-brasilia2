@@ -981,17 +981,16 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 <thead className="bg-white/5 text-slate-400 font-medium uppercase text-xs tracking-wider">
                                     <tr>
                                         <th className="px-6 py-4">Ações</th>
+                                        <th className="px-6 py-4 text-center">Imagem</th>
                                         <th className="px-6 py-4">Nome do Produto</th>
                                         <th className="px-6 py-4 text-center">Placa?</th>
                                         <th className="px-6 py-4">Categoria</th>
                                         <th className="px-6 py-4">Fornecedor</th>
                                         <th className="px-6 py-4 text-center">Unidade</th>
                                         {hasPriceAccess && (
-                                            <>
-                                                <th className="px-6 py-4 text-right">Preço Unit.</th>
-                                                <th className="px-6 py-4 text-right">Preço Custo</th>
-                                            </>
+                                            <th className="px-6 py-4 text-right">Preço Unit.</th>
                                         )}
+                                        <th className="px-6 py-4 text-right">Preço Custo</th>
                                         <th className="px-6 py-4">Cadastro</th>
                                         <th className="px-6 py-4">Localização (Depósito)</th>
                                         <th className="px-6 py-4">Observação</th>
@@ -1049,6 +1048,15 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                         </button>
                                                     </div>
                                                 </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    {product.image ? (
+                                                        <img src={product.image} alt={product.name} className="w-10 h-10 object-cover rounded-lg border border-white/10 mx-auto" />
+                                                    ) : (
+                                                        <div className="w-10 h-10 bg-black/40 border border-white/10 rounded-lg flex items-center justify-center mx-auto text-slate-600">
+                                                            <span className="material-symbols-outlined text-[20px]">imagesmode</span>
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-6 py-4">
                                                     <div className="font-medium text-white">{product.name}</div>
                                                     {computeQuantity(product.id) > 0 && (
@@ -1075,15 +1083,13 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                                 </td>
                                                 <td className="px-6 py-4 text-center text-slate-400">{product.unit || 'un'}</td>
                                                 {hasPriceAccess && (
-                                                    <>
-                                                        <td className="px-6 py-4 text-right font-medium text-emerald-400">
-                                                            R$ {product.price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                        </td>
-                                                        <td className="px-6 py-4 text-right font-medium text-slate-400">
-                                                            R$ {Number(product.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                        </td>
-                                                    </>
+                                                    <td className="px-6 py-4 text-right font-medium text-emerald-400">
+                                                        R$ {product.price?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    </td>
                                                 )}
+                                                <td className="px-6 py-4 text-right font-medium text-slate-400">
+                                                    R$ {Number(product.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
                                                 <td className="px-6 py-4 text-slate-400 text-sm">
                                                     {product.registration_date ? new Date(product.registration_date).toLocaleDateString('pt-BR') : '-'}
                                                 </td>
@@ -1205,33 +1211,33 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 </div>
                             </div>
 
-                            {hasPriceAccess && (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-400 mb-1">Preço Venda (R$)</label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            required
-                                            className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
-                                            value={formData.price}
-                                            onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-400 mb-1">Preço Custo (R$)</label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
-                                            value={formData.cost_price}
-                                            onChange={e => setFormData({ ...formData, cost_price: parseFloat(e.target.value) })}
-                                        />
-                                    </div>
-                                </div>
-                            )}
+                            <div className="grid grid-cols-2 gap-4">
+                                                {hasPriceAccess && (
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-400 mb-1">Preço Venda (R$)</label>
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            min="0"
+                                                            required
+                                                            className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
+                                                            value={formData.price}
+                                                            onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
+                                                        />
+                                                    </div>
+                                                )}
+                                                <div className={!hasPriceAccess ? "col-span-2" : ""}>
+                                                    <label className="block text-sm font-medium text-slate-400 mb-1">Preço Custo (R$)</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary outline-none font-medium"
+                                                        value={formData.cost_price}
+                                                        onChange={e => setFormData({ ...formData, cost_price: parseFloat(e.target.value) })}
+                                                    />
+                                                </div>
+                                            </div>
 
                             <div className="flex items-center gap-3 bg-white/5 p-3 rounded-lg border border-white/10">
                                 <input

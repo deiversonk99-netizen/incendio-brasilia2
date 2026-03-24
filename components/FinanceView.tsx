@@ -18,6 +18,7 @@ const FinanceView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialType, setModalInitialType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [isDuplicateMode, setIsDuplicateMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
@@ -86,40 +87,45 @@ const FinanceView: React.FC = () => {
     }
   };
 
-  const handleDeleteTransaction = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
-    const { error } = await supabase
-      .from('financial_transactions')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error('Error deleting transaction:', error);
-      alert('Erro ao excluir transação.');
+  const handleDeleteTransaction = async (t: Transaction) => {
+    if (t.installment_group_id) {
+       const deleteAll = confirm('Esta transação faz parte de um parcelamento.\n\nClique em OK para excluir TODAS as parcelas deste grupo.\n\nClique em Cancelar para excluir APENAS esta parcela individual.');
+       
+       if (deleteAll) {
+           const { error } = await supabase.from('financial_transactions').delete().eq('installment_group_id', t.installment_group_id);
+           if (error) {
+             console.error('Error deleting transaction group:', error);
+             alert('Erro ao excluir grupo: ' + error.message);
+           } else {
+             setTransactions(prev => prev.filter((item: Transaction) => item.installment_group_id !== t.installment_group_id));
+           }
+       } else {
+           const { error } = await supabase.from('financial_transactions').delete().eq('id', t.id);
+           if (error) {
+             console.error('Error deleting transaction:', error);
+             alert('Erro ao excluir parcela: ' + error.message);
+           } else {
+             setTransactions(prev => prev.filter((item: Transaction) => item.id !== t.id));
+           }
+       }
     } else {
-      setTransactions(prev => prev.filter((t: Transaction) => t.id !== id));
+      if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
+      const { error } = await supabase
+        .from('financial_transactions')
+        .delete()
+        .eq('id', t.id);
+
+      if (error) {
+        console.error('Error deleting transaction:', error);
+        alert('Erro ao excluir transação.');
+      } else {
+        setTransactions(prev => prev.filter((item: Transaction) => item.id !== t.id));
+      }
     }
   };
 
-  const handleDuplicateTransaction = async (transaction: Transaction) => {
-    try {
-      const { id, created_at, ...duplicateData } = transaction as any;
-      const { error } = await supabase
-        .from('financial_transactions')
-        .insert({
-          ...duplicateData,
-          description: `${duplicateData.description} (Cópia)`,
-          status: 'PENDING', // Default to pending for safety
-          date: new Date().toISOString().split('T')[0] // Default to today
-        });
-
-      if (error) throw error;
-      alert('Transação duplicada com sucesso!');
-      fetchData();
-    } catch (e: any) {
-      console.error('Error duplicating transaction:', e);
-      alert('Erro ao duplicar transação: ' + e.message);
-    }
+  const handleDuplicateTransaction = (transaction: Transaction) => {
+    openModal(transaction.type, transaction, true);
   };
 
   useEffect(() => {
@@ -417,9 +423,10 @@ const FinanceView: React.FC = () => {
     return Object.values(suppliersMap).sort((a: any, b: any) => b.count - a.count).slice(0, 3);
   }, [transactions]);
 
-  const openModal = (type: 'INCOME' | 'EXPENSE', transaction: Transaction | null = null) => {
+  const openModal = (type: 'INCOME' | 'EXPENSE', transaction: Transaction | null = null, isDuplicate = false) => {
     setModalInitialType(type);
     setEditingTransaction(transaction);
+    setIsDuplicateMode(isDuplicate);
     setIsModalOpen(true);
   };
 
@@ -787,7 +794,7 @@ const FinanceView: React.FC = () => {
                             </button>
                           )}
                           <button
-                            onClick={() => handleDeleteTransaction(t.id)}
+                            onClick={() => handleDeleteTransaction(t)}
                             className="w-8 h-8 rounded-lg bg-white/5 hover:bg-red-500/10 text-slate-500 hover:text-red-500 flex items-center justify-center transition-all border border-white/5 hover:border-red-500/20"
                             title="Excluir Transação"
                           >
@@ -809,10 +816,12 @@ const FinanceView: React.FC = () => {
         onClose={() => {
           setIsModalOpen(false);
           setEditingTransaction(null);
+          setIsDuplicateMode(false);
         }}
         onSuccess={() => fetchData()}
         initialType={modalInitialType}
         editingTransaction={editingTransaction}
+        isDuplicate={isDuplicateMode}
       />
 
       <ReportFilterModal
