@@ -77,9 +77,13 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const fetchData = async () => {
     setLoading(true);
 
+    let currentUsers = users;
     if (isCentral && users.length === 0) {
       const { data: uData } = await supabase.from('user_profiles').select('id, email, professional_title');
-      if (uData) setUsers(uData);
+      if (uData) {
+        setUsers(uData);
+        currentUsers = uData;
+      }
     }
 
     // 1. Fetch Boards
@@ -102,6 +106,15 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         // Check explicitly granted permissions
         const permKey = `BOARD_${b.id}`;
         return profile?.permissions && profile.permissions[permKey] === true;
+      }).map(b => {
+        // Append user identification to board name if we are in Team Monitoring
+        if (isTeamMonitoring && isCentral && b.user_id) {
+          const owner = currentUsers.find(u => u.id === b.user_id);
+          if (owner) {
+            return { ...b, name: `${b.name} (${owner.email.split('@')[0]})` };
+          }
+        }
+        return b;
       });
 
       if (isTeamMonitoring) {
@@ -128,9 +141,9 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             name: '📋 Lista de Pendências Global',
             user_id: undefined
           };
-          setBoards([listViewOption, ...allowedBoards]);
+          setBoards([listViewOption]);
 
-          if (!selectedBoardId) {
+          if (!selectedBoardId || selectedBoardId !== 'lista-pendencias-global') {
             setSelectedBoardId('lista-pendencias-global');
             setLoading(false);
             return;
@@ -677,11 +690,30 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                             )}
                           </td>
                           <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="size-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-black text-primary border border-primary/30 shadow-inner">
-                                {initials}
+                            <div className="flex flex-col gap-2">
+                              {/* Dono / Criador */}
+                              <div className="flex items-center gap-2" title="Dono do Quadro / Tarefa">
+                                <div className="size-6 rounded-full bg-surface-dark border border-white/10 flex items-center justify-center text-[9px] font-black text-slate-400 shadow-inner">
+                                  {initials}
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-bold text-slate-500 uppercase leading-none">Dono</span>
+                                  <span className="text-slate-300 font-black uppercase tracking-widest text-[10px] truncate max-w-[120px]">{userName}</span>
+                                </div>
                               </div>
-                              <span className="text-slate-300 font-black uppercase tracking-widest text-[10px]">{userName}</span>
+                              
+                              {/* Assignee / Responsável */}
+                              {task.assignee_profile && (
+                                <div className="flex items-center gap-2" title="Responsável pela Execução">
+                                  <div className="size-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[9px] font-black text-primary shadow-inner">
+                                    {(task.assignee_profile?.email || '?').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-[8px] font-bold text-primary/70 uppercase leading-none">Resp. Executivo</span>
+                                    <span className="text-primary font-black uppercase tracking-widest text-[10px] truncate max-w-[120px]">{task.assignee_profile.email.split('@')[0]}</span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -838,16 +870,14 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
                           <div className="flex items-center justify-between pt-3 border-t border-white/5">
                             <div className="flex items-center gap-2">
-                              {/* User Avatar Initial & Email Label */}
-                              <div className="flex items-center gap-1.5">
-                                <div className="size-6 rounded-lg bg-surface-dark border border-white/10 flex items-center justify-center text-[10px] font-black text-slate-400 shadow-inner" title={(task as any).user_profiles?.email}>
+                              {/* User Avatar Initial & Email Label - ALWAYS VISIBLE NOW */}
+                              <div className="flex items-center gap-1.5" title={`Dono do Quadro: ${(task as any).user_profiles?.email}`}>
+                                <div className="size-6 rounded-lg bg-surface-dark border border-white/10 flex items-center justify-center text-[10px] font-black text-slate-400 shadow-inner">
                                   {initials}
                                 </div>
-                                {selectedBoardId === SYNC_BOARD_ID && (
-                                  <span className="text-[9px] font-bold text-slate-500 truncate max-w-[80px]" title={(task as any).user_profiles?.email}>
-                                    {(task as any).user_profiles?.email?.split('@')[0]}
-                                  </span>
-                                )}
+                                <span className="text-[9px] font-bold text-slate-500 truncate max-w-[80px]">
+                                  {(task as any).user_profiles?.email?.split('@')[0]}
+                                </span>
                               </div>
 
                               {/* Assignee Avatar */}
@@ -857,16 +887,9 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                                   <div className="size-6 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-black text-primary shadow-inner" title={`Atribuído a: ${(task as any).assignee_profile.email}`}>
                                     {(task as any).assignee_profile.email?.charAt(0).toUpperCase()}
                                   </div>
-                                </div>
-                              )}
-
-                              {/* Assignee Avatar */}
-                              {(task as any).assignee_profile && (
-                                <div className="flex items-center gap-1.5 ml-2 border-l border-white/10 pl-2">
-                                  <span className="text-[8px] font-bold text-slate-500 uppercase">Resp:</span>
-                                  <div className="size-6 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-black text-primary shadow-inner" title={`Atribuído a: ${(task as any).assignee_profile.email}`}>
-                                    {(task as any).assignee_profile.email?.charAt(0).toUpperCase()}
-                                  </div>
+                                  <span className="text-[9px] font-bold text-primary truncate max-w-[80px]">
+                                    {(task as any).assignee_profile.email?.split('@')[0]}
+                                  </span>
                                 </div>
                               )}
                               <span className="text-[9px] font-black uppercase tracking-widest text-[#c7949f] opacity-40">
