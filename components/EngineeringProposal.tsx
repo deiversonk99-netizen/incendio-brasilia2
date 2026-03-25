@@ -1239,16 +1239,25 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           row.push(`R$ ${vals.productsFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
         }
         tableBody.push(row);
-      } else {
-        // Add Central Items
-        if (centralItems.length > 0) {
-          majorIndex++;
+      }
+
+      // Remove 'else' block wrapper so services can still be listed
+
+      // Remove 'else' block wrapper so services can still be listed
+
+      const activeCentralItems = pdfSettings.group_products_as_service 
+        ? centralItems.filter((i: any) => i.item_type === 'SERVICE')
+        : centralItems;
+
+      // Add Central Items
+      if (activeCentralItems.length > 0) {
+        majorIndex++;
         let colSpan = 2;
         if (pdfSettings.show_cost) colSpan += 2;
         if (pdfSettings.show_cost_column) colSpan += 2;
-        tableBody.push([{ content: `${majorIndex}. ITENS DE COTAÇÃO CENTRAL`, colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+        tableBody.push([{ content: `${majorIndex}. ${pdfSettings.group_products_as_service ? 'SERVIÇOS DE ENGENHARIA' : 'ITENS DE COTAÇÃO CENTRAL'}`, colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
 
-        centralItems.forEach((item, idx) => {
+        activeCentralItems.forEach((item: any, idx: number) => {
           const row = [`${majorIndex}.${idx + 1} ${item.name || 'Item'}`, item.quantity_final || 0];
           if (pdfSettings.show_cost_column) {
             row.push(`R$ ${Number(item.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -1264,7 +1273,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // Add Model Items grouped by Model
       if (modelItems.length > 0) {
-        const grouped = modelItems.reduce((acc, item) => {
+        const grouped = modelItems.reduce((acc: Record<string, any[]>, item: any) => {
           const modelName = item.name.match(/\[MODELO:(.+?)\]/)?.[1]?.trim() || 'Outros';
           if (!acc[modelName]) acc[modelName] = [];
           acc[modelName].push(item);
@@ -1273,9 +1282,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         (Object.entries(grouped) as [string, any[]][]).forEach(([modelName, mItems]) => {
           // Filter items to display based on settings
-          const visibleItems = mItems.filter(item => {
+          const visibleItems = mItems.filter((item: any) => {
             const isLabor = item.item_type === 'SERVICE';
-
+            if (pdfSettings.group_products_as_service && !isLabor) return false;
             if (isLabor) return !proposal.hide_services_pdf;
             // It's a product in the model
             return !proposal.hide_products_pdf;
@@ -1284,7 +1293,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           if (visibleItems.length === 0) return;
 
           majorIndex++;
-          const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+          const modelTotal = mItems.reduce((acc: number, i: any) => acc + (i.quantity_final * i.unit_price), 0);
 
           // Header for Model
           let colSpan = 2;
@@ -1292,12 +1301,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           if (pdfSettings.show_cost_column) colSpan += 2;
 
           tableBody.push([{
-            content: `${majorIndex}. MODELO DE SERVIÇO: ${modelName.toUpperCase()} ${pdfSettings.show_cost ? `(Total: R$ ${modelTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}`,
+            content: `${majorIndex}. MODELO DE SERVIÇO: ${modelName.toUpperCase()} ${pdfSettings.show_cost && !pdfSettings.group_products_as_service ? `(Total: R$ ${modelTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}`,
             colSpan: colSpan,
             styles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold' }
           }]);
 
-          visibleItems.forEach((item, idx) => {
+          visibleItems.forEach((item: any, idx: number) => {
             const cleanName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
             const row = [`${majorIndex}.${idx + 1} ${cleanName}`, item.quantity_final || 0];
 
@@ -1317,7 +1326,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // Add Infra Items grouped by kit
       if (infraItems.length > 0) {
-        const grouped = infraItems.reduce((acc, item) => {
+        const grouped = infraItems.reduce((acc: Record<string, any[]>, item: any) => {
           const kitName = item.name.match(/\[INFRA:(.+?)\]/)?.[1] || 'Outros';
           if (!acc[kitName]) acc[kitName] = [];
           acc[kitName].push(item);
@@ -1325,10 +1334,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         }, {} as Record<string, any[]>);
 
         (Object.entries(grouped) as [string, any[]][]).forEach(([kitName, kitItems]) => {
-          // Filter logic for Infra? Usually just checks if products hidden.
-          // Assuming infraItems already filtered in outer scope? No, filtering happens inside.
-          // Block from lines 807 already filtered: if (proposal.hide_products_pdf) return false;
-          // So infraItems are visible.
+          const visibleKitItems = kitItems.filter((item: any) => {
+            const isLabor = item.item_type === 'SERVICE';
+            if (pdfSettings.group_products_as_service && !isLabor) return false;
+            return true;
+          });
+
+          if (visibleKitItems.length === 0) return;
 
           majorIndex++;
           let colSpan = 2;
@@ -1336,7 +1348,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           if (pdfSettings.show_cost_column) colSpan += 2;
           tableBody.push([{ content: `${majorIndex}. INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: colSpan, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
 
-          kitItems.forEach((item, idx) => {
+          visibleKitItems.forEach((item: any, idx: number) => {
             const cleanName = item.name.includes('[INFRA:') ? item.name.split('[INFRA:')[0].trim() : item.name;
             const row = [`${majorIndex}.${idx + 1} ${cleanName}`, item.quantity_final || 0];
             if (pdfSettings.show_cost_column) {
@@ -1351,7 +1363,6 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           });
         });
       }
-      } // End of group_products_as_service else block
 
       const tableHead = ['Descrição', 'Qtd'];
       // Only show cost columns if global show_cost is true AND we are NOT hiding product values specifically
@@ -2607,6 +2618,49 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Remove preços e correlaciona escopo abaixo dos itens</span>
                           </div>
                         </label>
+                      </div>
+
+                      {/* New Option: Group Products as Service */}
+                      <div className="bg-background-dark/30 p-4 rounded-lg border border-white/5 mt-4">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <div className={`w-6 h-6 rounded flex items-center justify-center border transition-all ${pdfSettings.group_products_as_service ? 'bg-indigo-500 border-indigo-500' : 'bg-background-dark border-white/10 group-hover:border-white/20'}`}>
+                            {pdfSettings.group_products_as_service && <span className="material-symbols-outlined text-white text-[18px]">check</span>}
+                          </div>
+                          <input
+                            type="checkbox"
+                            className="hidden"
+                            checked={pdfSettings.group_products_as_service || false}
+                            onChange={e => savePdfSettings({ ...pdfSettings, group_products_as_service: e.target.checked })}
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-white">Agrupar Produtos como Serviço (PDF)</span>
+                            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Agrupa materiais em uma única linha com o total</span>
+                          </div>
+                        </label>
+
+                        <div className="mt-4 bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-lg flex gap-3 items-start">
+                          <span className="material-symbols-outlined text-indigo-400 text-[20px]">info</span>
+                          <div>
+                            <p className="text-xs font-bold text-indigo-300 mb-1">Como funciona o agrupamento?</p>
+                            <p className="text-[11px] text-slate-300 leading-relaxed">
+                              Esta função consolida todos os itens do tipo <strong>Produto</strong> em uma única linha no PDF, utilizando o valor total calculado na composição. 
+                              <br/><br/>
+                              Os itens do tipo <strong>Serviço</strong> (mão de obra) continuarão sendo listados individualmente para detalhamento do escopo.
+                            </p>
+                          </div>
+                        </div>
+
+                        {pdfSettings.group_products_as_service && (
+                          <div className="mt-3 pl-9 animate-in slide-in-from-top-1">
+                            <input
+                              type="text"
+                              className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none text-sm"
+                              placeholder="Nome do grupo (Padrão: Fornecimento de Equipamentos e Materiais)"
+                              value={pdfSettings.group_products_name || ''}
+                              onChange={e => savePdfSettings({ ...pdfSettings, group_products_name: e.target.value })}
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <div>

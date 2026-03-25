@@ -166,7 +166,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         
         setLoading(true);
         try {
-            const { data, error } = await supabase.from('clients').insert([{ name: name.trim() }]).select();
+            const { data, error } = await supabase.from('clients').insert([{ name: name.trim(), user_id: user?.id }]).select();
             if (error) throw error;
             
             if (data && data[0]) {
