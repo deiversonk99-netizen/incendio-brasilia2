@@ -667,7 +667,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                       return (
                         <tr 
                           key={task.id} 
-                          onClick={() => { setSelectedTask(task); setIsModalOpen(true); }} 
+                          onClick={() => { setEditingTask(task); setIsModalOpen(true); }} 
                           className="hover:bg-white/[0.04] transition-colors cursor-pointer group bg-black/20"
                         >
                           <td className="px-6 py-4 text-center">
@@ -1080,7 +1080,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                     onChange={(e) => setNewBoardUserId(e.target.value)}
                   >
                     <option value="">Selecione um usuário...</option>
-                    {users.map(u => (
+                    {users.filter(u => u.id).map(u => (
                       <option key={u.id} value={u.id}>{u.email} {u.professional_title ? `(${u.professional_title})` : ''}</option>
                     ))}
                   </select>

@@ -152,7 +152,7 @@ const AdminBoardsView: React.FC = () => {
     };
 
     // Filter users to only those with a valid ID (linked to auth)
-    const usersWithId = users.filter(u => u.id);
+    const usersWithId = users.filter(u => u.id && u.id.length > 5);
 
     const createBoard = async (e: React.FormEvent) => {
         e.preventDefault();

@@ -245,6 +245,22 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 fileUrl = await handleUpload(file);
             }
 
+            // Determine user_id: If creating a new task, use the board owner if available and user is central/admin
+            // Otherwise default to current user.
+            let targetUserId = user?.id;
+            if (!taskToEdit && groupId) {
+                const selectedGroup = groups.find(g => g.id === groupId);
+                if (selectedGroup) {
+                     const boardOwnerId = Array.isArray(selectedGroup.task_boards)
+                        ? selectedGroup.task_boards[0]?.user_id
+                        : (selectedGroup.task_boards as any)?.user_id;
+                    
+                    if (boardOwnerId) {
+                        targetUserId = boardOwnerId;
+                    }
+                }
+            }
+
             const payload = {
                 title,
                 description,
@@ -253,11 +269,11 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 category,
                 project_id: projectId || null,
                 file_url: fileUrl || (taskToEdit?.file_url || ''),
-                user_id: user?.id,
+                user_id: taskToEdit ? taskToEdit.user_id : targetUserId,
                 is_annual: isAnnual,
                 expiration_date: expirationDate || null,
-                assignee: assignee || null, // Add assignee
-                order_index: taskToEdit ? (taskToEdit.order_index || 0) : 0, // Default to top for new tasks
+                assignee: assignee || null,
+                order_index: taskToEdit ? (taskToEdit.order_index || 0) : 0,
                 status: taskToEdit ? (taskToEdit.status || 'PENDING') : 'PENDING'
             };
 
@@ -269,32 +285,22 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
 
             // Handle Checklist
             if (taskData) {
-                // We delete all existing items for this task to sync state (simplest approach for now)
-                // Or better: Upsert/Delete differential.
-                // For simplicity, let's just delete all and insert current state? 
-                // No, that changes IDs. Better to just handle inserts/updates. 
-                // But for "offline-first" feel, let's just process the list.
-
                 // Strategy: 
-                // 1. Delete items not in current list (if they have ID)
+                // 1. Delete items not in current list
                 // 2. Upsert items in current list
 
                 const currentIds = checklistItems.filter(i => i.id).map(i => i.id);
-                if (taskToEdit) {
-                    await supabase.from('task_checklist_items').delete().eq('task_id', taskToEdit.id).not('id', 'in', `(${currentIds.join(',')})`);
-                    // Note: Supabase not syntax for IN might be tricky with empty array.
-                    // If empty, delete all.
-                    if (currentIds.length === 0) {
-                        await supabase.from('task_checklist_items').delete().eq('task_id', taskToEdit.id);
-                    } else {
-                        await supabase.from('task_checklist_items').delete().eq('task_id', taskToEdit.id).not('id', 'in', `(${currentIds.join(',')})`);
-                    }
+                
+                // Simplified delete logic
+                const deleteQuery = supabase.from('task_checklist_items').delete().eq('task_id', taskData.id);
+                if (currentIds.length > 0) {
+                    await deleteQuery.not('id', 'in', `(${currentIds.join(',')})`);
+                } else {
+                    await deleteQuery;
                 }
 
                 const itemsToUpsert = checklistItems.map(item => ({
-                    id: item.id, // If undefined, Supabase will generate new UUID if we don't pass it? No, upsert needs PK.
-                    // Actually, for new items, id is undefined. 
-                    // Let's separate new vs existing.
+                    id: item.id,
                     task_id: taskData.id,
                     content: item.content,
                     is_completed: item.is_completed
