@@ -565,7 +565,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       // The breakdown separates MaterialBase vs ServiceTotal.
       // But for the "Base Cost" stored in proposal (historical?), we might keep just materials.
       // However, for the live calculation, we use the items directly.
-      if (item.item_type === 'SERVICE') return acc;
+      if (item.item_type === 'SERVICE' || item.item_type === 'CUSTOM') return acc;
       return acc + (item.quantity_final * (item.cost_price || 0));
     }, 0) || 0;
 
@@ -637,7 +637,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const lineCostTotal = cost * q;
       const lineFinalPrice = currentSale * q;
 
-      if (item.item_type === 'SERVICE') {
+      if (item.item_type === 'SERVICE' || item.item_type === 'CUSTOM') {
         totalServicesCost += lineCostTotal;
         servicesList.push({
           name: item.name,
@@ -786,7 +786,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       unit_price: newItem.price,
       cost_price: newItem.cost_price || newItem.price, // Default Cost to Price if 0 (Manual Entry)
       origin: 'MANUAL' as const,
-      item_type: modalTab === 'service' ? 'SERVICE' : 'PRODUCT'
+      item_type: modalTab === 'service' ? 'SERVICE' : (modalTab === 'custom' ? 'CUSTOM' : 'PRODUCT')
     };
 
     // If we have markups, we should probably reverse-calculate the Cost so the Price matches what was typed
@@ -1180,12 +1180,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         if (isModel || isInfra) return false;
 
         const isService = item.item_type === 'SERVICE';
+        const isCustom = item.item_type === 'CUSTOM';
         const isStandardProduct = catalogItems.some(p => p.name === item.name);
 
         // 3. Apply Filters
         if (isService) {
           if (proposal.hide_services_pdf) return false;
         }
+
+        // Custom items always show (they are individual line items like services)
+        if (isCustom) return true;
 
         if (proposal.hide_products_pdf) {
           // A. If it's a standard product -> ALWAYS HIDE
@@ -1246,7 +1250,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       // Remove 'else' block wrapper so services can still be listed
 
       const activeCentralItems = pdfSettings.group_products_as_service 
-        ? centralItems.filter((i: any) => i.item_type === 'SERVICE')
+        ? centralItems.filter((i: any) => i.item_type === 'SERVICE' || i.item_type === 'CUSTOM')
         : centralItems;
 
       // Add Central Items
@@ -1283,7 +1287,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         (Object.entries(grouped) as [string, any[]][]).forEach(([modelName, mItems]) => {
           // Filter items to display based on settings
           const visibleItems = mItems.filter((item: any) => {
-            const isLabor = item.item_type === 'SERVICE';
+            const isLabor = item.item_type === 'SERVICE' || item.item_type === 'CUSTOM';
             if (pdfSettings.group_products_as_service && !isLabor) return false;
             if (isLabor) return !proposal.hide_services_pdf;
             // It's a product in the model
@@ -1335,7 +1339,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         (Object.entries(grouped) as [string, any[]][]).forEach(([kitName, kitItems]) => {
           const visibleKitItems = kitItems.filter((item: any) => {
-            const isLabor = item.item_type === 'SERVICE';
+            const isLabor = item.item_type === 'SERVICE' || item.item_type === 'CUSTOM';
             if (pdfSettings.group_products_as_service && !isLabor) return false;
             return true;
           });
@@ -2375,18 +2379,27 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                   {/* Icon indicating type */}
                                   {item.item_type === 'SERVICE' ? (
                                     <span className="material-symbols-outlined text-indigo-400">construction</span>
+                                  ) : item.item_type === 'CUSTOM' ? (
+                                    <span className="material-symbols-outlined text-amber-400">tune</span>
                                   ) : (
                                     <span className="material-symbols-outlined text-emerald-400">inventory_2</span>
                                   )}
                                   <button
-                                    onClick={() => handleUpdateItem(item.id, { item_type: item.item_type === 'SERVICE' ? 'PRODUCT' : 'SERVICE' })}
+                                    onClick={() => {
+                                      const types = ['PRODUCT', 'SERVICE', 'CUSTOM'];
+                                      const currentIdx = types.indexOf(item.item_type || 'PRODUCT');
+                                      const nextType = types[(currentIdx + 1) % types.length];
+                                      handleUpdateItem(item.id, { item_type: nextType });
+                                    }}
                                     className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all shadow-sm ${item.item_type === 'SERVICE'
                                       ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/40 border border-indigo-500/30'
-                                      : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40 border border-emerald-500/30'
+                                      : item.item_type === 'CUSTOM'
+                                        ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/40 border border-amber-500/30'
+                                        : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40 border border-emerald-500/30'
                                       }`}
-                                    title="Clique para alternar entre Produto e Serviço"
+                                    title="Clique para alternar entre Produto, Serviço e Personalizado"
                                   >
-                                    {item.item_type === 'SERVICE' ? 'Serviço' : 'Produto'}
+                                    {item.item_type === 'SERVICE' ? 'Serviço' : item.item_type === 'CUSTOM' ? 'Personalizado' : 'Produto'}
                                   </button>
                                   <input
                                     type="text"
@@ -2463,7 +2476,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                     setItemToEdit(item);
                                     setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0 });
                                     // Determine tab
-                                    if (item.origin === 'MANUAL' && item.item_type === 'PRODUCT') setModalTab('custom');
+                                    if (item.item_type === 'CUSTOM' || (item.origin === 'MANUAL' && item.item_type === 'PRODUCT')) setModalTab('custom');
                                     else if (item.item_type === 'SERVICE') setModalTab('service');
                                     else setModalTab('product');
 
@@ -2480,7 +2493,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                   onClick={() => {
                                     setItemToReplace(item);
                                     setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0 });
-                                    setModalTab(item.item_type === 'SERVICE' ? 'service' : 'product');
+                                    setModalTab(item.item_type === 'SERVICE' ? 'service' : item.item_type === 'CUSTOM' ? 'custom' : 'product');
                                     setModalSearchTerm('');
                                     setShowSearchList(false);
                                     setIsAddItemModalOpen(true);
@@ -3010,6 +3023,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       value={newItem.name}
                       onChange={e => setNewItem({ ...newItem, name: e.target.value })}
                     />
+                    <div className="mt-3 flex gap-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                      <span className="material-symbols-outlined text-amber-400 text-[20px] mt-0.5 shrink-0">info</span>
+                      <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                        <strong className="text-amber-400">Item Personalizado:</strong> Este item será exibido como uma linha individual no PDF da proposta, mesmo quando a opção "Agrupar Produtos como Serviço" estiver ativada. Ideal para descrever serviços específicos, mão de obra ou itens sob medida que devem aparecer separadamente dos produtos do catálogo.
+                      </p>
+                    </div>
                   </div>
                 )}
 

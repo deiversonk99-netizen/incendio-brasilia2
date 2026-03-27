@@ -151,6 +151,9 @@ const AdminBoardsView: React.FC = () => {
         }
     };
 
+    // Filter users to only those with a valid ID (linked to auth)
+    const usersWithId = users.filter(u => u.id);
+
     const createBoard = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newBoardName || !selectedUserId) return;
@@ -182,6 +185,7 @@ const AdminBoardsView: React.FC = () => {
             setSelectedUserId('');
             fetchData();
         } catch (err: any) {
+            console.error('Erro ao criar quadro:', err);
             alert('Erro ao criar quadro: ' + err.message);
         }
     };
@@ -296,7 +300,7 @@ const AdminBoardsView: React.FC = () => {
                                     onChange={e => setSelectedUserId(e.target.value)}
                                 >
                                     <option value="">Selecione um usuário...</option>
-                                    {users.map(u => (
+                                    {usersWithId.map(u => (
                                         <option key={u.id} value={u.id}>{u.email}</option>
                                     ))}
                                 </select>
