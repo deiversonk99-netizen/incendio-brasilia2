@@ -779,19 +779,19 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
     const calcItems = items.filter(i => i.origin === 'CALCULATED');
     const manualItems = items.filter(i => i.origin === 'MANUAL');
-    const calcTotal = calcItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
-    const manualTotal = manualItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+    const calcTotal = calcItems.reduce((acc, i) => acc + (i.quantity_final * (i.unit_price || 0)), 0);
+    const manualTotal = manualItems.reduce((acc, i) => acc + (i.quantity_final * (i.unit_price || 0)), 0);
     const total = calcTotal + manualTotal;
 
     autoTable(doc, {
       startY: 72,
       head: [['Categoria', 'Qtd Itens', 'Total Etapa (R$)']],
       body: [
-        ['Itens Projetados (Sistema)', calcItems.length.toString(), `R$ ${calcTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
-        ['Itens Manuais (Extra)', manualItems.length.toString(), `R$ ${manualTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Itens Projetados (Sistema)', calcItems.length.toString(), `R$ ${(calcTotal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Itens Manuais (Extra)', manualItems.length.toString(), `R$ ${(manualTotal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
         [{ content: 'INVESTIMENTO TOTAL ESTIMADO', styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } },
         { content: items.length.toString(), styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } },
-        { content: `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } }]
+        { content: `R$ ${(total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold', fillColor: [30, 41, 59], textColor: [255, 255, 255] } }]
       ],
       theme: 'grid',
       margin: { bottom: 55 },
@@ -839,7 +839,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       }, {} as Record<string, BudgetItem[]>);
 
       (Object.entries(grouped) as [string, BudgetItem[]][]).forEach(([modelName, mItems]) => {
-        const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * i.unit_price), 0);
+        const modelTotal = mItems.reduce((acc, i) => acc + (i.quantity_final * (i.unit_price || 0)), 0);
 
         tableData.push([{
           content: `MODELO DE SERVIÇO: ${modelName.toUpperCase()}  (Total: R$ ${(modelTotal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`,
