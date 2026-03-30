@@ -1469,7 +1469,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         if (!proposal.hide_services_pdf) {
           vals.servicesList.forEach((service: any) => {
-            financeBody.push([service.name || 'Serviço', `R$ ${service.finalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+            financeBody.push([service.name || 'Serviço', `R$ ${(service.finalPrice || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
           });
         }
       } else {
@@ -2954,7 +2954,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             >
                               <div className="flex flex-col">
                                 <span className="text-white font-medium group-hover:text-indigo-400 transition-colors uppercase text-[11px]">{p.name}</span>
-                                <span className="text-xs text-slate-400">Preço Base: R${p.price.toLocaleString('pt-BR')}</span>
+                                <span className="text-xs text-slate-400">Preço Base: R${(p.price || 0).toLocaleString('pt-BR')}</span>
                               </div>
                               <span className="material-symbols-outlined text-indigo-500 opacity-0 group-hover:opacity-100 transition-all">add_circle</span>
                             </button>
