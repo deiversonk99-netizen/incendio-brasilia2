@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import NewTaskModal from './NewTaskModal';
 import { useAuth } from '../contexts/AuthContext';
 import { isTaskCentralUser } from '../lib/permissions';
+import { syncExpiredRenewals } from '../lib/taskSync';
 
 const SYNC_BOARD_ID = 'central-sync';
 
@@ -59,6 +60,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isCompact, setIsCompact] = useState(false);
   const [openMenuTaskId, setOpenMenuTaskId] = useState<string | null>(null);
+  const fetchDataRef = useRef<() => Promise<void>>(null as any);
 
   // Add Board Modal State
   const [isAddBoardModalOpen, setIsAddBoardModalOpen] = useState(false);
@@ -75,6 +77,8 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   }, []);
 
   const fetchData = async () => {
+    // Update ref to current version of fetchData
+    fetchDataRef.current = fetchData;
     setLoading(true);
 
     let currentUsers = users;
@@ -303,19 +307,36 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   };
 
   useEffect(() => {
-    fetchData();
+    if (!user) return;
 
-    // Set up real-time subscriptions
+    const init = async () => {
+      // Sync expired renewals/annual tasks into the system
+      const hasChanges = await syncExpiredRenewals(supabase, user.id);
+      
+      // Fetch initial data
+      await fetchData();
+    };
+
+    init();
+
+    // Set up real-time subscriptions with ref to avoid stale closure
     const channel = supabase.channel('tasks-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_groups' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_boards' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        if (fetchDataRef.current) fetchDataRef.current();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_groups' }, () => {
+        if (fetchDataRef.current) fetchDataRef.current();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_boards' }, () => {
+        if (fetchDataRef.current) fetchDataRef.current();
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, selectedBoardId]);
+  }, [user?.id, selectedBoardId]);
+
 
   const handleConvertToProject = async (task: Task) => {
     if (!confirm(`Deseja converter a tarefa "${task.title}" em um novo Projeto?`)) return;
