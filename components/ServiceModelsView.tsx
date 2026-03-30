@@ -428,7 +428,7 @@ const ServiceModelsView: React.FC = () => {
                                                         >
                                                             <span className="truncate flex-1 pr-2 text-slate-300">{p.name}</span>
                                                             <span className="text-emerald-500 text-xs font-mono whitespace-nowrap">
-                                                                {p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                                {(p.price || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                                             </span>
                                                         </button>
                                                     ))}
@@ -469,7 +469,7 @@ const ServiceModelsView: React.FC = () => {
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <span className="text-rose-400 font-mono font-bold text-sm">
-                                                            {item.product?.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                            {(item.product?.price || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
