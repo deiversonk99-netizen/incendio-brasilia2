@@ -29,6 +29,7 @@ interface EngineeringProposalProps {
 const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProjectId, onSelectProject }) => {
   const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
   // selectedProjectId is now a prop
   const [loading, setLoading] = useState(false);
   const [pdfSettings, setPdfSettings] = useState<any>({
@@ -324,8 +325,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   // Proposal State
   const [proposal, setProposal] = useState<Partial<Proposal>>({
-    bdi_percent: 0,
-    profit_percent: 0,
+    bdi_percent: 25,
+    profit_percent: 15,
     discount_type: 'FIXED',
     discount_value: 0,
     payment_conditions: '',
@@ -408,6 +409,67 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       setClientDetails(null);
     }
   }, [selectedProjectId]);
+
+  // Auto-save proposal metadata when key fields change
+  useEffect(() => {
+    if (!selectedProjectId || !user || loading) return;
+
+    const timer = setTimeout(async () => {
+      setIsAutoSaving(true);
+      try {
+        const payload = {
+          bdi_percent: proposal.bdi_percent,
+          profit_percent: proposal.profit_percent,
+          discount_type: proposal.discount_type,
+          discount_value: proposal.discount_value,
+          payment_conditions: proposal.payment_conditions,
+          execution_schedule: proposal.execution_schedule,
+          validity_days: proposal.validity_days,
+          observations: proposal.observations,
+          hide_services_pdf: proposal.hide_services_pdf,
+          hide_products_pdf: proposal.hide_products_pdf,
+          separate_services_materials: proposal.separate_services_materials,
+          proposal_date: proposal.proposal_date,
+          project_id: selectedProjectId,
+          user_id: user.id,
+          updated_at: new Date().toISOString()
+        };
+
+        const { data: existing } = await supabase
+          .from('proposals')
+          .select('id')
+          .eq('project_id', selectedProjectId)
+          .single();
+
+        if (existing) {
+          await supabase.from('proposals').update(payload).eq('id', existing.id);
+        } else {
+          await supabase.from('proposals').insert(payload);
+        }
+      } catch (err) {
+        console.error('Erro no auto-save da proposta:', err);
+      } finally {
+        // Leave a small delay to show "Synchronized" if it was too fast
+        setTimeout(() => setIsAutoSaving(false), 800);
+      }
+    }, 2000); // 2 second debounce
+
+    return () => clearTimeout(timer);
+  }, [
+    proposal.bdi_percent, 
+    proposal.profit_percent, 
+    proposal.discount_type, 
+    proposal.discount_value,
+    proposal.payment_conditions,
+    proposal.execution_schedule,
+    proposal.validity_days,
+    proposal.observations,
+    proposal.hide_services_pdf,
+    proposal.hide_products_pdf,
+    proposal.separate_services_materials,
+    proposal.proposal_date,
+    selectedProjectId
+  ]);
 
   const fetchClientDetails = async () => {
     const project = projects.find(p => p.id === selectedProjectId);
@@ -715,7 +777,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     });
 
     try {
-      const { error } = await supabase
+      // 1. Update budget items
+      const { error: itemsError } = await supabase
         .from('budget_items')
         .upsert(updatedItems.map((i: any) => ({
           id: i.id,
@@ -728,9 +791,30 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           origin: i.origin
         })));
 
-      if (error) throw error;
+      if (itemsError) throw itemsError;
+
+      // 2. Also persist the CURRENT proposal percentages to ensure they don't reset on refresh
+      const { data: existing } = await supabase
+        .from('proposals')
+        .select('id')
+        .eq('project_id', selectedProjectId)
+        .single();
+
+      const proposalPayload = {
+        bdi_percent: bdiPct,
+        profit_percent: profitPct,
+        project_id: selectedProjectId,
+        updated_at: new Date().toISOString()
+      };
+
+      if (existing) {
+        await supabase.from('proposals').update(proposalPayload).eq('id', existing.id);
+      } else {
+        await supabase.from('proposals').insert({ ...proposalPayload, user_id: user?.id });
+      }
+
       setBudgetItems(updatedItems);
-      alert('Preços recalculados com sucesso! Todos os itens foram sincronizados com as novas taxas.');
+      alert('Preços recalculados e taxas salvas com sucesso! Todos os itens foram sincronizados.');
     } catch (e: any) {
       console.error('Error recalculating prices:', e);
       alert('Erro ao recalcular preços: ' + e.message);
@@ -2226,11 +2310,21 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
                   {/* Step 2: Markup Controls */}
                   <div className="flex-1 p-6 bg-indigo-500/5 relative group">
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-indigo-500 text-[18px]">calculate</span>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-indigo-500 text-[18px]">calculate</span>
+                        </div>
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">2. Formação de Preço (Markups)</h4>
                       </div>
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">2. Formação de Preço (Markups)</h4>
+                      
+                      {/* Auto-save Status Indicator */}
+                      <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-tighter transition-all duration-500 ${isAutoSaving ? 'bg-amber-500/10 text-amber-500 animate-pulse' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                        <span className="material-symbols-outlined text-[10px]">
+                          {isAutoSaving ? 'sync' : 'cloud_done'}
+                        </span>
+                        {isAutoSaving ? 'Salvando...' : 'Sincronizado'}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-6">
