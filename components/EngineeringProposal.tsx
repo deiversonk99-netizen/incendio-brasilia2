@@ -599,7 +599,21 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const loadProposalData = async (projectId: string) => {
     setLoading(true);
 
-    // 1. Fetch Items Cost from Phase B
+    // 1. Fetch Existing Proposal FIRST to establish BDI and Profit
+    const { data: existingProposal } = await supabase
+      .from('proposals')
+      .select('*')
+      .eq('project_id', projectId)
+      .single();
+
+    let combinedFactor = 1;
+    if (existingProposal) {
+      const bdiPct = Number(existingProposal.bdi_percent) || 0;
+      const profitPct = Number(existingProposal.profit_percent) || 0;
+      combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
+    }
+
+    // 2. Fetch Items Cost from Phase B
     const { data: budgetItemsData } = await supabase
       .from('budget_items')
       .select('id, name, quantity_final, unit_price, cost_price, origin, item_type')
@@ -608,10 +622,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     let processedItems: any[] = [];
     if (budgetItemsData) {
       // Heal items with missing cost_price (e.g. Services or Manual items where cost wasn't set)
-      // If Cost is 0, we assume the current Unit Price IS the base cost for markups.
+      // To prevent already marked-up prices from being adopted as the base cost on refresh, 
+      // we must reverse-calculate it using the combined factor.
       processedItems = budgetItemsData.map(item => {
         if ((!item.cost_price || item.cost_price <= 0) && item.unit_price > 0) {
-          return { ...item, cost_price: item.unit_price };
+          const backCalculatedCost = Number(item.unit_price) / (combinedFactor || 1);
+          return { ...item, cost_price: backCalculatedCost };
         }
         return item;
       });
@@ -630,13 +646,6 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       if (item.item_type === 'SERVICE' || item.item_type === 'CUSTOM') return acc;
       return acc + (item.quantity_final * (item.cost_price || 0));
     }, 0) || 0;
-
-    // 2. Fetch Existing Proposal
-    const { data: existingProposal } = await supabase
-      .from('proposals')
-      .select('*')
-      .eq('project_id', projectId)
-      .single();
 
     if (existingProposal) {
       setProposal({
@@ -840,6 +849,22 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         await supabase.from('proposals').update(payload).eq('id', existing.id);
       } else {
         await supabase.from('proposals').insert({ ...payload, project_id: selectedProjectId });
+      }
+
+      // Sync budget_items unit prices dynamically so they persist across reloads
+      // We do an upsert on budgetItems to make sure marked-up prices are saved firmly
+      if (budgetItems.length > 0) {
+        const itemsPayload = budgetItems.map(item => ({
+          id: item.id,
+          project_id: selectedProjectId,
+          unit_price: item.unit_price,
+          cost_price: item.cost_price,
+          name: item.name,
+          quantity_final: item.quantity_final,
+          item_type: item.item_type,
+          origin: item.origin
+        }));
+        await supabase.from('budget_items').upsert(itemsPayload);
       }
 
       // Sync project value with the final calculated global price
