@@ -2520,11 +2520,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                   >
                                     {item.item_type === 'SERVICE' ? 'Serviço' : item.item_type === 'CUSTOM' ? 'Personalizado' : 'Produto'}
                                   </button>
-                                  <input
-                                    type="text"
-                                    className="bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5"
+                                  <textarea
+                                    className="bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5 resize-none overflow-hidden whitespace-pre-wrap"
                                     value={item.name}
                                     onChange={(e) => handleUpdateItem(item.id, { name: e.target.value })}
+                                    onInput={(e) => {
+                                      e.currentTarget.style.height = 'auto';
+                                      e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
+                                    }}
+                                    rows={Math.max(1, (item.name || '').split('\n').length)}
+                                    style={{ minHeight: '24px' }}
                                   />
                                 </div>
                                 <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
