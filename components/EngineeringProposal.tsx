@@ -8,6 +8,8 @@ import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
+import { getClientDisplayName } from '../lib/formatters';
+
 
 // Add PaymentMethod interface
 interface PaymentMethod {
@@ -1167,7 +1169,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       doc.setTextColor(230, 230, 230);
 
       coverY += 8;
-      const clientText = project.client || 'N/A';
+      const clientText = getClientDisplayName(clientDetails || { name: project.client }, 'pdf');
       const splitClient = doc.splitTextToSize(clientText, pageWidth - 40);
       doc.text(splitClient, 20, coverY);
 
@@ -1334,15 +1336,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       // --- GROUP PRODUCTS AS SERVICE (NEW OPTION) ---
       if (pdfSettings.group_products_as_service && vals.productsFinal > 0) {
         majorIndex++;
-        const groupName = pdfSettings.group_products_name || 'Fornecimento de Equipamentos e Materiais';
         
         let colSpan = 2;
         if (pdfSettings.show_cost) colSpan += 2;
         if (pdfSettings.show_cost_column) colSpan += 2;
 
-        tableBody.push([{ content: `${majorIndex}. ${groupName.toUpperCase()}`, colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+        const headerText = pdfSettings.group_products_name ? 'RESUMO DE EQUIPAMENTOS E MATERIAIS' : 'FORNECIMENTO DE EQUIPAMENTOS E MATERIAIS';
+        tableBody.push([{ content: `${majorIndex}. ${headerText}`, colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
 
-        const row = [`${majorIndex}.1 ${groupName}`, 1];
+        const rowItemDesc = pdfSettings.group_products_name ? pdfSettings.group_products_name : 'Lote de equipamentos e materiais diversos conforme projeto';
+        const row = [`${majorIndex}.1 ${rowItemDesc}`, 1];
         if (pdfSettings.show_cost_column) {
           row.push(`R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
           row.push(`R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -1789,9 +1792,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       } else {
         const link = document.createElement('a');
         link.href = blobUrl;
-        const clientNameForFile = clientDetails?.fantasy_name 
-          ? clientDetails.fantasy_name.trim() 
-          : (project.client ? project.client.trim() : project.name.trim());
+        const clientNameForFile = getClientDisplayName(clientDetails || { name: project.client }, 'ui');
         const currentProjNumFile = project.project_number || proposal?.proposal_number;
         const prNumberFile = currentProjNumFile ? `PRO${String(currentProjNumFile).padStart(3, '0')}` : 'PRO';
         const safeFileName = `Incêndio Brasília Engenharia ${prNumberFile} ${clientNameForFile}`.replace(/[/\\?%*:|"<>]/g, '-');
@@ -1823,9 +1824,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                 </span>
               )}
             </div>
-            {clientDetails?.fantasy_name && (
+            {clientDetails && (
               <span className="text-primary text-xs font-bold uppercase tracking-widest mt-1 italic">
-                {clientDetails.fantasy_name}
+                {getClientDisplayName(clientDetails, 'ui')}
               </span>
             )}
           </div>
@@ -2245,7 +2246,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     <option value="">Selecione...</option>
                     {filteredProjects.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} / ` : ''}{p.client || 'Sem Cliente'}
+                        {p.project_number ? `PR${String(p.project_number).padStart(3, '0')} / ` : ''}{getClientDisplayName({ name: p.client }, 'ui')}
                       </option>
                     ))}
                   </select>

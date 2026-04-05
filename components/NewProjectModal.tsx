@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { getClientDisplayName } from '../lib/formatters';
+
+interface Client {
+    id: string;
+    name: string;
+    fantasy_name?: string;
+}
+
 
 interface NewProjectModalProps {
     isOpen: boolean;
@@ -12,7 +20,7 @@ interface NewProjectModalProps {
 const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProjectModalProps) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
-    const [clients, setClients] = useState<string[]>([]);
+    const [clients, setClients] = useState<Client[]>([]);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [clientSearch, setClientSearch] = useState('');
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -87,9 +95,9 @@ const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProje
     }, []);
 
     const fetchClients = async () => {
-        const { data } = await supabase.from('clients').select('name');
+        const { data } = await supabase.from('clients').select('id, name, fantasy_name');
         if (data) {
-            setClients(data.map(c => c.name).sort());
+            setClients(data.sort((a, b) => a.name.localeCompare(b.name)));
         }
     };
 
@@ -104,9 +112,9 @@ const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProje
         );
     };
 
-    const handleSelectClient = (name: string) => {
-        setFormData({ ...formData, client: name });
-        setClientSearch(name);
+    const handleSelectClient = (client: Client) => {
+        setFormData({ ...formData, client: client.name });
+        setClientSearch(getClientDisplayName(client, 'ui'));
         setIsDropdownOpen(false);
     };
 
@@ -241,7 +249,8 @@ const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProje
     if (!isOpen) return null;
 
     const filteredClients = clients.filter(c =>
-        c.toLowerCase().includes(clientSearch.toLowerCase())
+        c.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
+        c.fantasy_name?.toLowerCase().includes(clientSearch.toLowerCase())
     );
 
     return (
@@ -310,7 +319,10 @@ const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProje
                                                     onClick={() => handleSelectClient(c)}
                                                     className="w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-primary/20 hover:text-white transition-colors"
                                                 >
-                                                    {c}
+                                                    <div className="font-bold">{getClientDisplayName(c, 'ui')}</div>
+                                                    {c.fantasy_name && c.fantasy_name.trim() !== '' && (
+                                                        <div className="text-[10px] opacity-60 uppercase">{c.name}</div>
+                                                    )}
                                                 </button>
                                             ))
                                         ) : clientSearch && (

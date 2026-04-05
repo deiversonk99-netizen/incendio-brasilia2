@@ -6,6 +6,8 @@ import PageHeader from './PageHeader';
 import TaskDetailsModal from './TaskDetailsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { syncExpiredRenewals as syncRenewalsUtil } from '../lib/taskSync';
+import { getClientDisplayName } from '../lib/formatters';
+
 
 const RenewalControlView: React.FC = () => {
     const { user } = useAuth();
@@ -24,14 +26,14 @@ const RenewalControlView: React.FC = () => {
         setLoading(true);
         const { data: tasksData } = await supabase
             .from('tasks')
-            .select('*, projects(name, client_id, clients(name)), user_profiles(email)')
+            .select('*, projects(name, client_id, clients(name, fantasy_name)), user_profiles(email)')
             .eq('is_annual', true)
             .not('expiration_date', 'is', null)
             .order('expiration_date', { ascending: true });
 
         const { data: manualData } = await supabase
             .from('contract_renewals')
-            .select('*, projects(name), clients(name)')
+            .select('*, projects(name), clients(name, fantasy_name)')
             .order('end_date', { ascending: true });
 
         if (tasksData) setTasks(tasksData as any);
@@ -60,7 +62,7 @@ const RenewalControlView: React.FC = () => {
         return tasks.filter((t: any) =>
             t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (t as any).projects?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (t as any).projects?.clients?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+            getClientDisplayName((t as any).projects?.clients, 'ui').toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [tasks, searchTerm]);
 
@@ -217,7 +219,7 @@ const RenewalControlView: React.FC = () => {
                                                     ))}
                                                     {dayManuals.map(manual => (
                                                         <div key={manual.id} className="p-1.5 rounded-lg border border-primary/20 bg-primary/10 text-[9px] font-bold leading-tight transition-all shadow-sm text-primary">
-                                                            <div className="truncate opacity-75 text-[8px] uppercase font-black">{manual.projects?.name || manual.clients?.name || 'Avulso'}</div>
+                                                            <div className="truncate opacity-75 text-[8px] uppercase font-black">{manual.projects?.name || (manual.clients ? getClientDisplayName(manual.clients, 'ui') : 'Avulso')}</div>
                                                             <div className="line-clamp-2">Aditivo: R$ {manual.value?.toLocaleString('pt-BR')}</div>
                                                         </div>
                                                     ))}
@@ -273,7 +275,7 @@ const RenewalControlView: React.FC = () => {
                                                     <div>
                                                         <div className="flex items-center gap-2 mb-1">
                                                             <span className="text-[9px] font-black uppercase tracking-widest text-[#c7949f]">
-                                                                {item.projects?.name || item.clients?.name || 'Avulso'}
+                                                                {item.projects?.name || (item.clients ? getClientDisplayName(item.clients, 'ui') : 'Avulso')}
                                                             </span>
                                                             <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${isUrgent || isExpired ? 'bg-red-500/20 text-red-500' : 'bg-yellow-500/20 text-yellow-500'}`}>
                                                                 {isExpired ? `Vencido há ${Math.abs(diff)} dias` : isDueToday ? 'Vence hoje' : `Vence em ${diff} dias`}
@@ -406,7 +408,7 @@ const NewRenewalModal: React.FC<NewRenewalModalProps> = ({ isOpen, onClose, onSu
                 supabase.from('floors').select('project_id'),
                 supabase.from('budget_items').select('project_id'),
                 supabase.from('proposals').select('project_id'),
-                supabase.from('clients').select('id, name').order('name')
+                supabase.from('clients').select('id, name, fantasy_name').order('name')
             ]);
 
             if (pData) {
@@ -496,7 +498,7 @@ const NewRenewalModal: React.FC<NewRenewalModalProps> = ({ isOpen, onClose, onSu
                                 onChange={e => setFormData({ ...formData, client_id: e.target.value })}
                             >
                                 <option value="">Selecione o cliente...</option>
-                                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                {clients.map(c => <option key={c.id} value={c.id}>{getClientDisplayName(c, 'ui')}</option>)}
                             </select>
                         </div>
                     )}

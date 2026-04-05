@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase';
 import { Project } from '../types';
 import PageHeader from './PageHeader';
 import NewClientModal from './NewClientModal';
+import { getClientDisplayName } from '../lib/formatters';
+
 
 interface ClientEntry {
     id: string;
@@ -211,11 +213,11 @@ const ClientsView: React.FC = () => {
                                 </div>
 
                                 <h3 className="text-lg font-black text-white mb-1 group-hover:text-primary transition-colors truncate italic pr-20">
-                                    {client.clientName}
+                                    {getClientDisplayName(client.details || { name: client.clientName }, 'ui')}
                                 </h3>
-                                {client.details?.fantasy_name && (
-                                    <p className="text-[11px] text-primary font-bold italic mb-1 uppercase tracking-tight">
-                                        {client.details.fantasy_name}
+                                {client.details && client.details.fantasy_name && client.details.fantasy_name.trim() !== '' && (
+                                    <p className="text-[11px] text-primary font-bold italic mb-1 uppercase tracking-tight opacity-70">
+                                        {client.details.name}
                                     </p>
                                 )}
                                 {client.details?.cnpj && (

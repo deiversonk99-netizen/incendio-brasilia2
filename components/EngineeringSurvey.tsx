@@ -5,6 +5,8 @@ import { Project } from '../types';
 import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getClientDisplayName } from '../lib/formatters';
+
 
 interface EngineeringSurveyProps {
   // ... existing props ...
@@ -542,6 +544,8 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     doc.setTextColor(200, 200, 200);
     doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 36);
     doc.text(`Identificação: PRJ-${project.id.slice(0, 5).toUpperCase()}`, 20, 42);
+    const clientPdfName = getClientDisplayName(clientDetails || { name: project.client }, 'pdf');
+    doc.text(`Cliente: ${clientPdfName}`, 20, 48);
     doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 20, 28, { align: 'right' });
 
     doc.setTextColor(40);
@@ -563,7 +567,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
       startY: 72,
       head: [['Indicador', 'Valor']],
       body: [
-        ['Cliente', project.client || 'N/A'],
+        ['Cliente', getClientDisplayName(clientDetails || { name: project.client }, 'pdf')],
         ['Projeto', project.name],
         ['Tipo de Obra', project.type || 'N/A'],
         ['Total de Pavimentos', floors.length.toString()],
@@ -711,9 +715,9 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                 </span>
               )}
             </div>
-            {clientDetails?.fantasy_name && (
+            {clientDetails && (
               <span className="text-primary text-xs font-bold uppercase tracking-widest mt-1 italic">
-                {clientDetails.fantasy_name}
+                {getClientDisplayName(clientDetails, 'ui')}
               </span>
             )}
           </div>

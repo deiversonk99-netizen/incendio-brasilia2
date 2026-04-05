@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Project, AppView } from '../types';
+import { getClientDisplayName } from '../lib/formatters';
+
 
 interface ProjectDetailsModalProps {
     isOpen: boolean;
@@ -29,10 +31,13 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
     const [projectServices, setProjectServices] = useState<any[]>([]);
     const [showEditChoice, setShowEditChoice] = useState(false);
     const [showDeleteChoice, setShowDeleteChoice] = useState(false);
+    const [clientDetails, setClientDetails] = useState<any>(null);
+
 
     useEffect(() => {
         if (isOpen && project) {
             fetchProjectServices();
+            fetchClientDetails();
         }
     }, [isOpen, project]);
 
@@ -51,6 +56,16 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
         if (data) {
             setProjectServices(data.map((ps: any) => ps.services_catalog?.name).filter(Boolean));
         }
+    };
+
+    const fetchClientDetails = async () => {
+        if (!project || !project.client) return;
+        const { data } = await supabase
+            .from('clients')
+            .select('id, name, fantasy_name')
+            .eq('name', project.client)
+            .maybeSingle();
+        if (data) setClientDetails(data);
     };
 
     if (!isOpen || !project) return null;
@@ -183,7 +198,9 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                 <div className="flex items-center justify-between p-6 border-b border-white/5">
                     <div>
                         <h2 className="text-xl font-bold text-white">{project.name}</h2>
-                        <p className="text-sm text-slate-400 mt-1">{project.client}</p>
+                        <p className="text-sm text-slate-400 mt-1">
+                            {getClientDisplayName(clientDetails || { name: project.client }, 'ui')}
+                        </p>
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
                         <span className="material-symbols-outlined">close</span>

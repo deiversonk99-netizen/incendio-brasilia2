@@ -6,6 +6,13 @@ import NewProjectModal from './NewProjectModal';
 import { supabase } from '../lib/supabase';
 import { Project, AppView } from '../types';
 import ProjectDetailsModal from './ProjectDetailsModal';
+import { getClientDisplayName } from '../lib/formatters';
+
+interface Client {
+  id: string;
+  name: string;
+  fantasy_name?: string;
+}
 
 const ProjectsView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -15,9 +22,15 @@ const ProjectsView: React.FC = () => {
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
   const [projectToEdit, setProjectToEdit] = React.useState<Project | null>(null);
   const [projectsWithProposals, setProjectsWithProposals] = React.useState<Set<string>>(new Set());
+  const [clients, setClients] = React.useState<Client[]>([]);
 
   const fetchData = async () => {
     setLoading(true);
+    const { data: clientData } = await supabase.from('clients').select('id, name, fantasy_name');
+    if (clientData) {
+      setClients(clientData);
+    }
+
     const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
     if (data) {
       setProjects(data as Project[]);
@@ -112,7 +125,12 @@ const ProjectsView: React.FC = () => {
                         <h4 className="text-white font-bold text-base mb-1">{proj.name}</h4>
                         <div className="flex items-center gap-1.5 mb-3">
                           <span className="material-symbols-outlined text-text-muted text-[14px]">apartment</span>
-                          <p className="text-text-muted text-xs font-medium">{proj.client}</p>
+                          <p className="text-text-muted text-xs font-medium">
+                            {getClientDisplayName(
+                              clients.find(c => c.name === proj.client) || { name: proj.client },
+                              'ui'
+                            )}
+                          </p>
                         </div>
                         <div className="h-px bg-[#64353f]/50 w-full mb-3"></div>
                         <div className="flex justify-between items-center">

@@ -9,6 +9,8 @@ import { supabase } from '../lib/supabase';
 import { Project, AppView } from '../types';
 import { Button, Card } from './ui';
 import { useAuth } from '../contexts/AuthContext';
+import { getClientDisplayName } from '../lib/formatters';
+
 
 interface Task {
   id: string;
@@ -45,6 +47,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [viewMode, setViewMode] = useState<'STATUS' | 'PHASE'>('STATUS');
   const [statusColumns, setStatusColumns] = useState<StatusColumn[]>([]);
   const [isManageColumnsModalOpen, setIsManageColumnsModalOpen] = useState(false);
+  const [clients, setClients] = useState<any[]>([]);
+
 
   // Real Data States
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -116,6 +120,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       }));
       setChartData(formattedChartData);
     }
+
+    // 2. Clients (for fantasy name mapping)
+    const { data: clientsData } = await supabase.from('clients').select('name, fantasy_name');
+    if (clientsData) setClients(clientsData);
 
     // 3. Proposals (to check which projects have them)
     const { data: proposalData } = await supabase.from('proposals').select('project_id');
@@ -826,7 +834,13 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                               <div className="flex items-center gap-1.5 mb-2 h-4">
                                 <span className="material-symbols-outlined text-slate-500 text-[14px]">apartment</span>
                                 <p className="text-slate-400 text-[11px] font-medium truncate">
-                                  {highlightText(proj.client, searchTerm)}
+                                  {highlightText(
+                                    getClientDisplayName(
+                                      clients.find(c => c.name === proj.client) || { name: proj.client },
+                                      'ui'
+                                    ),
+                                    searchTerm
+                                  )}
                                 </p>
                               </div>
                             </div>

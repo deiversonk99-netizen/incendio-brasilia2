@@ -5,6 +5,8 @@ import { Project, ServiceModel, ServiceModelItem } from '../types';
 import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getClientDisplayName } from '../lib/formatters';
+
 
 interface EngineeringCompositionProps {
   onNext: () => void;
@@ -768,6 +770,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     doc.setTextColor(200, 200, 200);
     doc.text('INCÊNDIO BRASÍLIA ENGENHARIA', 20, 36);
     doc.text(`Identificação: PRJ-${project.id.slice(0, 5).toUpperCase()}`, 20, 42);
+    const clientPdfName = getClientDisplayName(clientDetails || { name: project.client }, 'pdf');
+    doc.text(`Cliente: ${clientPdfName}`, 20, 48);
     doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 20, 28, { align: 'right' });
 
     doc.setTextColor(40);
@@ -987,9 +991,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                 </span>
               )}
             </div>
-            {clientDetails?.fantasy_name && (
+            {clientDetails && (
               <span className="text-primary text-xs font-bold uppercase tracking-widest mt-1 italic">
-                {clientDetails.fantasy_name}
+                {getClientDisplayName(clientDetails, 'ui')}
               </span>
             )}
           </div>
