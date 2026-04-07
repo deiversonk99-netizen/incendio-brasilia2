@@ -66,7 +66,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     cert_regularity_file: null,
     show_services_total: true, // New: Toggle Services total in financial summary
     group_products_as_service: false, // New: Group products as a single service
-    group_products_name: '' // New: Custom name for the grouped service
+    group_products_name: '', // New: Custom name for the grouped service
+    warranty_text: '01 (um) ano contra defeitos de fabricação e instalação' // New: Default warranty info
   });
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [showVisibilityModal, setShowVisibilityModal] = useState(false);
@@ -1180,10 +1181,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         doc.text(`CNPJ/CPF: ${clientDetails.cnpj}`, 20, coverY);
       }
 
-      coverY += (splitClient.length * 6);
-      const projectNameText = pdfSettings.project_name_pdf || project.name;
-      const splitProject = doc.splitTextToSize(projectNameText, pageWidth - 40);
-      doc.text(splitProject, 20, coverY);
+      // Project name removed from cover — only client name is shown under "PREPARADO PARA:"
 
       doc.setFontSize(10);
       const displayDate = proposal.proposal_date 
@@ -1251,7 +1249,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
           doc.setFontSize(10);
           doc.setFont('helvetica', 'normal');
-          const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para a execução dos serviços de engenharia de segurança contra incêndio no empreendimento "${pdfSettings.project_name_pdf || project.name}", contemplando o fornecimento de materiais ou mão de obra conforme detalhamento técnico a seguir.`;
+          const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para serviços de engenharia no empreendimento "${pdfSettings.project_name_pdf || project.name}", contemplando o fornecimento de materiais ou mão de obra conforme detalhamento técnico a seguir.`;
           const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
           doc.text(splitIntro, 20, yPos);
 
@@ -1634,6 +1632,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         body: [
           ['Cronograma e Prazo', proposal.execution_schedule || 'A combinar'],
           ['Condições de Pagamento', proposal.payment_conditions || 'A combinar'],
+          ['Garantia de Prod. e Serviços', pdfSettings.warranty_text || 'A combinar'],
           ['Validade da Proposta', `${proposal.validity_days || 10} dias a partir desta data`]
         ],
         theme: 'grid',
@@ -2826,6 +2825,17 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                           ))}
                         </select>
                       </div>
+
+                      <div>
+                        <label className="text-slate-400 text-sm font-medium mb-2 block">Garantia de Produtos e Serviços</label>
+                        <textarea
+                          className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors min-h-[80px]"
+                          placeholder="Ex: 01 (um) ano contra defeitos de fabricação e instalação..."
+                          value={pdfSettings.warranty_text || ''}
+                          onChange={e => savePdfSettings({ ...pdfSettings, warranty_text: e.target.value })}
+                        />
+                      </div>
+
                       <div className="grid grid-cols-2 gap-6">
                         <div>
                           <div className="flex justify-between items-center mb-2">
