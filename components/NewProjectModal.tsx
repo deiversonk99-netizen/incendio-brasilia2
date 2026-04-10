@@ -396,7 +396,7 @@ const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProje
                                 rows={3}
                                 value={formData.internal_observations}
                                 onChange={e => setFormData({ ...formData, internal_observations: e.target.value })}
-                                className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                                className="w-full rounded-lg bg-background-dark border border-white/10 px-4 py-3 text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y min-h-[80px]"
                                 placeholder="Notas técnicas, contatos internos ou detalhes que não devem aparecer para o cliente."
                             />
                         </div>

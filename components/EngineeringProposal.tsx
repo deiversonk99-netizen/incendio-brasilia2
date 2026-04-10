@@ -23,6 +23,12 @@ interface ExecutionSchedule {
   label: string;
 }
 
+// Add WarrantyTerm interface
+interface WarrantyTerm {
+  id: string;
+  label: string;
+}
+
 interface EngineeringProposalProps {
   selectedProjectId: string;
   onSelectProject: (id: string) => void;
@@ -267,7 +273,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const handleSaveTerm = async () => {
     if (!newTermLabel.trim()) return;
     setSavingTerm(true);
-    const table = termsModalTab === 'payment' ? 'payment_methods' : 'execution_schedules';
+    const table = termsModalTab === 'payment' ? 'payment_methods' : 
+                  termsModalTab === 'schedule' ? 'execution_schedules' : 'warranty_terms';
 
     try {
       console.log(`Saving term to ${table}:`, newTermLabel);
@@ -290,8 +297,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       // Refresh lists using common functions
       if (termsModalTab === 'payment') {
         await fetchPaymentMethods();
-      } else {
+      } else if (termsModalTab === 'schedule') {
         await fetchExecutionSchedules();
+      } else {
+        await fetchWarrantyTerms();
       }
     } catch (err: any) {
       console.error('Erro ao salvar termo:', err);
@@ -303,7 +312,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   const handleDeleteTerm = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este item?')) return;
-    const table = termsModalTab === 'payment' ? 'payment_methods' : 'execution_schedules';
+    const table = termsModalTab === 'payment' ? 'payment_methods' : 
+                  termsModalTab === 'schedule' ? 'execution_schedules' : 'warranty_terms';
     try {
       console.log(`Deleting term from ${table}:`, id);
       const { error } = await supabase.from(table).delete().eq('id', id);
@@ -312,8 +322,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       // Refresh lists using common functions
       if (termsModalTab === 'payment') {
         await fetchPaymentMethods();
-      } else {
+      } else if (termsModalTab === 'schedule') {
         await fetchExecutionSchedules();
+      } else {
+        await fetchWarrantyTerms();
       }
     } catch (err: any) {
       console.error('Erro ao excluir termo:', err);
@@ -325,6 +337,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [budgetItems, setBudgetItems] = useState<any[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [executionSchedules, setExecutionSchedules] = useState<ExecutionSchedule[]>([]);
+  const [warrantyTerms, setWarrantyTerms] = useState<WarrantyTerm[]>([]);
 
   // Proposal State
   const [proposal, setProposal] = useState<Partial<Proposal>>({
@@ -349,7 +362,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   // States for Terms Management
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
-  const [termsModalTab, setTermsModalTab] = useState<'payment' | 'schedule'>('payment');
+  const [termsModalTab, setTermsModalTab] = useState<'payment' | 'schedule' | 'warranty'>('payment');
   const [termToEdit, setTermToEdit] = useState<{ id: string; label: string } | null>(null);
   const [newTermLabel, setNewTermLabel] = useState('');
   const [savingTerm, setSavingTerm] = useState(false);
@@ -368,6 +381,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     fetchProjects();
     fetchPaymentMethods();
     fetchExecutionSchedules();
+    fetchWarrantyTerms();
     fetchCatalogs();
   }, []);
 
@@ -597,6 +611,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       .order('label');
 
     if (data) setExecutionSchedules(data);
+  };
+
+  const fetchWarrantyTerms = async () => {
+    const { data } = await supabase
+      .from('warranty_terms')
+      .select('*')
+      .eq('active', true)
+      .order('label');
+
+    if (data) setWarrantyTerms(data);
   };
 
   const loadProposalData = async (projectId: string) => {
@@ -2600,7 +2624,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                     setItemToEdit(item);
                                     setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0 });
                                     // Determine tab
-                                    if (item.item_type === 'CUSTOM' || (item.origin === 'MANUAL' && item.item_type === 'PRODUCT')) setModalTab('custom');
+                                    if (item.item_type === 'CUSTOM') setModalTab('custom');
                                     else if (item.item_type === 'SERVICE') setModalTab('service');
                                     else setModalTab('product');
 
@@ -2800,43 +2824,33 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         )}
                       </div>
 
-                      <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <label className="text-slate-400 text-sm font-medium">Condições de Pagamento</label>
-                          <button
-                            onClick={() => {
-                              setTermsModalTab('payment');
-                              setIsTermsModalOpen(true);
-                            }}
-                            className="text-slate-500 hover:text-primary transition-colors flex items-center gap-1 text-[10px] font-bold uppercase"
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="text-slate-400 text-sm font-medium">Condições de Pagamento</label>
+                            <button
+                              onClick={() => {
+                                setTermsModalTab('payment');
+                                setIsTermsModalOpen(true);
+                              }}
+                              className="text-slate-500 hover:text-primary transition-colors flex items-center gap-1 text-[10px] font-bold uppercase"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">settings</span>
+                              Gerenciar
+                            </button>
+                          </div>
+                          <select
+                            className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
+                            value={proposal.payment_conditions}
+                            onChange={e => setProposal({ ...proposal, payment_conditions: e.target.value })}
                           >
-                            <span className="material-symbols-outlined text-[14px]">settings</span>
-                            Gerenciar
-                          </button>
+                            <option value="">Selecione...</option>
+                            {paymentMethods.map(method => (
+                              <option key={method.id} value={method.label}>{method.label}</option>
+                            ))}
+                          </select>
                         </div>
-                        <select
-                          className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
-                          value={proposal.payment_conditions}
-                          onChange={e => setProposal({ ...proposal, payment_conditions: e.target.value })}
-                        >
-                          <option value="">Selecione...</option>
-                          {paymentMethods.map(method => (
-                            <option key={method.id} value={method.label}>{method.label}</option>
-                          ))}
-                        </select>
-                      </div>
 
-                      <div>
-                        <label className="text-slate-400 text-sm font-medium mb-2 block">Garantia de Produtos e Serviços</label>
-                        <textarea
-                          className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors min-h-[80px]"
-                          placeholder="Ex: 01 (um) ano contra defeitos de fabricação e instalação..."
-                          value={pdfSettings.warranty_text || ''}
-                          onChange={e => savePdfSettings({ ...pdfSettings, warranty_text: e.target.value })}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-6">
                         <div>
                           <div className="flex justify-between items-center mb-2">
                             <label className="text-slate-400 text-sm font-medium">Cronograma Estimado</label>
@@ -2862,31 +2876,61 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             ))}
                           </select>
                         </div>
-                        <div>
-                          <label className="text-slate-400 text-sm font-medium block mb-2">Validade (Dias)</label>
-                          <input
-                            type="number"
-                            min="1"
-                            placeholder="Ex: 30"
+
+                        <div className="lg:col-span-2">
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="text-slate-400 text-sm font-medium">Garantia de Produtos e Serviços</label>
+                            <button
+                              onClick={() => {
+                                setTermsModalTab('warranty');
+                                setIsTermsModalOpen(true);
+                              }}
+                              className="text-slate-500 hover:text-primary transition-colors flex items-center gap-1 text-[10px] font-bold uppercase"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">settings</span>
+                              Gerenciar
+                            </button>
+                          </div>
+                          <select
                             className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
-                            value={proposal.validity_days || ''}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setProposal({ ...proposal, validity_days: val });
-                              savePdfSettings({ ...pdfSettings, validade: e.target.value });
-                            }}
-                          />
+                            value={pdfSettings.warranty_text || ''}
+                            onChange={e => savePdfSettings({ ...pdfSettings, warranty_text: e.target.value })}
+                          >
+                            <option value="">Selecione a garantia...</option>
+                            {warrantyTerms.map(term => (
+                              <option key={term.id} value={term.label}>{term.label}</option>
+                            ))}
+                          </select>
                         </div>
-                        <div>
-                          <label className="text-slate-400 text-sm font-medium block mb-2">Data da Proposta</label>
-                          <input
-                            type="date"
-                            className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
-                            value={proposal.proposal_date || ''}
-                            onChange={e => setProposal({ ...proposal, proposal_date: e.target.value })}
-                          />
+
+                        <div className="grid grid-cols-2 gap-4 lg:col-span-2">
+                          <div>
+                            <label className="text-slate-400 text-sm font-medium block mb-2">Validade (Dias)</label>
+                            <input
+                              type="number"
+                              min="1"
+                              placeholder="Ex: 30"
+                              className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
+                              value={proposal.validity_days || ''}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setProposal({ ...proposal, validity_days: val });
+                                savePdfSettings({ ...pdfSettings, validade: e.target.value });
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-slate-400 text-sm font-medium block mb-2">Data da Proposta</label>
+                            <input
+                              type="date"
+                              className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none transition-colors"
+                              value={proposal.proposal_date || ''}
+                              onChange={e => setProposal({ ...proposal, proposal_date: e.target.value })}
+                            />
+                          </div>
                         </div>
                       </div>
+
                       <div>
                         <label className="text-slate-400 text-sm font-medium block mb-2">Observações / Escopo</label>
                         <textarea
@@ -3274,7 +3318,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             </button>
 
             <h3 className="text-xl font-bold text-white mb-6 uppercase tracking-wider">
-              {termsModalTab === 'payment' ? 'Gerenciar Formas de Pagamento' : 'Gerenciar Cronogramas'}
+              {termsModalTab === 'payment' ? 'Gerenciar Formas de Pagamento' : 
+               termsModalTab === 'schedule' ? 'Gerenciar Cronogramas' : 'Gerenciar Garantias'}
             </h3>
 
             <div className="space-y-6">
@@ -3282,7 +3327,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                 <input
                   type="text"
                   className="flex-1 bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-primary transition-all"
-                  placeholder={termsModalTab === 'payment' ? "Ex: 50% Entrada + 50% Entrega" : "Ex: 15 dias úteis"}
+                  placeholder={termsModalTab === 'payment' ? "Ex: 50% Entrada + 50% Entrega" : 
+                               termsModalTab === 'schedule' ? "Ex: 15 dias úteis" : "Ex: 01 (um) ano de garantia"}
                   value={newTermLabel}
                   onChange={e => setNewTermLabel(e.target.value)}
                 />
@@ -3298,7 +3344,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
               <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden max-h-60 overflow-y-auto">
                 <table className="w-full text-left text-sm">
                   <tbody className="divide-y divide-white/5">
-                    {(termsModalTab === 'payment' ? paymentMethods : executionSchedules).map((item: any) => (
+                    {(termsModalTab === 'payment' ? paymentMethods : 
+                      termsModalTab === 'schedule' ? executionSchedules : warrantyTerms).map((item: any) => (
                       <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                         <td className="px-4 py-3 text-slate-200">{item.label}</td>
                         <td className="px-4 py-3 text-right">
@@ -3322,7 +3369,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         </td>
                       </tr>
                     ))}
-                    {(termsModalTab === 'payment' ? paymentMethods : executionSchedules).length === 0 && (
+                    {(termsModalTab === 'payment' ? paymentMethods : 
+                      termsModalTab === 'schedule' ? executionSchedules : warrantyTerms).length === 0 && (
                       <tr>
                         <td className="px-4 py-8 text-center text-slate-500 italic">Nenhum item cadastrado.</td>
                       </tr>

@@ -705,10 +705,16 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                     ) : (
                       projects
                         .filter(p => {
-                          const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
+                          // Prevent projects from vanishing if their status doesn't match any existing column
+                          // If status doesn't match ANY column, force it to show up in the very first column.
+                          const isValidStatus = statusColumns.some(c => c.id === p.status);
+                          const matchesView = viewMode === 'STATUS' 
+                            ? (p.status === col.id || (!isValidStatus && col.id === statusColumns[0]?.id))
+                            : getProjectPhase(p) === col.id;
+                            
                           if (!matchesView) return false;
                         if (viewMode === 'STATUS' && col.project_types) {
-                          if (!col.project_types.includes(p.type)) return false;
+                          if (!col.project_types.includes(p.type || 'business')) return false;
                         }
 
                         // Label Filter
@@ -742,8 +748,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                             const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
                             const wordNumbersOnly = word.replace(/\D/g, '');
 
-                            return p.name.toLowerCase().includes(word) ||
-                              p.client.toLowerCase().includes(word) ||
+                            return (p.name?.toLowerCase() || '').includes(word) ||
+                              (p.client?.toLowerCase() || '').includes(word) ||
                               (projNumStr && projNumStr === cleanWordNumber) ||
                               (projNumStr && projNumStr === wordBeforeSlash) ||
                               (projNumStr && projNumStr === wordNumbersOnly) ||

@@ -593,10 +593,18 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     try {
       setLoading(true);
       const newBudgetItems: any[] = [];
+      const skippedModels: string[] = [];
 
       for (const modelId of selectedModelIds) {
         const model = availableModels.find(m => m.id === modelId);
         if (!model) continue;
+
+        // Prevent duplication of the entire model if it's already in the items array
+        const alreadyExists = items.some(i => i.name.includes(`[MODELO: ${model.name}]`));
+        if (alreadyExists) {
+          skippedModels.push(model.name);
+          continue; // Skip this model entirely
+        }
 
         // 1. Add Labor Item (The editable total regulator)
         newBudgetItems.push({
@@ -617,32 +625,53 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
           .eq('service_model_id', modelId);
 
         if (modelItems) {
+          // Aggregate duplicate products within the same model just to be safe
+          const aggregatedItems: Record<string, any> = {};
+
           modelItems.forEach((item: any) => {
             if (item.product) {
-              newBudgetItems.push({
-                project_id: selectedProjectId,
-                name: `[MODELO: ${model.name}] ${item.product.name}`,
-                quantity_calculated: 0,
-                quantity_final: item.quantity,
-                unit_price: item.product.price,
-                cost_price: item.product.cost_price || 0,
-                origin: 'MANUAL',
-                item_type: 'PRODUCT' as const
-              });
+              const objKey = item.product.id;
+              if (aggregatedItems[objKey]) {
+                aggregatedItems[objKey].quantity += item.quantity;
+              } else {
+                aggregatedItems[objKey] = {
+                  product: item.product,
+                  quantity: item.quantity
+                };
+              }
             }
+          });
+
+          Object.values(aggregatedItems).forEach((agg: any) => {
+            newBudgetItems.push({
+              project_id: selectedProjectId,
+              name: `[MODELO: ${model.name}] ${agg.product.name}`,
+              quantity_calculated: 0,
+              quantity_final: agg.quantity,
+              unit_price: agg.product.price,
+              cost_price: agg.product.cost_price || 0,
+              origin: 'MANUAL',
+              item_type: 'PRODUCT' as const
+            });
           });
         }
       }
 
-      const { data, error } = await supabase.from('budget_items').insert(newBudgetItems).select();
+      if (newBudgetItems.length > 0) {
+        const { data, error } = await supabase.from('budget_items').insert(newBudgetItems).select();
+        if (error) throw error;
 
-      if (error) throw error;
-
-      if (data) {
-        setItems(prev => [...prev, ...data as any]);
-        setIsModelModalOpen(false);
-        setSelectedModelIds([]);
+        if (data) {
+          setItems(prev => [...prev, ...data as any]);
+        }
       }
+
+      if (skippedModels.length > 0) {
+        alert(`Alguns modelos selecionados já estavam adicionados neste projeto e foram ignorados para evitar duplicidade:\n\n${skippedModels.join('\n')}`);
+      }
+
+      setIsModelModalOpen(false);
+      setSelectedModelIds([]);
 
     } catch (e) {
       console.error('Error adding models:', e);
@@ -1717,7 +1746,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       {/* Add Item Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-surface-dark border border-white/10 rounded-xl p-6 w-full max-w-lg shadow-2xl">
+          <div className="bg-surface-dark border border-white/10 rounded-xl p-6 w-full max-w-3xl shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-4">Adicionar Item Manualmente</h3>
 
             <div className="flex flex-col gap-4">
@@ -1750,8 +1779,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                           newItemName === p.name ? 'bg-primary/20 border-l-2 border-primary' : 'hover:bg-primary/10'
                         }`}
                       >
-                        <span className={`text-sm ${newItemName === p.name ? 'text-primary font-bold' : 'text-white'}`}>{p.name}</span>
-                        <span className="text-emerald-500 font-bold text-[10px] uppercase">R$ {(p.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        <span className={`text-base leading-relaxed flex-1 pr-4 ${newItemName === p.name ? 'text-primary font-bold' : 'text-white'}`}>{p.name}</span>
+                        <span className="text-emerald-500 font-bold text-[10px] uppercase shrink-0">R$ {(p.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                       </button>
                     ))
                   }
@@ -1906,7 +1935,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       {/* Product Exchange Modal */}
       {isExchangeModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-surface-dark border border-white/10 rounded-xl p-6 w-full max-w-lg shadow-2xl">
+          <div className="bg-surface-dark border border-white/10 rounded-xl p-6 w-full max-w-3xl shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-2">Trocar Produto</h3>
             <p className="text-slate-400 text-sm mb-6">
               Substituir <strong>{itemToExchange?.name}</strong> por um novo item do catálogo. O preço será atualizado.
@@ -1934,8 +1963,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                       onClick={() => handleSwapProduct(p)}
                       className="w-full flex items-center justify-between p-3 hover:bg-primary/10 transition-colors text-left group"
                     >
-                      <span className="text-white group-hover:text-primary transition-colors">{p.name}</span>
-                      <span className="text-emerald-500 font-bold text-xs uppercase">R$ {(p.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-base leading-relaxed flex-1 pr-4 text-white group-hover:text-primary transition-colors">{p.name}</span>
+                      <span className="text-emerald-500 font-bold text-xs uppercase shrink-0">R$ {(p.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     </button>
                   ))
                 }
