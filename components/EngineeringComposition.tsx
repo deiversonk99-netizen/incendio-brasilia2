@@ -1359,7 +1359,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                       ) : (
                         <>
                           {/* 1. Itens de Cotação (Central Items) */}
-                          {items.filter(i => !i.name.includes('[INFRA:')).length > 0 && (
+                          {items.filter(i => !i.name.includes('[INFRA:') && !i.name.includes('[MODELO:')).length > 0 && (
                             <>
                               <tr className="bg-white/5">
                                 <td colSpan={8} className="px-6 py-2">
@@ -1369,7 +1369,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                   </div>
                                 </td>
                               </tr>
-                              {items.filter(i => !i.name.includes('[INFRA:')).map(item => (
+                              {items.filter(i => !i.name.includes('[INFRA:') && !i.name.includes('[MODELO:')).map(item => (
                                 <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-2">

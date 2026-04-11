@@ -410,7 +410,7 @@ const ServiceModelsView: React.FC = () => {
                                         </button>
 
                                         {isProductSearchOpen && (
-                                            <div className="absolute right-0 top-full mt-2 w-80 bg-surface-dark border border-white/10 rounded-xl shadow-2xl z-50 p-3">
+                                            <div className="absolute right-0 top-full mt-2 w-[32rem] bg-surface-dark border border-white/10 rounded-xl shadow-2xl z-50 p-3">
                                                 <input
                                                     type="text"
                                                     placeholder="Buscar produto..."
@@ -424,10 +424,10 @@ const ServiceModelsView: React.FC = () => {
                                                         <button
                                                             key={p.id}
                                                             onClick={() => handleAddItem(p)}
-                                                            className="w-full text-left px-3 py-2 hover:bg-white/5 rounded-lg text-sm flex justify-between items-center group"
+                                                            className="w-full text-left px-3 py-2 hover:bg-white/5 rounded-lg text-sm flex justify-between items-start group"
                                                         >
-                                                            <span className="truncate flex-1 pr-2 text-slate-300">{p.name}</span>
-                                                            <span className="text-emerald-500 text-xs font-mono whitespace-nowrap">
+                                                            <span className="flex-1 pr-4 text-slate-300 leading-relaxed font-medium">{p.name}</span>
+                                                            <span className="text-emerald-400 font-mono font-bold text-xs whitespace-nowrap pt-0.5">
                                                                 {(p.price || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                                             </span>
                                                         </button>
