@@ -429,7 +429,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   // Auto-save proposal metadata when key fields change
   useEffect(() => {
-    if (!selectedProjectId || !user || loading) return;
+    // Security guard: Don't auto-save if loading or if data doesn't match the selected project
+    if (!selectedProjectId || !user || loading || proposal.project_id !== selectedProjectId) return;
 
     const timer = setTimeout(async () => {
       setIsAutoSaving(true);
@@ -626,6 +627,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const loadProposalData = async (projectId: string) => {
     setLoading(true);
 
+    // Reset local state immediately to avoid cross-project contamination
+    setBudgetItems([]);
+    setProposal(prev => ({
+      ...prev,
+      project_id: projectId,
+      bdi_percent: 0,
+      profit_percent: 0,
+      discount_value: 0
+    }));
+
     // 1. Fetch Existing Proposal FIRST to establish BDI and Profit
     const { data: existingProposal } = await supabase
       .from('proposals')
@@ -779,7 +790,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   };
 
   const handleRecalculatePrices = async () => {
-    if (!selectedProjectId || !budgetItems.length) return;
+    if (loading || !selectedProjectId || !budgetItems.length) return;
     if (!confirm('Deseja recalcular todos os preços de venda com base no Custo Unitário, BDI e Margem de Lucro atuais? Itens com custo zero que forem encontrados no catálogo serão restaurados.')) return;
 
     setLoading(true);
@@ -860,7 +871,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   };
 
   const handleSave = async () => {
-    if (!selectedProjectId || !user) return;
+    if (loading || !selectedProjectId || !user) return;
     setSaving(true);
     try {
       const payload = {
@@ -992,13 +1003,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!confirm('Tem certeza que deseja remover este item da proposta?')) return;
+    if (loading || !confirm('Tem certeza que deseja remover este item da proposta?')) return;
     const { error } = await supabase.from('budget_items').delete().eq('id', id);
     if (error) alert('Erro ao excluir: ' + error.message);
     else setBudgetItems(prev => prev.filter(i => i.id !== id));
   };
 
   const handleUpdateItem = async (id: string, updates: Partial<any>) => {
+    if (loading) return;
     // Optimistic update
     setBudgetItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
 

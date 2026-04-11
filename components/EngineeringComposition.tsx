@@ -231,12 +231,14 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   }, []);
 
   useEffect(() => {
+    // Instant reset on project switch to prevent data leaking/contamination
+    setItems([]);
+    
     if (selectedProjectId) {
       loadBudgetItems();
       loadPdfSettings(selectedProjectId);
       fetchClientDetails();
     } else {
-      setItems([]);
       setClientDetails(null);
     }
   }, [selectedProjectId]);
@@ -467,6 +469,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   };
 
   const handleUpdateItem = async (id: string, field: keyof BudgetItem, value: string | number) => {
+    if (loading) return;
     // Optimistic update
     setItems(prev => prev.map(item => {
       if (item.id === id) {
@@ -510,7 +513,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este item?')) return;
+    if (loading || !confirm('Tem certeza que deseja excluir este item?')) return;
 
     // Optimistic update
     setItems(prev => prev.filter(item => item.id !== id));
@@ -561,7 +564,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   };
 
   const handleAddItem = async () => {
-    if (!selectedProjectId || !newItemName) return;
+    if (loading || !selectedProjectId || !newItemName) return;
 
     const newItem = {
       project_id: selectedProjectId,
