@@ -517,14 +517,75 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     setBudgetItems(prev => prev.map(item => {
       if (item.cost_price > 0) {
+        // Respect per-item flags (default true for backwards compat)
+        const itemBdiFactor = (item.apply_bdi !== false) ? bdiFactor : 1;
+        const itemProfitFactor = (item.apply_profit !== false) ? profitFactor : 1;
         return {
           ...item,
-          unit_price: item.cost_price * bdiFactor * profitFactor
+          unit_price: item.cost_price * itemBdiFactor * itemProfitFactor
         };
       }
       return item;
     }));
   }, [proposal.bdi_percent, proposal.profit_percent]);
+
+  // Helper: recalculate a single item's unit_price based on its flags
+  const recalcItemPrice = (item: any, overrides: Partial<{ apply_bdi: boolean; apply_profit: boolean }> = {}) => {
+    const bdiPct = Number(proposal.bdi_percent) || 0;
+    const profitPct = Number(proposal.profit_percent) || 0;
+    const applyBdi = overrides.apply_bdi !== undefined ? overrides.apply_bdi : (item.apply_bdi !== false);
+    const applyProfit = overrides.apply_profit !== undefined ? overrides.apply_profit : (item.apply_profit !== false);
+    const itemBdiFactor = applyBdi ? (1 + bdiPct / 100) : 1;
+    const itemProfitFactor = applyProfit ? (1 + profitPct / 100) : 1;
+    const cost = Number(item.cost_price || 0);
+    if (cost > 0) {
+      return { ...item, ...overrides, unit_price: cost * itemBdiFactor * itemProfitFactor };
+    }
+    return { ...item, ...overrides };
+  };
+
+  // Helper: batch recalculate items matching a filter
+  const recalcBatchItems = async (
+    filterFn: (item: any) => boolean,
+    overrides: Partial<{ apply_bdi: boolean; apply_profit: boolean }>
+  ) => {
+    if (loading) return;
+    
+    // 1. Calculate the new state first
+    const updatedItems = budgetItems.map(item =>
+      filterFn(item) ? recalcItemPrice(item, overrides) : item
+    );
+    
+    // 2. Optimistic local update
+    setBudgetItems(updatedItems);
+    
+    // 3. Persist to Database if there are items to update
+    const itemsToPersist = updatedItems.filter(filterFn);
+    if (itemsToPersist.length > 0) {
+      setIsAutoSaving(true);
+      try {
+        const payload = itemsToPersist.map(i => ({
+          id: i.id,
+          project_id: selectedProjectId,
+          unit_price: i.unit_price,
+          name: i.name,
+          quantity_final: i.quantity_final,
+          cost_price: i.cost_price,
+          item_type: i.item_type,
+          origin: i.origin,
+          apply_bdi: i.apply_bdi !== false,
+          apply_profit: i.apply_profit !== false
+        }));
+        
+        const { error } = await supabase.from('budget_items').upsert(payload);
+        if (error) throw error;
+      } catch (err) {
+        console.error('Erro ao salvar atualização em massa de itens:', err);
+      } finally {
+        setTimeout(() => setIsAutoSaving(false), 500);
+      }
+    }
+  };
 
   const fetchProjects = async () => {
     const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
@@ -654,7 +715,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     // 2. Fetch Items Cost from Phase B
     const { data: budgetItemsData } = await supabase
       .from('budget_items')
-      .select('id, name, quantity_final, unit_price, cost_price, origin, item_type')
+      .select('id, name, quantity_final, unit_price, cost_price, origin, item_type, apply_bdi, apply_profit')
       .eq('project_id', projectId);
 
     let processedItems: any[] = [];
@@ -729,6 +790,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       let cost = Number(item.cost_price || 0);
       const currentSale = Number(item.unit_price || 0);
 
+      // Per-item markup factors (default true for backwards compat)
+      const itemBdiFactor = (item.apply_bdi !== false) ? bdiFactor : 1;
+      const itemProfitFactor = (item.apply_profit !== false) ? profitFactor : 1;
+      const itemCombinedFactor = itemBdiFactor * itemProfitFactor;
+
       // FALLBACK: If cost is 0, we try to LOOKUP from catalog first instead of back-calculating
       if (cost <= 0) {
         const cleanName = item.name.includes('[') && item.name.includes(']')
@@ -739,7 +805,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         if (catalogItem && catalogItem.cost_price > 0) {
           cost = catalogItem.cost_price;
         } else if (currentSale > 0) {
-          cost = currentSale / (combinedFactor || 1);
+          cost = currentSale / (itemCombinedFactor || 1);
         }
       }
 
@@ -757,7 +823,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         totalProductsFinal += lineFinalPrice;
       }
 
-      predictedVendaGlobal += lineCostTotal * combinedFactor;
+      predictedVendaGlobal += lineCostTotal * itemCombinedFactor;
       actualVendaGlobal += lineFinalPrice;
     });
 
@@ -801,6 +867,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const updatedItems = budgetItems.map((item: any) => {
       let cost = Number(item.cost_price || 0);
 
+      // Per-item markup factors (default true for backwards compat)
+      const itemBdiFactor = (item.apply_bdi !== false) ? (1 + (bdiPct / 100)) : 1;
+      const itemProfitFactor = (item.apply_profit !== false) ? (1 + (profitPct / 100)) : 1;
+      const itemCombinedFactor = itemBdiFactor * itemProfitFactor;
+
       // Healing / Fallback from Catalog
       if (cost <= 0) {
         const cleanName = item.name.includes('[') && item.name.includes(']')
@@ -813,13 +884,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         } else {
           // If still 0, we use current unit_price but with a STATIC assumption (e.g. current combined factor)
           // to break the circular reduction. Or we keep it 0 if combinedFactor is 0.
-          if (item.unit_price > 0 && combinedFactor > 0) {
-            cost = Number(item.unit_price) / combinedFactor;
+          if (item.unit_price > 0 && itemCombinedFactor > 0) {
+            cost = Number(item.unit_price) / itemCombinedFactor;
           }
         }
       }
 
-      const newUnitPrice = cost * combinedFactor;
+      const newUnitPrice = cost * itemCombinedFactor;
       return { ...item, cost_price: cost, unit_price: newUnitPrice };
     });
 
@@ -835,7 +906,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           quantity_final: i.quantity_final,
           cost_price: i.cost_price,
           item_type: i.item_type,
-          origin: i.origin
+          origin: i.origin,
+          apply_bdi: i.apply_bdi !== false,
+          apply_profit: i.apply_profit !== false
         })));
 
       if (itemsError) throw itemsError;
@@ -900,7 +973,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           name: item.name,
           quantity_final: item.quantity_final,
           item_type: item.item_type,
-          origin: item.origin
+          origin: item.origin,
+          apply_bdi: item.apply_bdi !== false,
+          apply_profit: item.apply_profit !== false
         }));
         await supabase.from('budget_items').upsert(itemsPayload);
       }
@@ -1011,23 +1086,36 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   const handleUpdateItem = async (id: string, updates: Partial<any>) => {
     if (loading) return;
-    // Optimistic update
-    setBudgetItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+    
+    // Find the current item to use its values for calculation if needed
+    const currentItem = budgetItems.find(i => i.id === id);
+    if (!currentItem) return;
 
-    // If updating unit_price, we should also update cost_price to reflect the new "Base"
-    // otherwise the next Recalculate will revert it.
     let finalUpdates = { ...updates };
 
-    if (updates.unit_price !== undefined) {
+    // If we are toggling BDI or Profit, OR updating cost_price, we should recalculate the unit_price
+    if (updates.apply_bdi !== undefined || updates.apply_profit !== undefined || updates.cost_price !== undefined) {
+      const recalculated = recalcItemPrice({ ...currentItem, ...updates });
+      finalUpdates.unit_price = recalculated.unit_price;
+      if (recalculated.cost_price !== undefined) finalUpdates.cost_price = recalculated.cost_price;
+    } 
+    // If manually updating unit_price, back-calculate cost_price
+    else if (updates.unit_price !== undefined) {
       const bdiPct = Number(proposal.bdi_percent) || 0;
       const profitPct = Number(proposal.profit_percent) || 0;
-      const combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
+      const applyBdi = currentItem.apply_bdi !== false;
+      const applyProfit = currentItem.apply_profit !== false;
+      
+      const itemBdiFactor = applyBdi ? (1 + bdiPct / 100) : 1;
+      const itemProfitFactor = applyProfit ? (1 + profitPct / 100) : 1;
+      const combinedFactor = itemBdiFactor * itemProfitFactor;
 
-      // New Cost = New Price / Factor. 
-      // This ensures that this manual price is respected as the result of Cost * Factor.
       const newCost = Number(updates.unit_price) / (combinedFactor || 1);
       finalUpdates.cost_price = newCost;
     }
+
+    // Optimistic update
+    setBudgetItems(prev => prev.map(item => item.id === id ? { ...item, ...finalUpdates } : item));
 
     const { error } = await supabase
       .from('budget_items')
@@ -2477,12 +2565,98 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
               {/* Items Table */}
               <div className="bg-surface-dark border border-white/5 rounded-xl overflow-hidden shadow-sm">
-                <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-black/10">
-                  <h3 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
-                    <span className="material-symbols-outlined text-primary text-[20px]">list_alt</span>
-                    Itens da Proposta
-                  </h3>
-                  <span className="text-[10px] text-slate-500 font-bold uppercase">{budgetItems.length} Itens</span>
+                <div className="px-6 py-4 border-b border-white/5 flex flex-col gap-3 bg-black/10">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
+                      <span className="material-symbols-outlined text-primary text-[20px]">list_alt</span>
+                      Itens da Proposta
+                    </h3>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">{budgetItems.length} Itens</span>
+                  </div>
+
+                  {/* Batch BDI/Lucro Selectors */}
+                  {(() => {
+                    const productItems = budgetItems.filter(i => i.item_type !== 'SERVICE' && i.item_type !== 'CUSTOM');
+                    const serviceItems = budgetItems.filter(i => i.item_type === 'SERVICE' || i.item_type === 'CUSTOM');
+                    const allProductsBdi = productItems.length > 0 && productItems.every(i => i.apply_bdi !== false);
+                    const allServicesBdi = serviceItems.length > 0 && serviceItems.every(i => i.apply_bdi !== false);
+                    const allProductsProfit = productItems.length > 0 && productItems.every(i => i.apply_profit !== false);
+                    const allServicesProfit = serviceItems.length > 0 && serviceItems.every(i => i.apply_profit !== false);
+
+                    return (
+                      <div className="flex flex-wrap gap-3">
+                        {/* BDI Batch */}
+                        <div className="flex items-center gap-2 bg-blue-500/5 border border-blue-500/20 rounded-lg px-3 py-2">
+                          <span className="text-[9px] font-black text-blue-400 uppercase tracking-tighter">BDI:</span>
+                          <label className={`flex items-center gap-1.5 ${productItems.length > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'}`}>
+                            <input
+                              type="checkbox"
+                              checked={allProductsBdi}
+                              disabled={productItems.length === 0}
+                              onChange={(e) => {
+                                recalcBatchItems(
+                                  item => item.item_type !== 'SERVICE' && item.item_type !== 'CUSTOM',
+                                  { apply_bdi: e.target.checked }
+                                );
+                              }}
+                              className="w-3.5 h-3.5 rounded border-blue-500/30 bg-background-dark text-blue-500 focus:ring-blue-500"
+                            />
+                            <span className="text-[9px] font-bold text-slate-400">Todos Produtos ({productItems.length})</span>
+                          </label>
+                          <label className={`flex items-center gap-1.5 ${serviceItems.length > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'}`}>
+                            <input
+                              type="checkbox"
+                              checked={allServicesBdi}
+                              disabled={serviceItems.length === 0}
+                              onChange={(e) => {
+                                recalcBatchItems(
+                                  item => item.item_type === 'SERVICE' || item.item_type === 'CUSTOM',
+                                  { apply_bdi: e.target.checked }
+                                );
+                              }}
+                              className="w-3.5 h-3.5 rounded border-blue-500/30 bg-background-dark text-blue-500 focus:ring-blue-500"
+                            />
+                            <span className="text-[9px] font-bold text-slate-400">Todos Servi&#231;os ({serviceItems.length})</span>
+                          </label>
+                        </div>
+
+                        {/* Lucro Batch */}
+                        <div className="flex items-center gap-2 bg-emerald-500/5 border border-emerald-500/20 rounded-lg px-3 py-2">
+                          <span className="text-[9px] font-black text-emerald-400 uppercase tracking-tighter">Lucro:</span>
+                          <label className={`flex items-center gap-1.5 ${productItems.length > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'}`}>
+                            <input
+                              type="checkbox"
+                              checked={allProductsProfit}
+                              disabled={productItems.length === 0}
+                              onChange={(e) => {
+                                recalcBatchItems(
+                                  item => item.item_type !== 'SERVICE' && item.item_type !== 'CUSTOM',
+                                  { apply_profit: e.target.checked }
+                                );
+                              }}
+                              className="w-3.5 h-3.5 rounded border-emerald-500/30 bg-background-dark text-emerald-500 focus:ring-emerald-500"
+                            />
+                            <span className="text-[9px] font-bold text-slate-400">Todos Produtos ({productItems.length})</span>
+                          </label>
+                          <label className={`flex items-center gap-1.5 ${serviceItems.length > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'}`}>
+                            <input
+                              type="checkbox"
+                              checked={allServicesProfit}
+                              disabled={serviceItems.length === 0}
+                              onChange={(e) => {
+                                recalcBatchItems(
+                                  item => item.item_type === 'SERVICE' || item.item_type === 'CUSTOM',
+                                  { apply_profit: e.target.checked }
+                                );
+                              }}
+                              className="w-3.5 h-3.5 rounded border-emerald-500/30 bg-background-dark text-emerald-500 focus:ring-emerald-500"
+                            />
+                            <span className="text-[9px] font-bold text-slate-400">Todos Servi&#231;os ({serviceItems.length})</span>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
@@ -2505,6 +2679,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         const bdiFact = 1 + bdiPctVal;
                         const profitFact = 1 + profitPctVal;
 
+                        // Per-item flags
+                        const itemApplyBdi = item.apply_bdi !== false;
+                        const itemApplyProfit = item.apply_profit !== false;
+
                         // Calculate informative BDI and Profit values
                         let costBase = Number(item.cost_price || 0);
                         if (costBase <= 0) {
@@ -2520,8 +2698,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         }
 
                         const qty = Number(item.quantity_final || 0);
-                        const bdiValUnit = costBase * bdiPctVal;
-                        const profitValUnit = (costBase + bdiValUnit) * profitPctVal;
+                        const bdiValUnit = itemApplyBdi ? costBase * bdiPctVal : 0;
+                        const profitValUnit = itemApplyProfit ? (costBase + (itemApplyBdi ? bdiValUnit : 0)) * profitPctVal : 0;
 
                         const bdiTotalLine = bdiValUnit * qty;
                         const profitTotalLine = profitValUnit * qty;
@@ -2614,17 +2792,33 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             </td>
                             <td className="px-6 py-4 text-right text-white font-bold">R$ {(item.quantity_final * item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
 
-                            {/* Informative Columns */}
+                            {/* Informative Columns with per-item toggles */}
                             <td className="px-6 py-4 text-right">
-                              <div className="flex flex-col items-end">
-                                <span className="text-xs font-mono text-indigo-400">R$ {bdiTotalLine.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                <span className="text-[9px] text-slate-600 font-bold uppercase">Total BDI</span>
+                              <div className="flex flex-col items-end gap-1">
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={itemApplyBdi}
+                                    onChange={(e) => handleUpdateItem(item.id, { apply_bdi: e.target.checked })}
+                                    className="w-3 h-3 rounded border-blue-500/30 bg-background-dark text-blue-500 focus:ring-blue-500"
+                                  />
+                                  <span className={`text-xs font-mono ${itemApplyBdi ? 'text-indigo-400' : 'text-slate-600 line-through'}`}>R$ {bdiTotalLine.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                </label>
+                                <span className="text-[9px] text-slate-600 font-bold uppercase">{itemApplyBdi ? 'Total BDI' : 'BDI Desativado'}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4 text-right">
-                              <div className="flex flex-col items-end">
-                                <span className="text-xs font-mono text-emerald-400">R$ {profitTotalLine.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                <span className="text-[9px] text-slate-600 font-bold uppercase">Total Lucro</span>
+                              <div className="flex flex-col items-end gap-1">
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={itemApplyProfit}
+                                    onChange={(e) => handleUpdateItem(item.id, { apply_profit: e.target.checked })}
+                                    className="w-3 h-3 rounded border-emerald-500/30 bg-background-dark text-emerald-500 focus:ring-emerald-500"
+                                  />
+                                  <span className={`text-xs font-mono ${itemApplyProfit ? 'text-emerald-400' : 'text-slate-600 line-through'}`}>R$ {profitTotalLine.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                </label>
+                                <span className="text-[9px] text-slate-600 font-bold uppercase">{itemApplyProfit ? 'Total Lucro' : 'Lucro Desativado'}</span>
                               </div>
                             </td>
 
