@@ -191,16 +191,16 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             // If currently selected groupId is not in the fetched groups (and we are not editing), clear it
             // This prevents "ghost" selections if switching contexts
             // However, if we are editing, we trust the task's current group
-            if (!taskToEdit && groupId && !gData.some((g: any) => g.id === groupId)) {
+            if (!taskToEdit && groupId && !accessibleGroups.some((g: any) => g.id === groupId)) {
                 setGroupId('');
             }
 
             // If no group is selected, select the first one automatically if available
-            if (!groupId && !taskToEdit && gData.length > 0) {
+            if (!groupId && !taskToEdit && accessibleGroups.length > 0) {
                 // Try to respect defaultGroupId if it exists in the new list
-                const hasDefault = gData.some((g: any) => g.id === defaultGroupId);
+                const hasDefault = accessibleGroups.some((g: any) => g.id === defaultGroupId);
                 if (!hasDefault) {
-                    setGroupId(gData[0].id);
+                    setGroupId(accessibleGroups[0].id);
                 }
             }
         }

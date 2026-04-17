@@ -130,7 +130,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         };
         
         // If central, they see ALL boards + sync board
-        // Regular users probably shouldn't be in Team Monitoring anyway (Sidebar blocks it)
         setBoards([syncBoardOption, ...allowedBoards]);
 
         if (!selectedBoardId) {
@@ -139,27 +138,13 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           return;
         }
       } else {
-        if (isCentral) {
-          const listViewOption = {
-            id: 'lista-pendencias-global',
-            name: '📋 Lista de Pendências Global',
-            user_id: undefined
-          };
-          setBoards([listViewOption]);
+        // Aba "Minhas Tarefas" Pessoal
+        setBoards(allowedBoards);
 
-          if (!selectedBoardId || selectedBoardId !== 'lista-pendencias-global') {
-            setSelectedBoardId('lista-pendencias-global');
-            setLoading(false);
-            return;
-          }
-        } else {
-          setBoards(allowedBoards);
-
-          if (!selectedBoardId && allowedBoards.length > 0) {
-            setSelectedBoardId(allowedBoards[0].id);
-            setLoading(false);
-            return;
-          }
+        if (!selectedBoardId && allowedBoards.length > 0) {
+          setSelectedBoardId(allowedBoards[0].id);
+          setLoading(false);
+          return;
         }
       }
     }
@@ -169,8 +154,8 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       return;
     }
 
-    // Special Sync Board and List View Handling
-    if (selectedBoardId === SYNC_BOARD_ID || selectedBoardId === 'lista-pendencias-global') {
+    // Special Sync Board Handling
+    if (selectedBoardId === SYNC_BOARD_ID) {
       // First get visible board IDs
       const { data: visibleBoards } = await supabase
         .from('task_boards')
@@ -186,6 +171,13 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         .in('board_id', visibleBoardIds);
 
       const visibleGroupIds = visibleGroups?.map(g => g.id) || [];
+
+      if (visibleGroupIds.length === 0) {
+        setTasks([]);
+        setGroups([]);
+        setLoading(false);
+        return;
+      }
 
       const [{ data: syncData }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
         supabase
@@ -223,10 +215,22 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
         // Group by user
         const uniqueUserIds = Array.from(new Set(enrichedSyncData.map((t: any) => t.user_id)));
+        
+        // Vibrant palette for different team members
+        const colorPalette = [
+            'bg-emerald-500', 
+            'bg-purple-500', 
+            'bg-amber-500', 
+            'bg-sky-500', 
+            'bg-rose-500', 
+            'bg-indigo-500', 
+            'bg-orange-500'
+        ];
+
         const userGroups = uniqueUserIds.map((uId, idx) => ({
           id: `sync-user-${uId}`,
           name: `Pendentes - ${enrichedSyncData.find((t: any) => t.user_id === uId)?.user_profiles?.email?.split('@')[0] || 'Usuário'}`,
-          color: 'bg-primary',
+          color: colorPalette[idx % colorPalette.length],
           order_index: idx,
           board_id: SYNC_BOARD_ID
         }));
@@ -379,6 +383,35 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const handleUpdateTaskColor = async (taskId: string, color: string) => {
     setTasks((prev: Task[]) => prev.map((t: Task) => t.id === taskId ? { ...t, label_color: color } : t));
     await supabase.from('tasks').update({ label_color: color }).eq('id', taskId);
+  };
+
+  const handleToggleComplete = async (task: Task) => {
+    const isNowCompleted = !task.completed;
+    const newStatus = isNowCompleted ? 'DONE' : 'PENDING';
+
+    // Optimistic Update
+    setTasks((prev: Task[]) => prev.map((t: Task) => 
+      t.id === task.id ? { ...t, completed: isNowCompleted, status: newStatus } : t
+    ));
+
+    const { error } = await supabase
+      .from('tasks')
+      .update({ 
+        completed: isNowCompleted, 
+        status: newStatus 
+      })
+      .eq('id', task.id);
+
+    if (error) {
+      console.error('Error toggling completion:', error);
+      // Revert if error
+      setTasks((prev: Task[]) => prev.map((t: Task) => 
+        t.id === task.id ? { ...t, completed: !isNowCompleted, status: task.status } : t
+      ));
+    } else if (isNowCompleted) {
+      // Optional: Logic to archive or move to history in a real scenario
+      // For now, since most views filter by PENDING, it will "disappear" or move to DONE column
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -606,7 +639,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 />
               </div>
-              {selectedBoardId !== 'lista-pendencias-global' && (
+              {selectedBoardId !== SYNC_BOARD_ID && (
                 <button
                   onClick={() => setIsModalOpen(true)}
                   className="flex items-center justify-center gap-2 rounded-xl h-10 px-6 bg-primary hover:bg-red-600 text-white text-[11px] font-black uppercase tracking-[0.15em] transition-all shadow-xl shadow-primary/20 active:scale-95"
@@ -645,114 +678,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             <div className="text-center">
               <h3 className="text-lg font-bold text-white mb-1">Nenhum quadro encontrado</h3>
               <p className="text-slate-400 max-w-xs mx-auto">Entre em contato com a administração para criar ou habilitar um quadro de tarefas para você.</p>
-            </div>
-          </div>
-        ) : selectedBoardId === 'lista-pendencias-global' ? (
-          <div className="flex-1 overflow-y-auto px-4 pb-4">
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
-              <table className="w-full text-left">
-                <thead className="bg-black/40 uppercase tracking-widest text-slate-500 font-black text-[10px]">
-                  <tr>
-                    <th className="px-6 py-4 rounded-tl-xl w-[60px] text-center">Status</th>
-                    <th className="px-6 py-4">Tarefa</th>
-                    <th className="px-6 py-4">Projeto / Cliente</th>
-                    <th className="px-6 py-4">Responsável</th>
-                    <th className="px-6 py-4">Prazo</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={5} className="py-20 text-center">
-                        <div className="flex flex-col items-center justify-center gap-4 opacity-40">
-                          <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Carregando...</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filteredTasks.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-20 text-center text-slate-500 font-black tracking-widest uppercase text-[10px] bg-black/10">
-                        <div className="flex flex-col items-center gap-3 opacity-60">
-                          <span className="material-symbols-outlined text-[32px]">task_alt</span>
-                          Nenhuma tarefa pendente encontrada.
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTasks.map((task: any) => {
-                      const isExpired = task.expiration_date && new Date(task.expiration_date) < new Date();
-                      const userName = task.user_profiles?.email?.split('@')[0] || 'Desconhecido';
-                      const initials = userName.charAt(0).toUpperCase();
-
-                      return (
-                        <tr 
-                          key={task.id} 
-                          onClick={() => { setEditingTask(task); setIsModalOpen(true); }} 
-                          className="hover:bg-white/[0.04] transition-colors cursor-pointer group bg-black/20"
-                        >
-                          <td className="px-6 py-4 text-center">
-                            <span className={`material-symbols-outlined text-[18px] ${isExpired ? 'text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'text-slate-500 group-hover:text-primary transition-colors'}`}>
-                              {isExpired ? 'warning' : 'assignment'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="font-black text-white text-[12px] group-hover:text-primary transition-colors">{task.title}</div>
-                            {task.company_name && <div className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">{task.company_name}</div>}
-                          </td>
-                          <td className="px-6 py-4">
-                            {task.projects?.name ? (
-                              <div className="bg-primary/10 text-primary border border-primary/20 rounded-lg px-3 py-1.5 inline-flex items-center gap-1.5 font-black uppercase tracking-widest text-[9px] shadow-sm">
-                                <span className="material-symbols-outlined text-[14px]">apartment</span>
-                                {task.projects.name}
-                              </div>
-                            ) : (
-                              <span className="text-slate-600 font-bold uppercase tracking-widest">—</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col gap-2">
-                              {/* Dono / Criador */}
-                              <div className="flex items-center gap-2" title="Dono do Quadro / Tarefa">
-                                <div className="size-6 rounded-full bg-surface-dark border border-white/10 flex items-center justify-center text-[9px] font-black text-slate-400 shadow-inner">
-                                  {initials}
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-bold text-slate-500 uppercase leading-none">Dono</span>
-                                  <span className="text-slate-300 font-black uppercase tracking-widest text-[10px] truncate max-w-[120px]">{userName}</span>
-                                </div>
-                              </div>
-                              
-                              {/* Assignee / Responsável */}
-                              {task.assignee_profile && (
-                                <div className="flex items-center gap-2" title="Responsável pela Execução">
-                                  <div className="size-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[9px] font-black text-primary shadow-inner">
-                                    {(task.assignee_profile?.email || '?').charAt(0).toUpperCase()}
-                                  </div>
-                                  <div className="flex flex-col">
-                                    <span className="text-[8px] font-bold text-primary/70 uppercase leading-none">Resp. Executivo</span>
-                                    <span className="text-primary font-black uppercase tracking-widest text-[10px] truncate max-w-[120px]">{task.assignee_profile.email.split('@')[0]}</span>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            {task.expiration_date ? (
-                              <div className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${isExpired ? 'text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20 inline-flex' : 'text-slate-400'}`}>
-                                <span className="material-symbols-outlined text-[14px]">calendar_today</span>
-                                {new Date(task.expiration_date).toLocaleDateString()}
-                              </div>
-                            ) : (
-                              <span className="text-slate-600 font-bold uppercase tracking-widest">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
             </div>
           </div>
         ) : (
@@ -816,7 +741,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                       <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                       <span className="text-[10px] font-black uppercase tracking-widest">Carregando...</span>
                     </div>
-                  ) : groupTasks.length === 0 ? (
+) : groupTasks.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-20 border-2 border-dashed border-white/5 rounded-2xl m-2">
                       <span className="material-symbols-outlined text-[40px]">inbox</span>
                       <span className="text-[10px] font-black uppercase tracking-widest text-center px-4">Esta coluna está vazia</span>
@@ -825,6 +750,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                     groupTasks.map((task, index) => {
                       const isExpired = task.expiration_date && new Date(task.expiration_date) < new Date();
                       const initials = (task as any).user_profiles?.email?.charAt(0).toUpperCase() || '?';
+                      const isCompleted = task.status === 'DONE' || task.completed;
 
                       return (
                         <div
@@ -844,8 +770,20 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                             setEditingTask(task);
                             setIsModalOpen(true);
                           }}
-                          className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative cursor-pointer active:scale-[0.98] hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 hover:z-10 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''}`}
+                          className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative cursor-pointer active:scale-[0.98] hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 hover:z-10 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''} ${isCompleted ? 'opacity-40 grayscale-[0.8] blur-[0.2px]' : ''}`}
                         >
+                          {/* Quick Complete Check */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleComplete(task);
+                            }}
+                            className={`absolute -left-2 -top-2 size-6 rounded-lg border flex items-center justify-center transition-all z-20 shadow-xl ${isCompleted ? 'bg-green-500 border-green-400 text-white shadow-green-500/20' : 'bg-surface-dark border-white/10 text-transparent hover:border-green-500/50 hover:text-green-500 group-hover:scale-110'}`}
+                            title={isCompleted ? "Reabrir tarefa" : "Concluir tarefa"}
+                          >
+                            <span className="material-symbols-outlined text-[14px] font-bold">check</span>
+                          </button>
+
                           {/* Priority Color Indicator */}
                           {task.label_color && task.label_color !== 'transparent' && (
                             <div className={`absolute top-0 right-0 w-1.5 h-full ${task.label_color} rounded-tr-xl rounded-br-xl`}></div>
@@ -996,19 +934,23 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
                                   <div className="h-px bg-white/5 my-0.5"></div>
                                   <span className="text-[9px] font-black text-slate-600 px-3 py-1 uppercase tracking-widest">Mover para:</span>
-                                  {groups.filter(g => g.id !== group.id).map(g => (
-                                    <button
-                                      key={g.id}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateTaskGroup(task.id, g.id);
-                                      }}
-                                      className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left truncate"
-                                    >
-                                      <span className="size-2 rounded-full bg-slate-500"></span>
-                                      {g.name}
-                                    </button>
-                                  ))}
+                                  {selectedBoardId !== SYNC_BOARD_ID ? (
+                                    groups.filter(g => g.id !== group.id).map(g => (
+                                      <button
+                                        key={g.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleUpdateTaskGroup(task.id, g.id);
+                                        }}
+                                        className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left truncate"
+                                      >
+                                        <span className="size-2 rounded-full bg-slate-500"></span>
+                                        {g.name}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <span className="text-[9px] px-3 py-2 text-slate-500">Não suportado no Monitoramento</span>
+                                  )}
 
                                   <div className="h-px bg-white/5 my-0.5"></div>
                                   <button
