@@ -16,8 +16,9 @@ const RenewalControlView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+    const [selectedRenewal, setSelectedRenewal] = useState<any>(null);
     const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-    const [isNewRenewalModalOpen, setIsNewRenewalModalOpen] = useState(false);
+    const [isRenewalModalOpen, setIsRenewalModalOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string>('');
     const [manualRenewals, setManualRenewals] = useState<any[]>([]);
     const [viewMode, setViewMode] = useState<'calendar' | 'anticipation'>('calendar');
@@ -160,7 +161,8 @@ const RenewalControlView: React.FC = () => {
                         <button
                             onClick={() => {
                                 setSelectedDate('');
-                                setIsNewRenewalModalOpen(true);
+                                setSelectedRenewal(null);
+                                setIsRenewalModalOpen(true);
                             }}
                             className="flex items-center justify-center gap-2 rounded-lg h-11 px-4 bg-primary hover:bg-red-600 text-white text-sm font-bold transition-all shadow-lg shadow-primary/20"
                         >
@@ -206,7 +208,7 @@ const RenewalControlView: React.FC = () => {
                                         return (
                                             <div
                                                 key={idx}
-                                                onClick={() => { setSelectedDate(dayStr); setIsNewRenewalModalOpen(true); }}
+                                                onClick={() => { setSelectedDate(dayStr); setSelectedRenewal(null); setIsRenewalModalOpen(true); }}
                                                 className={`min-h-[140px] aspect-square p-2 border border-white/5 rounded-xl transition-all relative group cursor-pointer ${isToday ? 'bg-primary/5 ring-1 ring-primary/30 border-primary/20' : 'bg-black/20 hover:bg-white/2 hover:border-white/10'}`}
                                             >
                                                 <span className={`text-xs font-black mb-2 block ${isToday ? 'text-primary' : 'text-slate-500'}`}>{day.getDate()}</span>
@@ -218,7 +220,7 @@ const RenewalControlView: React.FC = () => {
                                                         </div>
                                                     ))}
                                                     {dayManuals.map(manual => (
-                                                        <div key={manual.id} className="p-1.5 rounded-lg border border-primary/20 bg-primary/10 text-[9px] font-bold leading-tight transition-all shadow-sm text-primary">
+                                                        <div key={manual.id} onClick={(e) => { e.stopPropagation(); setSelectedRenewal(manual); setIsRenewalModalOpen(true); }} className="p-1.5 rounded-lg border border-primary/20 bg-primary/10 text-[9px] font-bold leading-tight transition-all shadow-sm text-primary hover:brightness-110 active:scale-95">
                                                             <div className="truncate opacity-75 text-[8px] uppercase font-black">{manual.projects?.name || (manual.clients ? getClientDisplayName(manual.clients, 'ui') : 'Avulso')}</div>
                                                             <div className="line-clamp-2">Aditivo: R$ {manual.value?.toLocaleString('pt-BR')}</div>
                                                         </div>
@@ -288,7 +290,7 @@ const RenewalControlView: React.FC = () => {
                                                 <button
                                                     onClick={() => {
                                                         if (item.type === 'task') { setSelectedTask(item); setIsDetailsOpen(true); }
-                                                        else { /* handle manual detail? */ }
+                                                        else { setSelectedRenewal(item); setIsRenewalModalOpen(true); }
                                                     }}
                                                     className="px-6 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-primary text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-white transition-all shadow-lg shadow-primary/5"
                                                 >
@@ -351,32 +353,36 @@ const RenewalControlView: React.FC = () => {
                 task={selectedTask}
             />
 
-            {isNewRenewalModalOpen && (
-                <NewRenewalModal
-                    isOpen={isNewRenewalModalOpen}
-                    onClose={() => setIsNewRenewalModalOpen(false)}
+            {isRenewalModalOpen && (
+                <RenewalModal
+                    isOpen={isRenewalModalOpen}
+                    onClose={() => setIsRenewalModalOpen(false)}
                     onSuccess={() => fetchRenewals()}
                     defaultDate={selectedDate}
+                    renewal={selectedRenewal}
                 />
             )}
         </div>
     );
 };
 
-interface NewRenewalModalProps {
+interface RenewalModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
     defaultDate?: string;
+    renewal?: any;
 }
 
-const NewRenewalModal: React.FC<NewRenewalModalProps> = ({ isOpen, onClose, onSuccess, defaultDate }) => {
+const RenewalModal: React.FC<RenewalModalProps> = ({ isOpen, onClose, onSuccess, defaultDate, renewal }) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [projects, setProjects] = useState<any[]>([]);
     const [clients, setClients] = useState<any[]>([]);
     const [linkType, setLinkType] = useState<'project' | 'client'>('project');
     const [formData, setFormData] = useState({
+        id: '',
         project_id: '',
         client_id: '',
         start_date: defaultDate || '',
@@ -386,14 +392,25 @@ const NewRenewalModal: React.FC<NewRenewalModalProps> = ({ isOpen, onClose, onSu
     });
 
     useEffect(() => {
-        if (defaultDate) {
+        if (renewal) {
+            setLinkType(renewal.client_id ? 'client' : 'project');
+            setFormData({
+                id: renewal.id,
+                project_id: renewal.project_id || '',
+                client_id: renewal.client_id || '',
+                start_date: renewal.start_date || '',
+                end_date: renewal.end_date || '',
+                value: renewal.value || 0,
+                notes: renewal.notes || ''
+            });
+        } else if (defaultDate) {
             setFormData(prev => ({
                 ...prev,
                 start_date: defaultDate,
                 end_date: defaultDate
             }));
         }
-    }, [defaultDate]);
+    }, [defaultDate, renewal]);
 
     useEffect(() => {
         const fetchLinkedProjects = async () => {
@@ -419,7 +436,7 @@ const NewRenewalModal: React.FC<NewRenewalModalProps> = ({ isOpen, onClose, onSu
                 ]);
 
                 // Filter and unique by name
-                const filtered = pData.filter(p => linkedProjectIds.has(p.id));
+                const filtered = pData.filter(p => linkedProjectIds.has(p.id) || (renewal && renewal.project_id === p.id));
                 const unique: any[] = [];
                 const seen = new Set();
                 filtered.forEach(p => {
@@ -434,29 +451,74 @@ const NewRenewalModal: React.FC<NewRenewalModalProps> = ({ isOpen, onClose, onSu
         };
 
         fetchLinkedProjects();
-    }, []);
+    }, [renewal]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        const { error } = await supabase.from('contract_renewals').insert({
-            ...formData,
+        
+        const payload = {
             project_id: linkType === 'project' ? formData.project_id : null,
             client_id: linkType === 'client' ? formData.client_id : null,
+            start_date: formData.start_date,
+            end_date: formData.end_date,
+            value: formData.value,
+            notes: formData.notes,
             user_id: user?.id
-        });
-        if (error) alert('Erro: ' + error.message);
-        else {
-            onSuccess();
-            onClose();
+        };
+
+        if (formData.id) {
+            const { error } = await supabase.from('contract_renewals').update(payload).eq('id', formData.id);
+            if (error) alert('Erro ao atualizar: ' + error.message);
+            else {
+                onSuccess();
+                onClose();
+            }
+        } else {
+            const { error } = await supabase.from('contract_renewals').insert(payload);
+            if (error) alert('Erro ao salvar: ' + error.message);
+            else {
+                onSuccess();
+                onClose();
+            }
         }
         setLoading(false);
     };
 
+    const handleDelete = async () => {
+        if (!formData.id) return;
+        if (!window.confirm('Tem certeza que deseja excluir esta renovação?')) return;
+        
+        setDeleting(true);
+        const { error } = await supabase.from('contract_renewals').delete().eq('id', formData.id);
+        setDeleting(false);
+        
+        if (error) alert('Erro ao excluir: ' + error.message);
+        else {
+            onSuccess();
+            onClose();
+        }
+    };
+
+    if (!isOpen) return null;
+
     return (
         <div className="fixed inset-0 z-[101] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-surface-dark border border-white/10 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4">
-                <h3 className="text-lg font-bold text-white uppercase tracking-widest">Novo Aditivo / Renovação</h3>
+            <div className="bg-surface-dark border border-white/10 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-white uppercase tracking-widest">{formData.id ? 'Editar Aditivo / Renovação' : 'Novo Aditivo / Renovação'}</h3>
+                    {formData.id && (
+                        <button
+                            type="button"
+                            onClick={handleDelete}
+                            disabled={deleting}
+                            className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-2"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                            Excluir
+                        </button>
+                    )}
+                </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 mb-4">
                         <button
@@ -518,10 +580,10 @@ const NewRenewalModal: React.FC<NewRenewalModalProps> = ({ isOpen, onClose, onSu
                     </div>
                     <div>
                         <label className="block text-xs font-black text-slate-500 uppercase mb-1">Observações</label>
-                        <textarea className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-primary resize-none" rows={2} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} />
+                        <textarea className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-primary resize-none" rows={4} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} />
                     </div>
                     <div className="flex gap-3 pt-2">
-                        <button type="button" onClick={onClose} className="flex-1 py-3 text-sm font-bold text-slate-400 hover:text-white">Cancelar</button>
+                        <button type="button" onClick={onClose} className="flex-1 py-3 text-sm font-bold text-slate-400 hover:text-white bg-white/5 rounded-xl border border-white/10">Cancelar</button>
                         <button type="submit" disabled={loading} className="flex-1 bg-primary py-3 rounded-xl text-white font-black uppercase text-xs shadow-lg shadow-primary/20 hover:bg-red-600 transition-all">
                             {loading ? 'Salvando...' : 'Salvar Aditivo'}
                         </button>

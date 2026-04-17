@@ -369,7 +369,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [modalTab, setModalTab] = useState<'product' | 'service' | 'custom'>('product');
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
-  const [newItem, setNewItem] = useState({ name: '', quantity: 1, price: 0, cost_price: 0 });
+  const [newItem, setNewItem] = useState({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '' });
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [showSearchList, setShowSearchList] = useState(false);
   const [saveToCatalog, setSaveToCatalog] = useState(false);
@@ -574,7 +574,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           item_type: i.item_type,
           origin: i.origin,
           apply_bdi: i.apply_bdi !== false,
-          apply_profit: i.apply_profit !== false
+          apply_profit: i.apply_profit !== false,
+          observation: i.observation
         }));
         
         const { error } = await supabase.from('budget_items').upsert(payload);
@@ -1007,6 +1008,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       quantity_final: newItem.quantity,
       unit_price: newItem.price,
       cost_price: newItem.cost_price || newItem.price, // Default Cost to Price if 0 (Manual Entry)
+      observation: newItem.observation,
       origin: 'MANUAL' as const,
       item_type: modalTab === 'service' ? 'SERVICE' : (modalTab === 'custom' ? 'CUSTOM' : 'PRODUCT')
     };
@@ -1047,7 +1049,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         setBudgetItems(prev => prev.map(item => item.id === activeId ? data?.[0] : item));
         setIsAddItemModalOpen(false);
-        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0 });
+        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '' });
         setSaveToCatalog(false);
         setItemToReplace(null);
         setItemToEdit(null);
@@ -1070,7 +1072,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         setBudgetItems(prev => [...prev, data?.[0]]);
         setIsAddItemModalOpen(false);
-        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0 });
+        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '' });
         setSaveToCatalog(false);
       }
     }
@@ -2754,6 +2756,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                     {itemDescriptions[item.name]}
                                   </div>
                                 )}
+                                {item.observation && (
+                                  <div className="mt-1.5 p-2 bg-amber-500/5 border border-amber-500/20 rounded-md max-w-md">
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="text-[8px] font-bold text-amber-500/80 uppercase">Observações Internas (Não sai no PDF)</span>
+                                      <span className="text-[10px] text-slate-400 italic leading-tight whitespace-pre-wrap">
+                                        {item.observation}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td className="px-6 py-4">
@@ -2828,7 +2840,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 <button
                                   onClick={() => {
                                     setItemToEdit(item);
-                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0 });
+                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0, observation: item.observation || '' });
                                     // Determine tab
                                     if (item.item_type === 'CUSTOM') setModalTab('custom');
                                     else if (item.item_type === 'SERVICE') setModalTab('service');
@@ -2846,7 +2858,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 <button
                                   onClick={() => {
                                     setItemToReplace(item);
-                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0 });
+                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0, observation: item.observation || '' });
                                     setModalTab(item.item_type === 'SERVICE' ? 'service' : item.item_type === 'CUSTOM' ? 'custom' : 'product');
                                     setModalSearchTerm('');
                                     setShowSearchList(false);
@@ -3293,7 +3305,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     key={tab}
                     onClick={() => {
                       setModalTab(tab);
-                      setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0 });
+                      setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '' });
                       setModalSearchTerm('');
                       setShowSearchList(false);
                     }}
@@ -3331,7 +3343,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             <button
                               key={p.name}
                               onClick={() => {
-                                setNewItem({ ...newItem, name: p.name, price: p.price, cost_price: p.cost_price || 0 });
+                                setNewItem({ ...newItem, name: p.name, price: p.price, cost_price: p.cost_price || 0, observation: p.observation || '' });
                                 setModalSearchTerm(p.name);
                                 setShowSearchList(false);
                               }}
@@ -3378,7 +3390,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             <button
                               key={s.name}
                               onClick={() => {
-                                setNewItem({ ...newItem, name: s.name, price: 0 });
+                                setNewItem({ ...newItem, name: s.name, price: 0, observation: s.description || '' });
                                 setModalSearchTerm(s.name);
                                 setShowSearchList(false);
                               }}
@@ -3451,6 +3463,19 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     onChange={e => setNewItem({ ...newItem, cost_price: parseFloat(e.target.value) })}
                   />
                   <p className="text-[10px] text-slate-500 mt-1 italic">Este valor é usado para calcular o lucro real da proposta.</p>
+                </div>
+
+                <div>
+                  <label className="flex block text-xs font-bold text-slate-400 uppercase mb-2 items-center gap-2">
+                    Observações Internas 
+                    <span className="text-[9px] mt-0.5 text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Não sai no PDF</span>
+                  </label>
+                  <textarea
+                    className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 min-h-[60px] resize-y text-sm"
+                    placeholder="Detalhes internos, anotações de cálculo, etc..."
+                    value={newItem.observation || ''}
+                    onChange={e => setNewItem({ ...newItem, observation: e.target.value })}
+                  />
                 </div>
 
                 {(modalTab === 'service' || modalTab === 'custom') && (

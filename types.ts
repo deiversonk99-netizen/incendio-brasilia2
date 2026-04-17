@@ -148,9 +148,10 @@ export interface BudgetItem {
   unit_price: number;
   cost_price?: number;
   origin: 'CALCULATED' | 'MANUAL';
-  item_type: 'PRODUCT' | 'SERVICE';
+  item_type: 'PRODUCT' | 'SERVICE' | 'CUSTOM';
   apply_bdi?: boolean;
   apply_profit?: boolean;
+  observation?: string;
   created_at?: string;
 }
 
