@@ -477,7 +477,24 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
 
                     </div>
 
-                    <div className="bg-primary/5 p-6 rounded-2xl border border-primary/20 space-y-6 shadow-xl shadow-black/20">
+                    {/* Deadline / Date Section - Available for ALL tasks */}
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Prazo de Entrega / Vencimento</label>
+                            <div className="relative group">
+                                <input
+                                    type="date"
+                                    className="w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 outline-none text-sm transition-all"
+                                    value={expirationDate}
+                                    onChange={e => setExpirationDate(e.target.value)}
+                                />
+                                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none">event</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Annual Renewal Toggle */}
+                    <div className="bg-primary/5 p-5 rounded-2xl border border-primary/20 shadow-xl shadow-black/20">
                         <label className="flex items-center gap-4 cursor-pointer group">
                             <div className={`size-7 rounded-lg flex items-center justify-center border-2 transition-all ${isAnnual ? 'bg-primary border-primary shadow-lg shadow-primary/20 scale-110' : 'bg-white/5 border-white/10 group-hover:border-white/20'}`}>
                                 {isAnnual && <span className="material-symbols-outlined text-white text-[20px] font-bold">check</span>}
@@ -493,23 +510,6 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                                 <p className="text-[10px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">Ativar controle recorrente para este contrato</p>
                             </div>
                         </label>
-
-                        {isAnnual && (
-                            <div className="animate-in slide-in-from-top-4 duration-300 pt-2 grid grid-cols-1 gap-4">
-                                <div>
-                                    <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-2 block">Vencimento do Contrato / Renovação</label>
-                                    <div className="relative group">
-                                        <input
-                                            type="date"
-                                            className="w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 outline-none text-sm transition-all"
-                                            value={expirationDate}
-                                            onChange={e => setExpirationDate(e.target.value)}
-                                        />
-                                        <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[18px] text-primary/40 pointer-events-none">event</span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     {/* Checklist Section */}

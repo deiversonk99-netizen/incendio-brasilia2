@@ -27,6 +27,7 @@ interface Task {
   title: string;
   description: string;
   status: string;
+  completed?: boolean;
   group_id: string;
   category: string;
   file_url: string;
@@ -386,7 +387,8 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   };
 
   const handleToggleComplete = async (task: Task) => {
-    const isNowCompleted = !task.completed;
+    const isCurrentlyDone = task.status === 'DONE' || task.completed === true;
+    const isNowCompleted = !isCurrentlyDone;
     const newStatus = isNowCompleted ? 'DONE' : 'PENDING';
 
     // Optimistic Update
@@ -406,11 +408,8 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       console.error('Error toggling completion:', error);
       // Revert if error
       setTasks((prev: Task[]) => prev.map((t: Task) => 
-        t.id === task.id ? { ...t, completed: !isNowCompleted, status: task.status } : t
+        t.id === task.id ? { ...t, completed: !isNowCompleted, status: isCurrentlyDone ? 'DONE' : task.status } : t
       ));
-    } else if (isNowCompleted) {
-      // Optional: Logic to archive or move to history in a real scenario
-      // For now, since most views filter by PENDING, it will "disappear" or move to DONE column
     }
   };
 
@@ -822,7 +821,22 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                           <h4 className={`text-white font-bold leading-relaxed tracking-tight ${isCompact ? 'text-[12px]' : 'text-[13px] mb-2'}`}>{task.title}</h4>
 
                           {!isCompact && task.description && (
-                            <p className="text-[11px] text-slate-400 line-clamp-2 mb-4 leading-relaxed opacity-60 font-medium">{task.description}</p>
+                            <p className="text-[11px] text-slate-400 line-clamp-2 mb-2 leading-relaxed opacity-60 font-medium">{task.description}</p>
+                          )}
+
+                          {/* Deadline Display */}
+                          {!isCompact && task.expiration_date && (
+                            <div className={`flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg w-fit text-[10px] font-bold ${
+                              isExpired 
+                                ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                                : (new Date(task.expiration_date).getTime() - new Date().getTime() < 7 * 24 * 60 * 60 * 1000)
+                                  ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                                  : 'bg-white/5 text-slate-400 border border-white/5'
+                            }`}>
+                              <span className="material-symbols-outlined text-[12px]">{isExpired ? 'warning' : 'schedule'}</span>
+                              <span>{isExpired ? 'Atrasado' : 'Prazo'}:</span>
+                              <span>{new Date(task.expiration_date).toLocaleDateString('pt-BR')}</span>
+                            </div>
                           )}
 
                           <div className="flex items-center justify-between pt-3 border-t border-white/5">

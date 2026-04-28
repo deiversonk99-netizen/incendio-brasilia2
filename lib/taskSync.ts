@@ -25,7 +25,17 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
         return false;
     }
 
-    // 3. Helper to find the "Pendentes" group for a user
+    // 3. Pre-fetch ALL existing renewal task titles to prevent any duplicates
+    const { data: existingRenewalTasks } = await supabase
+        .from('tasks')
+        .select('title')
+        .or('title.ilike.[RENOVAÇÃO]%,title.ilike.[RENOVAÇÃO ANUAL]%');
+
+    const existingTitles = new Set(
+        (existingRenewalTasks || []).map(t => t.title.trim().toLowerCase())
+    );
+
+    // 4. Helper to find the "Pendentes" group for a user
     const userGroupCache: Record<string, string | null> = {};
 
     const getGroupForUser = async (targetUserId: string) => {
@@ -67,14 +77,24 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
         return userGroupCache[targetUserId];
     };
 
-    // 4. Process Manual Renewals
+    // 5. Process Manual Renewals
     for (const manual of (expiredManuals || [])) {
         const targetUserId = manual.user_id || userId;
         const groupId = await getGroupForUser(targetUserId);
 
+        // SAFETY: Never create a task without a valid group
         if (!groupId) continue;
 
-        // ATOMIC CLAIM: Try to reserve this task for creation
+        const title = `[RENOVAÇÃO] ${manual.projects?.name || manual.clients?.name || 'Cliente Avulso'}`;
+
+        // DEDUPLICATION: Skip if a task with this exact title already exists
+        if (existingTitles.has(title.trim().toLowerCase())) {
+            // Still mark as claimed so it doesn't keep trying
+            await supabase.from('contract_renewals').update({ task_created: true }).eq('id', manual.id);
+            continue;
+        }
+
+        // ATOMIC CLAIM: Try to reserve this renewal for task creation
         const { data: claimed, error: claimError } = await supabase
             .from('contract_renewals')
             .update({ task_created: true })
@@ -83,10 +103,9 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
             .select()
             .single();
 
-        // If another active user's session already claimed it, or an error occurred, skip
+        // If another session already claimed it, skip
         if (!claimed || claimError) continue;
 
-        const title = `[RENOVAÇÃO] ${manual.projects?.name || manual.clients?.name || 'Cliente Avulso'}`;
         const description = `Contrato vencido em ${new Date(manual.end_date).toLocaleDateString('pt-BR')}.\nValor: R$ ${manual.value?.toLocaleString('pt-BR')}\nNotas: ${manual.notes || ''}`;
 
         const { error: insertError } = await supabase.from('tasks').insert({
@@ -96,7 +115,8 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
             user_id: targetUserId,
             project_id: manual.project_id,
             status: 'PENDING',
-            priority: 'HIGH'
+            priority: 'HIGH',
+            task_created: true // Mark the generated task itself so it's never reprocessed
         });
 
         if (insertError) {
@@ -104,16 +124,28 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
             await supabase.from('contract_renewals').update({ task_created: false }).eq('id', manual.id);
             console.error('Failed to create synced task for renewal:', insertError);
         } else {
+            // Add to our local set to prevent duplicates within the same sync run
+            existingTitles.add(title.trim().toLowerCase());
             hasChanges = true;
         }
     }
 
-    // 5. Process Annual Tasks
+    // 6. Process Annual Tasks
     for (const task of (expiredTasks || [])) {
         const targetUserId = task.user_id || userId;
         const groupId = await getGroupForUser(targetUserId);
 
+        // SAFETY: Never create a task without a valid group
         if (!groupId) continue;
+
+        const title = `[RENOVAÇÃO ANUAL] ${task.title}`;
+
+        // DEDUPLICATION: Skip if a task with this exact title already exists
+        if (existingTitles.has(title.trim().toLowerCase())) {
+            // Still mark as claimed so it doesn't keep trying
+            await supabase.from('tasks').update({ task_created: true }).eq('id', task.id);
+            continue;
+        }
 
         // ATOMIC CLAIM: Try to reserve this task for creation
         const { data: claimed, error: claimError } = await supabase
@@ -124,10 +156,9 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
             .select()
             .single();
 
-        // If another active user's session already claimed it, or an error occurred, skip
+        // If another session already claimed it, skip
         if (!claimed || claimError) continue;
 
-        const title = `[RENOVAÇÃO ANUAL] ${task.title}`;
         const description = `Tarefa anual vencida em ${new Date(task.expiration_date).toLocaleDateString('pt-BR')}.\nOriginal: ${task.description || ''}`;
 
         const { error: insertError } = await supabase.from('tasks').insert({
@@ -137,7 +168,8 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
             user_id: targetUserId,
             project_id: task.project_id,
             status: 'PENDING',
-            priority: 'HIGH'
+            priority: 'HIGH',
+            task_created: true // Mark the generated task itself so it's never reprocessed
         });
 
         if (insertError) {
@@ -145,6 +177,7 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
             await supabase.from('tasks').update({ task_created: false }).eq('id', task.id);
             console.error('Failed to create synced task for annual task:', insertError);
         } else {
+            existingTitles.add(title.trim().toLowerCase());
             hasChanges = true;
         }
     }
