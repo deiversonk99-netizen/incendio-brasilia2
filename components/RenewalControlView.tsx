@@ -564,7 +564,7 @@ const RenewalModal: React.FC<RenewalModalProps> = ({ isOpen, onClose, onSuccess,
                             </select>
                         </div>
                     )}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-black text-slate-500 uppercase mb-1">Início</label>
                             <input type="date" required className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-primary" value={formData.start_date} onChange={e => setFormData({ ...formData, start_date: e.target.value })} />

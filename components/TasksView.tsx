@@ -613,8 +613,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-
+          <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
 
             {/* View Controls */}
             <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
@@ -625,16 +624,15 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                 <span className="material-symbols-outlined text-[18px]">{isCompact ? 'view_kanban' : 'view_headline'}</span>
                 <span>{isCompact ? 'Ver Padrão' : 'Ver Compacto'}</span>
               </button>
-
             </div>
 
             {/* Search & Action */}
-            <div className="flex items-center gap-3">
-              <div className="relative group">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto">
+              <div className="relative group w-full sm:w-auto flex-1">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 group-focus-within:text-primary transition-colors">search</span>
                 <input
-                  className="bg-white/5 border border-white/5 text-white text-[11px] font-medium rounded-xl block w-56 pl-10 pr-4 py-2.5 outline-none focus:border-primary/50 focus:bg-white/10 transition-all shadow-inner"
-                  placeholder="Buscar tarefa ou projeto..."
+                  className="bg-white/5 border border-white/5 text-white text-[11px] font-medium rounded-xl block w-full sm:w-56 pl-10 pr-4 py-2.5 outline-none focus:border-primary/50 focus:bg-white/10 transition-all shadow-inner"
+                  placeholder="Buscar tarefa..."
                   value={searchTerm}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 />
@@ -642,7 +640,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
               {selectedBoardId !== SYNC_BOARD_ID && (
                 <button
                   onClick={() => setIsModalOpen(true)}
-                  className="flex items-center justify-center gap-2 rounded-xl h-10 px-6 bg-primary hover:bg-red-600 text-white text-[11px] font-black uppercase tracking-[0.15em] transition-all shadow-xl shadow-primary/20 active:scale-95"
+                  className="flex items-center justify-center gap-2 rounded-xl h-10 px-6 bg-primary hover:bg-red-600 text-white text-[11px] font-black uppercase tracking-[0.15em] transition-all shadow-xl shadow-primary/20 active:scale-95 w-full sm:w-auto"
                 >
                   <span className="material-symbols-outlined text-[20px]">add</span>
                   <span>Nova Tarefa</span>

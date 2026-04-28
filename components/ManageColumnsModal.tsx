@@ -241,7 +241,7 @@ const ManageColumnsModal = ({ isOpen, onClose, currentColumns, onSaved, availabl
                                     <div className="mt-3">
                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Clientes Específicos (opcional)</p>
                                         <div className="max-h-[80px] overflow-y-auto custom-scrollbar border border-white/5 rounded-lg p-2 bg-black/20">
-                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
                                                 {availableClients.map(client => (
                                                     <label key={client} className="flex items-center gap-2 cursor-pointer group">
                                                         <input

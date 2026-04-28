@@ -1183,7 +1183,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 </select>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-400 mb-1">Categoria</label>
                                     <select
@@ -1211,7 +1211,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 {hasPriceAccess && (
                                                     <div>
                                                         <label className="block text-sm font-medium text-slate-400 mb-1">Preço Venda (R$)</label>
@@ -1360,7 +1360,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-6 mb-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
                                 <div className="bg-white/5 rounded-xl p-4 border border-white/5">
                                     <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Localização no Depósito</p>
                                     <p className="text-white font-medium flex items-center gap-2">

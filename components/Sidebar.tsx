@@ -7,9 +7,11 @@ import { isSuperAdmin, canViewTab } from '../lib/permissions';
 interface SidebarProps {
   currentView: AppView;
   onViewChange: (view: AppView) => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, isOpen, onClose }) => {
   const { signOut, user, profile } = useAuth();
 
   const allNavItems = [
@@ -49,16 +51,35 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
   const isEngActive = currentView.startsWith('ENG_');
 
   return (
-    <aside className="hidden lg:flex w-72 flex-col border-r border-white/10 bg-background-dark shrink-0">
-      <div className="flex h-20 items-center gap-3 px-8 border-b border-white/5">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-surface-dark border border-white/10 shadow-lg overflow-hidden">
-          <img src="/logo.png" alt="Incêndio Brasília Logo" className="w-full h-full object-contain" />
+    <>
+      {/* Mobile Backdrop */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Sidebar Container */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-72 flex flex-col border-r border-white/10 bg-background-dark shrink-0 transition-transform duration-300 ease-in-out
+        lg:static lg:translate-x-0
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex h-20 items-center gap-3 px-8 border-b border-white/5 relative">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-surface-dark border border-white/10 shadow-lg overflow-hidden">
+            <img src="/logo.png" alt="Incêndio Brasília Logo" className="w-full h-full object-contain" />
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-lg font-bold leading-none tracking-tight text-white">Incêndio Brasília</h1>
+            <span className="text-xs font-medium text-white/50 mt-1 uppercase tracking-wider">Projetos</span>
+          </div>
+          {isOpen && (
+            <button onClick={onClose} className="absolute right-4 lg:hidden text-slate-400 hover:text-white">
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          )}
         </div>
-        <div className="flex flex-col">
-          <h1 className="text-lg font-bold leading-none tracking-tight text-white">Incêndio Brasília</h1>
-          <span className="text-xs font-medium text-white/50 mt-1 uppercase tracking-wider">Projetos</span>
-        </div>
-      </div>
 
       <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
         {navItems.map((item) => {
@@ -66,7 +87,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
           return (
             <button
               key={item.id}
-              onClick={() => onViewChange(item.id)}
+              onClick={() => {
+                onViewChange(item.id);
+                if (onClose) onClose();
+              }}
               className={`w-full group flex items-center gap-3 rounded-lg px-4 py-3 transition-all ${isActive
                 ? 'bg-primary text-white shadow-lg shadow-primary/20'
                 : 'text-slate-400 hover:bg-white/5 hover:text-white'
@@ -103,6 +127,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
         </div>
       </div>
     </aside>
+    </>
   );
 };
 

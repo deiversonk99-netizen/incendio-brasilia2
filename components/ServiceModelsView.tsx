@@ -271,9 +271,9 @@ const ServiceModelsView: React.FC = () => {
                 subtitle="Gestão de composições de serviços e produtos."
             />
 
-            <div className="flex-1 overflow-hidden flex flex-row">
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
                 {/* LEFT SIDEBAR: LIST */}
-                <div className="w-1/3 min-w-[300px] bg-surface-dark border-r border-white/10 flex flex-col">
+                <div className="w-full md:w-1/3 md:min-w-[300px] h-1/3 md:h-full bg-surface-dark border-b md:border-b-0 md:border-r border-white/10 flex flex-col shrink-0">
                     <div className="p-4 border-b border-white/10">
                         <div className="relative mb-4">
                             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">search</span>
@@ -319,7 +319,7 @@ const ServiceModelsView: React.FC = () => {
                 </div>
 
                 {/* RIGHT PANEL: EDITOR */}
-                <div className="flex-1 bg-black/20 flex flex-col overflow-hidden">
+                <div className="flex-1 bg-black/20 flex flex-col overflow-hidden h-2/3 md:h-auto">
                     {(selectedModelId || isCreating) ? (
                         <div className="flex flex-col h-full">
                             {/* HEADER EDITOR */}
@@ -368,7 +368,7 @@ const ServiceModelsView: React.FC = () => {
                                             placeholder="Descrição do modelo..."
                                         />
                                     </div>
-                                    <div className="flex gap-8 items-end">
+                                    <div className="flex flex-wrap gap-4 md:gap-8 items-end">
                                         <div>
                                             <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Total</label>
                                             <div className="text-3xl font-bold text-emerald-400">
@@ -410,7 +410,7 @@ const ServiceModelsView: React.FC = () => {
                                         </button>
 
                                         {isProductSearchOpen && (
-                                            <div className="absolute right-0 top-full mt-2 w-[32rem] bg-surface-dark border border-white/10 rounded-xl shadow-2xl z-50 p-3">
+                                            <div className="absolute -right-4 sm:right-0 top-full mt-2 w-[300px] sm:w-[32rem] bg-surface-dark border border-white/10 rounded-xl shadow-2xl z-[60] p-3">
                                                 <input
                                                     type="text"
                                                     placeholder="Buscar produto..."

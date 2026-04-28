@@ -550,7 +550,7 @@ const SettingsView: React.FC = () => {
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-x-8 gap-y-4 max-h-[60vh] overflow-y-auto pr-4 custom-scrollbar mb-8">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 max-h-[60vh] overflow-y-auto pr-4 custom-scrollbar mb-8">
                             <h3 className="col-span-2 text-xs font-black text-primary uppercase tracking-[0.2em] mb-2 border-b border-white/5 pb-2 mt-2">Módulos do Sistema</h3>
                             {allTabs.map(tab => (
                                 <div key={tab.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">

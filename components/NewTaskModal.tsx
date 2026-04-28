@@ -374,7 +374,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                             />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div>
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Estágio (Coluna)</label>
                                 <div className="relative group">
@@ -420,7 +420,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div>
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Categoria</label>
                                 <div className="relative group">

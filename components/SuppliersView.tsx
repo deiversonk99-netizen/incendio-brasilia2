@@ -291,7 +291,7 @@ const SuppliersView: React.FC = () => {
                                     </select>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-bold text-slate-300 mb-1 uppercase tracking-wider">Data da Compra</label>
                                         <input
@@ -471,7 +471,7 @@ const SuppliersView: React.FC = () => {
                                             <input type="text" className="w-full bg-background-dark border border-white/10 rounded px-3 py-2 text-white outline-none focus:border-emerald-500"
                                                 value={quickProduct.name} onChange={e => setQuickProduct({ ...quickProduct, name: e.target.value })} autoFocus />
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Unidade</label>
                                                 <input type="text" className="w-full bg-background-dark border border-white/10 rounded px-3 py-2 text-white outline-none focus:border-emerald-500"

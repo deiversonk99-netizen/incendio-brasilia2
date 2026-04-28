@@ -1811,7 +1811,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-slate-400 text-sm font-medium block mb-2">Preço Unit. (R$)</label>
                   <input

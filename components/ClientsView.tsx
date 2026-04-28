@@ -139,20 +139,20 @@ const ClientsView: React.FC = () => {
                     }
                     subtitle="Visualize sua base de clientes e o histórico de cada um"
                     actions={
-                        <div className="flex items-center gap-4">
-                            <div className="relative">
+                        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                            <div className="relative w-full md:w-auto">
                                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
                                 <input
                                     type="text"
                                     placeholder="Buscar cliente..."
-                                    className="bg-surface-dark border border-white/10 text-white text-sm rounded-lg block w-64 pl-10 pr-3 py-2 outline-none focus:border-primary transition-colors"
+                                    className="bg-surface-dark border border-white/10 text-white text-sm rounded-lg block w-full md:w-64 pl-10 pr-3 py-2 outline-none focus:border-primary transition-colors"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
                             <button
                                 onClick={() => setIsNewClientModalOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-bold rounded-lg transition-all shadow-lg shadow-primary/20"
+                                className="flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-bold rounded-lg transition-all shadow-lg shadow-primary/20 w-full md:w-auto"
                             >
                                 <span className="material-symbols-outlined text-[20px]">person_add</span>
                                 Novo Cliente
@@ -241,7 +241,7 @@ const ClientsView: React.FC = () => {
                                 </div>
 
                                 <div className="space-y-4 flex-1">
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div className="bg-background-dark/50 p-3 rounded-xl border border-white/5">
                                             <span className="text-[9px] uppercase font-black text-slate-500 block mb-1 tracking-widest">Pendentes</span>
                                             <span className="text-xl font-black text-blue-400">{client.pendingProjects}</span>

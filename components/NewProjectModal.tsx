@@ -287,7 +287,7 @@ const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProje
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="relative" ref={dropdownRef}>
                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Cliente</label>
                                 <div className="relative">
@@ -366,7 +366,7 @@ const NewProjectModal = ({ isOpen, onClose, onSuccess, projectToEdit }: NewProje
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Valor Global (R$)</label>
                                 <input

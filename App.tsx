@@ -28,6 +28,7 @@ import AdminBoardsView from './components/AdminBoardsView';
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [engineeringProjectId, setEngineeringProjectId] = useState<string>('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { session, user, profile, loading, isRecoveryMode } = useAuth(); // Added profile and isRecoveryMode
 
   const renderContent = useCallback(() => {
@@ -134,9 +135,23 @@ const AppContent: React.FC = () => {
     <div className="flex h-screen w-full overflow-hidden">
       <Sidebar
         currentView={currentView}
-        onViewChange={(view) => setCurrentView(view)}
+        onViewChange={(view) => { setCurrentView(view); setIsMobileMenuOpen(false); }}
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
       />
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-background-light dark:bg-background-dark relative">
+        {/* Mobile Header */}
+        <div className="lg:hidden flex items-center justify-between p-4 bg-surface-dark border-b border-white/5 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-surface-dark border border-white/10 overflow-hidden flex items-center justify-center">
+              <img src="/logo.png" alt="Incêndio Brasília Logo" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-bold text-white tracking-tight text-sm">Incêndio Brasília</span>
+          </div>
+          <button onClick={() => setIsMobileMenuOpen(true)} className="text-white p-1 hover:text-primary transition-colors">
+            <span className="material-symbols-outlined">menu</span>
+          </button>
+        </div>
         {renderContent()}
       </main>
     </div>

@@ -2443,7 +2443,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       </div>
                       <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">1. Levantamento de Custos</h4>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <p className="text-[9px] font-bold text-slate-500 uppercase mb-1">Base Materiais</p>
                         <p className="text-white text-lg font-bold font-mono">R$ {values.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
@@ -2478,7 +2478,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div className="space-y-1">
                         <div className="flex justify-between items-center mb-1">
                           <label className="text-[9px] font-black text-blue-400 uppercase tracking-tighter">BDI (%)</label>
@@ -2906,7 +2906,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     </h3>
                     <div className="space-y-6">
                       {/* Discount Section */}
-                      <div className="grid grid-cols-2 gap-4 p-4 bg-background-dark/50 rounded-lg border border-white/5 border-l-4 border-l-red-500/50">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-background-dark/50 rounded-lg border border-white/5 border-l-4 border-l-red-500/50">
                         <div>
                           <label className="text-slate-400 text-xs font-bold uppercase block mb-2">Tipo Desconto</label>
                           <select
@@ -3121,7 +3121,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                           </select>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 lg:col-span-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:col-span-2">
                           <div>
                             <label className="text-slate-400 text-sm font-medium block mb-2">Validade (Dias)</label>
                             <input
@@ -3429,7 +3429,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Quantidade</label>
                     <input

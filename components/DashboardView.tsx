@@ -562,8 +562,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
           </div>
 
           {/* Kanban Board */}
-          <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 px-1 gap-4">
+          <div className="flex-1 flex flex-col pb-4">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-4 px-1 gap-4">
               <div className="flex flex-col gap-1">
                 <h3 className="text-lg font-bold text-white">Gestão de Projetos</h3>
                 {/* Horizontal Legend */}
@@ -577,7 +577,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
                 <div className="relative flex-1 min-w-[200px] md:max-w-[300px]">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[20px]">search</span>
                   <input
@@ -612,7 +612,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <div className="relative">
                     <select
                       value={filterType}
@@ -668,8 +668,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                 </div>
               </div>
             </div>
-            <div className="flex h-[500px] gap-6 min-w-[1200px]">
-              {activeColumns.map(col => (
+            
+            <div className="overflow-x-auto overflow-y-hidden custom-scrollbar pb-4 scroll-smooth">
+              <div className="flex h-[500px] gap-6 min-w-[1200px]">
+                {activeColumns.map(col => (
                 <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
@@ -948,6 +950,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                   </div>
                 </div>
               ))}
+              </div>
             </div>
           </div>
         </div>
@@ -1138,7 +1141,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
               <button
                 onClick={() => {
                   handleUpdateProjectColor(projectForColor.id, 'transparent');

@@ -293,28 +293,28 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                 </div>
 
                 {/* Actions Footer */}
-                <div className="p-6 border-t border-white/5 bg-background-dark/50 rounded-b-xl flex justify-between items-center">
-                    <div className="relative">
+                <div className="p-6 border-t border-white/5 bg-background-dark/50 rounded-b-xl flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div className="relative w-full md:w-auto">
                         <button
                             onClick={handleDelete}
                             disabled={updating}
-                            className={`text-sm font-medium flex items-center gap-2 px-3 py-2 rounded transition-all disabled:opacity-50 ${showDeleteChoice ? 'bg-red-500 text-white shadow-lg' : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'}`}
+                            className={`w-full md:w-auto justify-center text-sm font-medium flex items-center gap-2 px-3 py-2 rounded transition-all disabled:opacity-50 ${showDeleteChoice ? 'bg-red-500 text-white shadow-lg' : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'}`}
                         >
                             <span className="material-symbols-outlined text-[18px]">delete</span>
                             {showDeleteChoice ? 'Sair da Exclusão' : 'Excluir Projeto'}
                         </button>
                     </div>
 
-                    <div className="flex gap-3">
+                    <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
                         <button
                             onClick={onClose}
-                            className="px-6 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all font-bold text-xs uppercase"
+                            className="w-full md:w-auto px-6 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all font-bold text-xs uppercase text-center"
                         >
                             Fechar
                         </button>
                         <button
                             onClick={() => onEdit?.(project)}
-                            className="bg-primary hover:bg-primary-dark text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-primary/20 transition-all flex items-center gap-2 text-xs uppercase"
+                            className="w-full md:w-auto bg-primary hover:bg-primary-dark text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2 text-xs uppercase"
                         >
                             <span className="material-symbols-outlined text-[18px]">edit</span>
                             Editar Detalhes
@@ -326,7 +326,7 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                 {showDeleteChoice && (
                     <div className="p-6 pt-0 border-t border-white/5 bg-background-dark/80 backdrop-blur-md">
                         <p className="text-[10px] font-black uppercase text-red-500 tracking-widest mb-4 mt-4 text-center">Zona de Perigo: Escolha o que excluir</p>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                             <button
                                 onClick={() => handleDeletePhase('A')}
                                 className="flex flex-col items-center gap-2 p-3 rounded-xl border border-white/5 bg-white/5 hover:bg-red-500/10 hover:border-red-500/30 transition-all group"

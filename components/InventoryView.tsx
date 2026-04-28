@@ -845,7 +845,7 @@ const InventoryView: React.FC = () => {
                             {editingOrder ? 'Editar Pedido' : 'Novo Pedido'}
                         </h2>
 
-                        <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Estabelecimento</label>
                                 <input
