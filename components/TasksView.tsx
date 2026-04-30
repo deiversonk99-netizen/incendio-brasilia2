@@ -728,6 +728,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                   className={`${isCompact ? 'p-2 space-y-2' : 'p-3 space-y-3'} flex-1 overflow-y-auto bg-black/20 scrollbar-hide min-h-[200px]`}
                   onDragOver={e => e.preventDefault()}
                   onDrop={() => {
+                    if (selectedBoardId === SYNC_BOARD_ID) return;
                     const draggedTaskId = (window as any)._draggedTaskId;
                     if (draggedTaskId) handleReorderTask(draggedTaskId, group.id, groupTasks.length);
                     (window as any)._draggedTaskId = null;
@@ -752,11 +753,12 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                       return (
                         <div
                           key={task.id}
-                          draggable
+                          draggable={selectedBoardId !== SYNC_BOARD_ID}
                           onDragStart={() => (window as any)._draggedTaskId = task.id}
                           onDragOver={e => e.preventDefault()}
                           onDrop={(e) => {
                             e.stopPropagation();
+                            if (selectedBoardId === SYNC_BOARD_ID) return;
                             const draggedTaskId = (window as any)._draggedTaskId;
                             if (draggedTaskId && draggedTaskId !== task.id) {
                               handleReorderTask(draggedTaskId, group.id, index);
