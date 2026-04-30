@@ -2752,18 +2752,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                   {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
                                 </div>
                                 {itemDescriptions[item.name] && (
-                                  <div className="text-[10px] text-slate-400 mt-1 italic leading-tight max-w-md">
+                                  <div className="text-[9px] text-slate-400 mt-1 italic leading-tight max-w-md line-clamp-1 border-l border-slate-500/30 pl-2" title={itemDescriptions[item.name]}>
                                     {itemDescriptions[item.name]}
                                   </div>
                                 )}
                                 {item.observation && (
-                                  <div className="mt-1.5 p-2 bg-amber-500/5 border border-amber-500/20 rounded-md max-w-md">
-                                    <div className="flex flex-col gap-0.5">
-                                      <span className="text-[8px] font-bold text-amber-500/80 uppercase">Observações Internas (Não sai no PDF)</span>
-                                      <span className="text-[10px] text-slate-400 italic leading-tight whitespace-pre-wrap">
-                                        {item.observation}
-                                      </span>
-                                    </div>
+                                  <div className="mt-1" title={item.observation}>
+                                    <p className="text-[9px] text-amber-500/90 italic mb-1 line-clamp-1 border-l border-amber-500/30 pl-2 leading-tight overflow-hidden">
+                                      {item.observation}
+                                    </p>
                                   </div>
                                 )}
                               </div>

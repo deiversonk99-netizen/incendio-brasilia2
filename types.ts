@@ -45,6 +45,7 @@ export interface Project {
   internal_observations?: string;
   project_number?: number;
   label_color?: string;
+  created_at?: string;
 }
 
 export interface Task {

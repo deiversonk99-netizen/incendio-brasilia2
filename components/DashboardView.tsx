@@ -792,7 +792,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                                   </span>
                                 )}
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/5 text-slate-500 border border-white/5 leading-none uppercase tracking-wider">
-                                  {proj.type === 'business' ? 'Comercial' : proj.type === 'factory' ? 'Industrial' : 'Residencial'}
+                                  {proj.created_at ? new Date(proj.created_at).toLocaleDateString('pt-BR') : 'Sem data'}
                                 </span>
                               </div>
 
