@@ -332,16 +332,16 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     if (items.central_items) {
       setItemCounts({ ...itemCounts, ...items.central_items });
 
-      // Determine enabled based on value > 0 or existing logic
+      // Determine enabled based on saved state or quantity > 0
       const enabled: Record<string, boolean> = {};
+      const savedChecks = items.item_checks || {};
       CENTRAL_ITEMS.forEach(item => {
-        enabled[item.label] = (items.central_items[item.label] > 0);
+        if (savedChecks.hasOwnProperty(item.label)) {
+          enabled[item.label] = savedChecks[item.label];
+        } else {
+          enabled[item.label] = (items.central_items[item.label] > 0);
+        }
       });
-      // Merge with manual check logic if needed, but for now assuming if count > 0 it is enabled is safe default
-      // However user specifically asked for "check", so let's allow 0 with check.
-      // Since we don't store "checked" state separately in JSON yet, we might lose "checked but 0" state.
-      // Use > -1 as a hack? No.
-      // Let's infer for now: count > 0 -> checked.
       setEnabledItems(enabled);
 
     } else {

@@ -2736,29 +2736,28 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                   >
                                     {item.item_type === 'SERVICE' ? 'Serviço' : item.item_type === 'CUSTOM' ? 'Personalizado' : 'Produto'}
                                   </button>
-                                  <textarea
-                                    className="bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5 resize-none overflow-hidden whitespace-pre-wrap"
-                                    value={item.name}
-                                    onChange={(e) => handleUpdateItem(item.id, { name: e.target.value })}
-                                    onInput={(e) => {
-                                      e.currentTarget.style.height = 'auto';
-                                      e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
-                                    }}
-                                    rows={Math.max(1, (item.name || '').split('\n').length)}
-                                    style={{ minHeight: '24px' }}
-                                  />
+                                  <div className="grid w-full">
+                                    <div className="invisible whitespace-pre-wrap col-start-1 row-start-1 text-sm font-medium py-0.5" style={{ minHeight: '24px' }}>
+                                      {(item.name || '') + ' '}
+                                    </div>
+                                    <textarea
+                                      className="col-start-1 row-start-1 bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5 resize-none overflow-hidden h-full"
+                                      value={item.name || ''}
+                                      onChange={(e) => handleUpdateItem(item.id, { name: e.target.value })}
+                                    />
+                                  </div>
                                 </div>
                                 <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
                                   {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
                                 </div>
                                 {itemDescriptions[item.name] && (
-                                  <div className="text-[9px] text-slate-400 mt-1 italic leading-tight max-w-md line-clamp-1 border-l border-slate-500/30 pl-2" title={itemDescriptions[item.name]}>
+                                  <div className="text-[9px] text-slate-400 mt-1 italic leading-tight border-l border-slate-500/30 pl-2 whitespace-pre-wrap" title={itemDescriptions[item.name]}>
                                     {itemDescriptions[item.name]}
                                   </div>
                                 )}
                                 {item.observation && (
                                   <div className="mt-1" title={item.observation}>
-                                    <p className="text-[9px] text-amber-500/90 italic mb-1 line-clamp-1 border-l border-amber-500/30 pl-2 leading-tight overflow-hidden">
+                                    <p className="text-[9px] text-amber-500/90 italic mb-1 border-l border-amber-500/30 pl-2 leading-tight whitespace-pre-wrap">
                                       {item.observation}
                                     </p>
                                   </div>

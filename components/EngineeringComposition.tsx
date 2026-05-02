@@ -307,8 +307,16 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
     if (existingItems && existingItems.length > 0) {
       setItems(existingItems);
+      
+      // If no items with origin 'CALCULATED' exist, it might be a new project with only manual/model items,
+      // or we just haven't pulled from Phase A yet.
+      const hasCalculated = existingItems.some(i => i.origin === 'CALCULATED');
+      if (!hasCalculated) {
+        console.log('No calculated items found, triggering calculateFromPhaseA');
+        await calculateFromPhaseA();
+      }
     } else {
-      // If no items, calculate from Phase A
+      // If no items at all, calculate from Phase A
       await calculateFromPhaseA();
     }
     setLoading(false);
@@ -1376,16 +1384,16 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                 <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-2">
-                                      <textarea
-                                        className={`w-full bg-background-dark border border-white/10 rounded px-2 py-1 text-white focus:border-primary outline-none text-sm transition-colors resize-none overflow-hidden whitespace-pre-wrap ${item.origin === 'MANUAL' ? 'border-dashed' : ''}`}
-                                        value={item.name}
-                                        onChange={(e) => handleUpdateItem(item.id, 'name', e.target.value)}
-                                        onInput={(e) => {
-                                          e.currentTarget.style.height = 'auto';
-                                          e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
-                                        }}
-                                        rows={Math.max(1, (item.name || '').split('\n').length)}
-                                      />
+                                      <div className="grid">
+                                        <div className="invisible whitespace-pre-wrap col-start-1 row-start-1 text-sm px-2 py-1 min-h-[30px]">
+                                          {(item.name || '') + ' '}
+                                        </div>
+                                        <textarea
+                                          className={`col-start-1 row-start-1 w-full h-full bg-background-dark border border-white/10 rounded px-2 py-1 text-white focus:border-primary outline-none text-sm transition-colors resize-none overflow-hidden whitespace-pre-wrap ${item.origin === 'MANUAL' ? 'border-dashed' : ''}`}
+                                          value={item.name || ''}
+                                          onChange={(e) => handleUpdateItem(item.id, 'name', e.target.value)}
+                                        />
+                                      </div>
                                       <button
                                         onClick={() => {
                                           setItemToExchange(item);
@@ -1486,16 +1494,19 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                   <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                                     <td className="px-6 py-4">
                                       <div className="flex items-center gap-2">
-                                        <input
-                                          type="text"
-                                          list="catalog-products"
-                                          className="flex-1 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium"
-                                          value={cleanName}
-                                          onChange={(e) => {
-                                            const newName = `${e.target.value} [INFRA:${kitName}]`;
-                                            handleUpdateItem(item.id, 'name', newName);
-                                          }}
-                                        />
+                                        <div className="grid flex-1">
+                                          <div className="invisible whitespace-pre-wrap col-start-1 row-start-1 text-base font-medium px-2 py-1 min-h-[32px]">
+                                            {(cleanName || '') + ' '}
+                                          </div>
+                                          <textarea
+                                            className="col-start-1 row-start-1 w-full h-full bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium resize-none overflow-hidden whitespace-pre-wrap"
+                                            value={cleanName || ''}
+                                            onChange={(e) => {
+                                              const newName = `${e.target.value} [INFRA:${kitName}]`;
+                                              handleUpdateItem(item.id, 'name', newName);
+                                            }}
+                                          />
+                                        </div>
                                         <button
                                           onClick={() => {
                                             setItemToExchange(item);
@@ -1625,20 +1636,20 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                     <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                                       <td className="px-6 py-4">
                                         <div className="flex items-center gap-2">
-                                          <textarea
-                                            className="w-full bg-transparent border border-transparent hover:border-white/10 focus:border-primary/50 focus:bg-background-dark/50 rounded px-2 py-1 text-white font-medium outline-none resize-none overflow-hidden whitespace-pre-wrap transition-all"
-                                            value={cleanName}
-                                            onChange={(e) => {
-                                              const modelTagMatch = item.name.match(/^\[MODELO:.*?\] /);
-                                              const modelTag = modelTagMatch ? modelTagMatch[0] : '';
-                                              handleUpdateItem(item.id, 'name', modelTag + e.target.value);
-                                            }}
-                                            onInput={(e) => {
-                                              e.currentTarget.style.height = 'auto';
-                                              e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
-                                            }}
-                                            rows={Math.max(1, (cleanName || '').split('\n').length)}
-                                          />
+                                          <div className="grid">
+                                            <div className="invisible whitespace-pre-wrap col-start-1 row-start-1 text-base font-medium px-2 py-1 min-h-[32px]">
+                                              {(cleanName || '') + ' '}
+                                            </div>
+                                            <textarea
+                                              className="col-start-1 row-start-1 w-full h-full bg-transparent border border-transparent hover:border-white/10 focus:border-primary/50 focus:bg-background-dark/50 rounded px-2 py-1 text-white font-medium outline-none resize-none overflow-hidden transition-all whitespace-pre-wrap"
+                                              value={cleanName || ''}
+                                              onChange={(e) => {
+                                                const modelTagMatch = item.name.match(/^\[MODELO:.*?\] /);
+                                                const modelTag = modelTagMatch ? modelTagMatch[0] : '';
+                                                handleUpdateItem(item.id, 'name', modelTag + e.target.value);
+                                              }}
+                                            />
+                                          </div>
                                         </div>
                                         <div className="text-[10px] text-slate-500 px-2 mt-1">
                                           Item do Modelo {modelName}
