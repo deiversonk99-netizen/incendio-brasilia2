@@ -56,6 +56,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const [itemToExchange, setItemToExchange] = useState<BudgetItem | null>(null);
   const [exchangeSearch, setExchangeSearch] = useState('');
 
+  const [expandedNames, setExpandedNames] = useState<Record<string, boolean>>({});
+  
   // PDF Settings State
   const [pdfSettings, setPdfSettings] = useState<any>({
     carimbo: '',
@@ -1383,17 +1385,30 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                               {items.filter(i => !i.name.includes('[INFRA:') && !i.name.includes('[MODELO:')).map(item => (
                                 <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                                   <td className="px-6 py-4">
-                                    <div className="flex items-center gap-2">
-                                      <div className="grid">
-                                        <div className="invisible whitespace-pre-wrap col-start-1 row-start-1 text-sm px-2 py-1 min-h-[30px]">
+                                    <div className="flex items-center gap-2 group/name">
+                                      <div className="grid flex-1">
+                                        <div className={`invisible whitespace-pre-wrap col-start-1 row-start-1 text-sm px-2 py-1 min-h-[30px] ${!expandedNames[item.id] ? 'line-clamp-1' : ''}`}>
                                           {(item.name || '') + ' '}
                                         </div>
                                         <textarea
-                                          className={`col-start-1 row-start-1 w-full h-full bg-background-dark border border-white/10 rounded px-2 py-1 text-white focus:border-primary outline-none text-sm transition-colors resize-none overflow-hidden whitespace-pre-wrap ${item.origin === 'MANUAL' ? 'border-dashed' : ''}`}
+                                          className={`col-start-1 row-start-1 w-full h-full bg-background-dark border border-white/10 rounded px-2 py-1 text-white focus:border-primary outline-none text-sm transition-colors resize-none overflow-hidden whitespace-pre-wrap ${item.origin === 'MANUAL' ? 'border-dashed' : ''} ${!expandedNames[item.id] ? 'line-clamp-1' : ''}`}
                                           value={item.name || ''}
                                           onChange={(e) => handleUpdateItem(item.id, 'name', e.target.value)}
                                         />
                                       </div>
+                                      {(item.name || '').length > 50 && (
+                                        <button 
+                                          onClick={() => setExpandedNames(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                          className={`p-1 rounded transition-all flex-shrink-0 ${expandedNames[item.id] ? 'text-primary bg-primary/10 opacity-100' : 'text-slate-500 hover:text-primary hover:bg-primary/10 opacity-0 group-hover/name:opacity-100'}`}
+                                          title={expandedNames[item.id] ? "Ver menos" : "Ver descrição completa"}
+                                        >
+                                          {expandedNames[item.id] ? (
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                                          ) : (
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                          )}
+                                        </button>
+                                      )}
                                       <button
                                         onClick={() => {
                                           setItemToExchange(item);
@@ -1493,13 +1508,13 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                 return (
                                   <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                                     <td className="px-6 py-4">
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2 group/name">
                                         <div className="grid flex-1">
-                                          <div className="invisible whitespace-pre-wrap col-start-1 row-start-1 text-base font-medium px-2 py-1 min-h-[32px]">
+                                          <div className={`invisible whitespace-pre-wrap col-start-1 row-start-1 text-base font-medium px-2 py-1 min-h-[32px] ${!expandedNames[item.id] ? 'line-clamp-1' : ''}`}>
                                             {(cleanName || '') + ' '}
                                           </div>
                                           <textarea
-                                            className="col-start-1 row-start-1 w-full h-full bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium resize-none overflow-hidden whitespace-pre-wrap"
+                                            className={`col-start-1 row-start-1 w-full h-full bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-background-dark/50 rounded px-2 py-1 text-white outline-none transition-all font-medium resize-none overflow-hidden whitespace-pre-wrap ${!expandedNames[item.id] ? 'line-clamp-1' : ''}`}
                                             value={cleanName || ''}
                                             onChange={(e) => {
                                               const newName = `${e.target.value} [INFRA:${kitName}]`;
@@ -1507,6 +1522,19 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                             }}
                                           />
                                         </div>
+                                        {(cleanName || '').length > 50 && (
+                                          <button 
+                                            onClick={() => setExpandedNames(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                            className={`p-1 rounded transition-all flex-shrink-0 ${expandedNames[item.id] ? 'text-primary bg-primary/10 opacity-100' : 'text-slate-500 hover:text-primary hover:bg-primary/10 opacity-0 group-hover/name:opacity-100'}`}
+                                            title={expandedNames[item.id] ? "Ver menos" : "Ver descrição completa"}
+                                          >
+                                            {expandedNames[item.id] ? (
+                                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                                            ) : (
+                                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                            )}
+                                          </button>
+                                        )}
                                         <button
                                           onClick={() => {
                                             setItemToExchange(item);
@@ -1635,13 +1663,13 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                   return (
                                     <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                                       <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2">
-                                          <div className="grid">
-                                            <div className="invisible whitespace-pre-wrap col-start-1 row-start-1 text-base font-medium px-2 py-1 min-h-[32px]">
+                                        <div className="flex items-center gap-2 group/name">
+                                          <div className="grid flex-1">
+                                            <div className={`invisible whitespace-pre-wrap col-start-1 row-start-1 text-base font-medium px-2 py-1 min-h-[32px] ${!expandedNames[item.id] ? 'line-clamp-1' : ''}`}>
                                               {(cleanName || '') + ' '}
                                             </div>
                                             <textarea
-                                              className="col-start-1 row-start-1 w-full h-full bg-transparent border border-transparent hover:border-white/10 focus:border-primary/50 focus:bg-background-dark/50 rounded px-2 py-1 text-white font-medium outline-none resize-none overflow-hidden transition-all whitespace-pre-wrap"
+                                              className={`col-start-1 row-start-1 w-full h-full bg-transparent border border-transparent hover:border-white/10 focus:border-primary/50 focus:bg-background-dark/50 rounded px-2 py-1 text-white font-medium outline-none resize-none overflow-hidden transition-all whitespace-pre-wrap ${!expandedNames[item.id] ? 'line-clamp-1' : ''}`}
                                               value={cleanName || ''}
                                               onChange={(e) => {
                                                 const modelTagMatch = item.name.match(/^\[MODELO:.*?\] /);
@@ -1650,6 +1678,19 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                                               }}
                                             />
                                           </div>
+                                          {(cleanName || '').length > 50 && (
+                                            <button 
+                                              onClick={() => setExpandedNames(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                              className={`p-1 rounded transition-all flex-shrink-0 ${expandedNames[item.id] ? 'text-primary bg-primary/10 opacity-100' : 'text-slate-500 hover:text-primary hover:bg-primary/10 opacity-0 group-hover/name:opacity-100'}`}
+                                              title={expandedNames[item.id] ? "Ver menos" : "Ver descrição completa"}
+                                            >
+                                              {expandedNames[item.id] ? (
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                                              ) : (
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                              )}
+                                            </button>
+                                          )}
                                         </div>
                                         <div className="text-[10px] text-slate-500 px-2 mt-1">
                                           Item do Modelo {modelName}

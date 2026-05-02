@@ -81,6 +81,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [tempVisibleItems, setTempVisibleItems] = useState<string[]>([]);
   const [sections, setSections] = useState<any[]>([]); // Dynamic Sections State
   const [itemDescriptions, setItemDescriptions] = useState<Record<string, string>>({}); // Description lookup map
+  const [expandedNames, setExpandedNames] = useState<Record<string, boolean>>({});
 
   const loadPdfSettings = async (projectId: string) => {
     try {
@@ -2710,7 +2711,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                           <tr key={item.id} className="hover:bg-white/5 transition-colors group">
                             <td className="px-6 py-4">
                               <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 relative group/name">
                                   {/* Icon indicating type */}
                                   {item.item_type === 'SERVICE' ? (
                                     <span className="material-symbols-outlined text-indigo-400">construction</span>
@@ -2736,30 +2737,47 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                   >
                                     {item.item_type === 'SERVICE' ? 'Serviço' : item.item_type === 'CUSTOM' ? 'Personalizado' : 'Produto'}
                                   </button>
-                                  <div className="grid w-full">
-                                    <div className="invisible whitespace-pre-wrap col-start-1 row-start-1 text-sm font-medium py-0.5" style={{ minHeight: '24px' }}>
+                                  <div className="grid flex-1 overflow-hidden">
+                                    <div className={`invisible whitespace-pre-wrap col-start-1 row-start-1 text-sm font-medium py-0.5 ${!expandedNames[item.id] ? 'line-clamp-1' : ''}`} style={{ minHeight: '24px' }}>
                                       {(item.name || '') + ' '}
                                     </div>
                                     <textarea
-                                      className="col-start-1 row-start-1 bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5 resize-none overflow-hidden h-full"
+                                      className={`col-start-1 row-start-1 bg-transparent text-white font-medium text-sm outline-none border-b border-white/5 focus:border-primary/50 w-full transition-all py-0.5 resize-none overflow-hidden h-full ${!expandedNames[item.id] ? 'line-clamp-1' : ''}`}
                                       value={item.name || ''}
                                       onChange={(e) => handleUpdateItem(item.id, { name: e.target.value })}
                                     />
                                   </div>
+                                  {(item.name.length > 50 || itemDescriptions[item.name] || item.observation) && (
+                                    <button 
+                                      onClick={() => setExpandedNames(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                      className={`p-1 rounded transition-all flex-shrink-0 z-10 ${expandedNames[item.id] ? 'text-primary bg-primary/10 opacity-100' : 'text-slate-500 hover:text-primary hover:bg-primary/10 opacity-0 group-hover/name:opacity-100'}`}
+                                      title={expandedNames[item.id] ? "Recolher" : "Ver descrição completa"}
+                                    >
+                                      {expandedNames[item.id] ? (
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                                      ) : (
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                      )}
+                                    </button>
+                                  )}
                                 </div>
                                 <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
                                   {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
                                 </div>
-                                {itemDescriptions[item.name] && (
-                                  <div className="text-[9px] text-slate-400 mt-1 italic leading-tight border-l border-slate-500/30 pl-2 whitespace-pre-wrap" title={itemDescriptions[item.name]}>
-                                    {itemDescriptions[item.name]}
-                                  </div>
-                                )}
-                                {item.observation && (
-                                  <div className="mt-1" title={item.observation}>
-                                    <p className="text-[9px] text-amber-500/90 italic mb-1 border-l border-amber-500/30 pl-2 leading-tight whitespace-pre-wrap">
-                                      {item.observation}
-                                    </p>
+                                {expandedNames[item.id] && (
+                                  <div className="animate-in slide-in-from-top-1 duration-200">
+                                    {itemDescriptions[item.name] && (
+                                      <div className="text-[9px] text-slate-400 mt-1 italic leading-tight border-l border-slate-500/30 pl-2 whitespace-pre-wrap">
+                                        {itemDescriptions[item.name]}
+                                      </div>
+                                    )}
+                                    {item.observation && (
+                                      <div className="mt-1">
+                                        <p className="text-[9px] text-amber-500/90 italic mb-1 border-l border-amber-500/30 pl-2 leading-tight whitespace-pre-wrap">
+                                          {item.observation}
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
