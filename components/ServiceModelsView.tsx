@@ -323,7 +323,7 @@ const ServiceModelsView: React.FC = () => {
                     {(selectedModelId || isCreating) ? (
                         <div className="flex flex-col h-full">
                             {/* HEADER EDITOR */}
-                            <div className="p-6 border-b border-white/10 bg-surface-dark shadow-sm z-10">
+                            <div className="p-4 md:p-6 border-b border-white/10 bg-surface-dark shadow-sm z-10">
                                 <div className="flex justify-between items-start mb-6">
                                     <div className="flex-1 mr-8">
                                         <label className="text-xs font-bold text-emerald-500 uppercase mb-1 block">Nome do Modelo</label>
@@ -391,7 +391,7 @@ const ServiceModelsView: React.FC = () => {
                             </div>
 
                             {/* PRODUCTS LIST (CARRINHO) */}
-                            <div className="flex-1 overflow-hidden flex flex-col p-6">
+                            <div className="flex-1 overflow-hidden flex flex-col p-4 md:p-6">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="text-xl font-bold text-white flex items-center gap-2">
                                         Carrinho
@@ -439,7 +439,7 @@ const ServiceModelsView: React.FC = () => {
                                 </div>
 
                                 <div className="flex-1 overflow-auto bg-surface-dark border border-white/5 rounded-xl shadow-inner scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                                    <table className="w-full text-left border-collapse">
+                                    <table className="w-full text-left border-collapse min-w-[700px]">
                                         <thead className="bg-black/20 text-slate-400 font-bold uppercase text-xs sticky top-0 z-10 backdrop-blur-sm">
                                             <tr>
                                                 <th className="px-6 py-4">Produto</th>

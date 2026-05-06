@@ -1092,9 +1092,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         }
       />
 
-      <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
+      <main className="flex-1 overflow-y-auto p-4 md:p-6 relative">
         {/* Added relative for modal positioning context if needed, though fixed is better */}
-        <div className="max-w-7xl mx-auto flex flex-col gap-8 pb-12">
+        <div className="max-w-7xl mx-auto flex flex-col gap-6 pb-12">
 
           {/* PDF Customization Toggle */}
           {selectedProjectId && (

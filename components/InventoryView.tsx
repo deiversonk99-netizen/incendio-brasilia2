@@ -566,7 +566,7 @@ const InventoryView: React.FC = () => {
                 </button>
             </div>
 
-            <main className="flex-1 overflow-auto p-8">
+            <main className="flex-1 overflow-auto p-4 md:p-6">
                 {activeTab === 'CATALOG' && (
                     <>
                         <div className="mb-6 flex items-center justify-between">
@@ -588,43 +588,45 @@ const InventoryView: React.FC = () => {
                             {/* If user wants the exact previous state, I should probably re-add the report button too, but let's focus on the table structure first as per "lista" request */}
                         </div>
 
-                        <table className="min-w-full bg-surface-dark text-white border border-white/10 rounded-lg overflow-hidden">
-                            <thead className="bg-primary/20">
-                                <tr>
-                                    <th className="p-2 text-left">Imagem</th>
-                                    <th className="p-2 text-left">Nome</th>
-                                    <th className="p-2 text-right">Quantidade</th>
-                                    <th className="p-2 text-center">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredSignage.map((item: SignageItem) => (
-                                    <tr key={item.id} className="border-b border-white/5 hover:bg-primary/10">
-                                        <td className="p-2">
-                                            {item.image ? (
-                                                <img src={item.image} alt={item.name} className="w-16 h-16 object-contain" />
-                                            ) : (
-                                                <span className="material-symbols-outlined text-4xl text-slate-700">image</span>
-                                            )}
-                                        </td>
-                                        <td className="p-2 font-bold">{item.name}</td>
-                                        <td className="p-2 text-right font-mono">{computeQuantity(item.id)}</td>
-                                        <td className="p-2 flex justify-center gap-2">
-                                            <button onClick={() => handleEditPlate(item)} className="p-1 px-2 text-slate-400 hover:text-primary transition-colors hover:bg-white/5 rounded" title="Editar Placa">
-                                                <span className="material-symbols-outlined text-[18px]">edit</span>
-                                            </button>
-                                            <button onClick={() => handleDeletePlate(item)} className="p-1 px-2 text-slate-400 hover:text-red-400 transition-colors hover:bg-red-500/5 rounded" title="Excluir Placa">
-                                                <span className="material-symbols-outlined text-[18px]">delete</span>
-                                            </button>
-                                            <div className="w-[1px] h-4 bg-white/10 self-center mx-1"></div>
-                                            <button onClick={() => openStockModal(item, 'IN')} className="px-2 py-1 bg-green-600 hover:bg-green-700 rounded text-xs">Entrada</button>
-                                            <button onClick={() => openStockModal(item, 'OUT')} className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs">Saída</button>
-                                            <button onClick={() => openStockModal(item, 'ADJUST')} className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-xs">Ajuste</button>
-                                        </td>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full bg-surface-dark text-white border border-white/10 rounded-lg overflow-hidden">
+                                <thead className="bg-primary/20">
+                                    <tr>
+                                        <th className="p-2 text-left">Imagem</th>
+                                        <th className="p-2 text-left">Nome</th>
+                                        <th className="p-2 text-right">Quantidade</th>
+                                        <th className="p-2 text-center">Ações</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {filteredSignage.map((item: SignageItem) => (
+                                        <tr key={item.id} className="border-b border-white/5 hover:bg-primary/10">
+                                            <td className="p-2">
+                                                {item.image ? (
+                                                    <img src={item.image} alt={item.name} className="w-16 h-16 object-contain" />
+                                                ) : (
+                                                    <span className="material-symbols-outlined text-4xl text-slate-700">image</span>
+                                                )}
+                                            </td>
+                                            <td className="p-2 font-bold">{item.name}</td>
+                                            <td className="p-2 text-right font-mono">{computeQuantity(item.id)}</td>
+                                            <td className="p-2 flex justify-center gap-2">
+                                                <button onClick={() => handleEditPlate(item)} className="p-1 px-2 text-slate-400 hover:text-primary transition-colors hover:bg-white/5 rounded" title="Editar Placa">
+                                                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                                                </button>
+                                                <button onClick={() => handleDeletePlate(item)} className="p-1 px-2 text-slate-400 hover:text-red-400 transition-colors hover:bg-red-500/5 rounded" title="Excluir Placa">
+                                                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                </button>
+                                                <div className="w-[1px] h-4 bg-white/10 self-center mx-1"></div>
+                                                <button onClick={() => openStockModal(item, 'IN')} className="px-2 py-1 bg-green-600 hover:bg-green-700 rounded text-xs">Entrada</button>
+                                                <button onClick={() => openStockModal(item, 'OUT')} className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs">Saída</button>
+                                                <button onClick={() => openStockModal(item, 'ADJUST')} className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-xs">Ajuste</button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </>
                 )}
 
@@ -689,14 +691,14 @@ const InventoryView: React.FC = () => {
                                         </div>
 
                                         {expandedOrderId === order.id && (
-                                            <div className="border-t border-white/5 bg-black/20 p-4">
+                                            <div className="border-t border-white/5 bg-black/20 p-4 overflow-x-auto">
                                                 <table className="w-full text-sm">
                                                     <thead>
                                                         <tr className="text-slate-500 text-xs uppercase text-left">
-                                                            <th className="pb-3">Placa</th>
-                                                            <th className="pb-3 text-center">Qtd. Pedida</th>
-                                                            <th className="pb-3 text-center">Status</th>
-                                                            <th className="pb-3 text-right">Ação</th>
+                                                            <th className="pb-3 min-w-[200px]">Placa</th>
+                                                            <th className="pb-3 text-center min-w-[100px]">Qtd. Pedida</th>
+                                                            <th className="pb-3 text-center min-w-[120px]">Status</th>
+                                                            <th className="pb-3 text-right min-w-[150px]">Ação</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -718,7 +720,7 @@ const InventoryView: React.FC = () => {
                                                                     {item.status === 'PENDING' && (
                                                                         <button
                                                                             onClick={() => handleReceiveItem(order.id, item.id, item.quantity, item.signage_id)}
-                                                                            className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-sm font-bold shadow-lg shadow-primary/20 transition-all active:scale-95"
+                                                                            className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-sm font-bold shadow-lg shadow-primary/20 transition-all active:scale-95 whitespace-nowrap ml-auto"
                                                                         >
                                                                             <span className="material-symbols-outlined text-[20px]">check_circle</span>
                                                                             Receber Placas

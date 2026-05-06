@@ -748,8 +748,8 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
         }
       />
 
-      <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-        <div className="max-w-7xl mx-auto flex flex-col gap-8 pb-12">
+      <main className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="max-w-7xl mx-auto flex flex-col gap-6 pb-12">
 
           {/* PDF Customization Toggle */}
           {selectedProjectId && (

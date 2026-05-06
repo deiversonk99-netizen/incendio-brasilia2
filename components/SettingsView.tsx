@@ -269,7 +269,7 @@ const SettingsView: React.FC = () => {
     };
 
     return (
-        <div className="flex-1 overflow-y-auto p-8 bg-background-dark">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-background-dark">
             <div className="mx-auto max-w-5xl flex flex-col gap-8">
                 <PageHeader
                     title="Configurações do Sistema"
@@ -277,7 +277,7 @@ const SettingsView: React.FC = () => {
                 />
 
                 {/* Tabs */}
-                <div className="flex border-b border-white/10 gap-8">
+                <div className="flex border-b border-white/10 gap-4 md:gap-8 overflow-x-auto">
                     {[
                         { id: 'users', label: 'Usuários e Acessos', icon: 'group' },
                         { id: 'pdf', label: 'Configurações de PDF', icon: 'picture_as_pdf' },
@@ -319,8 +319,8 @@ const SettingsView: React.FC = () => {
                                     </button>
                                 </div>
 
-                                <div className="bg-surface-dark border border-white/5 rounded-xl overflow-hidden shadow-xl">
-                                    <table className="w-full text-left text-sm">
+                                <div className="bg-surface-dark border border-white/5 rounded-xl overflow-x-auto shadow-xl">
+                                    <table className="w-full text-left text-sm min-w-[500px]">
                                         <thead className="bg-white/5 text-slate-400 font-bold uppercase text-[11px] tracking-widest">
                                             <tr>
                                                 <th className="px-6 py-4">Usuário</th>

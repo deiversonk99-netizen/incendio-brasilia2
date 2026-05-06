@@ -124,7 +124,7 @@ const ClientsView: React.FC = () => {
     );
 
     return (
-        <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="mx-auto max-w-[1600px] flex flex-col gap-8 pb-12">
                 <PageHeader
                     title={

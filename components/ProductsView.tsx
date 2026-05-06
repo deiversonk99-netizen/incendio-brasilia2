@@ -942,7 +942,7 @@ CNX POSTE PLASTICO WEW35/2	6,44`;
                 }
             />
 
-            <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+            <main className="flex-1 overflow-y-auto p-4 md:p-6">
                 <div className="max-w-7xl mx-auto flex flex-col gap-6">
                     {/* Search */}
                     <div className="bg-surface-dark p-4 rounded-xl border border-white/5 shadow-sm flex gap-4">

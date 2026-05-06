@@ -566,7 +566,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
-      <header className="relative z-10 px-8 py-6 flex flex-col gap-6 border-b border-white/5 bg-background-dark/40 backdrop-blur-md">
+      <header className="relative z-10 px-4 md:px-8 py-4 md:py-6 flex flex-col gap-6 border-b border-white/5 bg-background-dark/40 backdrop-blur-md">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
           <div className="flex flex-col gap-1">
             <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
@@ -650,7 +650,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         </div>
       </header>
 
-      <div className="flex-1 overflow-x-auto p-4 z-10">
+      <div className="flex-1 overflow-x-auto p-4 md:p-6 z-10">
         {/* Info Banner for Central Admin */}
         {isCentral && (
           <div className="mb-6 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex gap-3 text-sm text-blue-300">

@@ -93,7 +93,7 @@ const ServicesView: React.FC = () => {
                 }
             />
 
-            <div className="flex-1 overflow-hidden flex flex-col p-8">
+            <div className="flex-1 overflow-hidden flex flex-col p-4 md:p-6">
                 <div className="mb-6 relative max-w-md">
                     <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">search</span>
                     <input

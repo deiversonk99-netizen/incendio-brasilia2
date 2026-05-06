@@ -128,29 +128,30 @@ const RenewalControlView: React.FC = () => {
                 title="Controle de Renovação"
                 subtitle="Calendário anual de vencimentos e aditivos de contrato"
                 actions={
-                    <div className="flex items-center gap-3">
-                        <div className="relative group">
+                    <div className="flex flex-wrap items-center gap-2 md:gap-3 w-full md:w-auto">
+                        <div className="relative group flex-1 md:flex-none">
                             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors text-[20px]">search</span>
                             <input
-                                className="bg-[#2d1b20] border border-[#46252c] text-white text-sm rounded-lg block w-64 pl-10 pr-3 py-2.5 outline-none focus:border-primary transition-all shadow-inner"
+                                className="bg-[#2d1b20] border border-[#46252c] text-white text-sm rounded-lg block w-full md:w-64 pl-10 pr-3 py-2.5 outline-none focus:border-primary transition-all shadow-inner"
                                 placeholder="Buscar projeto ou título..."
                                 value={searchTerm}
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                             />
                         </div>
-                        <div className="flex bg-black/30 p-1 rounded-xl border border-white/5 mr-2">
+                        <div className="flex bg-black/30 p-1 rounded-xl border border-white/5">
                             <button
                                 onClick={() => setViewMode('calendar')}
-                                className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-all ${viewMode === 'calendar' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500 hover:text-white'}`}
+                                className={`px-3 md:px-4 py-2 rounded-lg text-xs font-black uppercase transition-all ${viewMode === 'calendar' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500 hover:text-white'}`}
                             >
                                 Calendário
                             </button>
                             <button
                                 onClick={() => setViewMode('anticipation')}
-                                className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-all flex items-center gap-2 ${viewMode === 'anticipation' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500 hover:text-white'}`}
+                                className={`px-3 md:px-4 py-2 rounded-lg text-xs font-black uppercase transition-all flex items-center gap-2 ${viewMode === 'anticipation' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500 hover:text-white'}`}
                             >
                                 <span className="material-symbols-outlined text-[16px]">warning</span>
-                                Antecipação (30d)
+                                <span className="hidden sm:inline">Antecipação (30d)</span>
+                                <span className="sm:hidden">30d</span>
                                 {(anticipationTasks.length + anticipationManuals.length) > 0 && (
                                     <span className="bg-white text-primary rounded-full size-4 flex items-center justify-center text-[10px]">
                                         {anticipationTasks.length + anticipationManuals.length}
@@ -164,7 +165,7 @@ const RenewalControlView: React.FC = () => {
                                 setSelectedRenewal(null);
                                 setIsRenewalModalOpen(true);
                             }}
-                            className="flex items-center justify-center gap-2 rounded-lg h-11 px-4 bg-primary hover:bg-red-600 text-white text-sm font-bold transition-all shadow-lg shadow-primary/20"
+                            className="flex items-center justify-center gap-2 rounded-lg h-11 px-4 bg-primary hover:bg-red-600 text-white text-sm font-bold transition-all shadow-lg shadow-primary/20 whitespace-nowrap"
                         >
                             <span className="material-symbols-outlined">add_circle</span>
                             <span>Novo Aditivo</span>
@@ -173,7 +174,7 @@ const RenewalControlView: React.FC = () => {
                 }
             />
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
                 <div className="bg-surface-dark border border-[#46252c]/50 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-sm">
                     {viewMode === 'calendar' ? (
                         <>

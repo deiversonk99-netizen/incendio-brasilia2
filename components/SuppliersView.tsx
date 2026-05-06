@@ -227,7 +227,7 @@ const SuppliersView: React.FC = () => {
             />
 
             {/* Tabs */}
-            <div className="border-b border-white/10 px-8 flex gap-6">
+            <div className="border-b border-white/10 px-4 md:px-8 flex gap-4 md:gap-6 overflow-x-auto">
                 <button onClick={() => setActiveTab('list')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'list' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
                     Listagem
                 </button>
@@ -239,7 +239,7 @@ const SuppliersView: React.FC = () => {
                 </button>
             </div>
 
-            <main className={`flex-1 ${activeTab === 'entry' && purchaseStep === 'items' ? 'overflow-hidden flex flex-col p-4' : 'overflow-y-auto p-8'}`}>
+            <main className={`flex-1 ${activeTab === 'entry' && purchaseStep === 'items' ? 'overflow-hidden flex flex-col p-2 md:p-4' : 'overflow-y-auto p-4 md:p-6'}`}>
                 {activeTab === 'list' && (
                     <div className="max-w-7xl mx-auto">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

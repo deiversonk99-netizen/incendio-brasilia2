@@ -134,7 +134,7 @@ const StockView: React.FC = () => {
                 </div>
             </div>
 
-            <main className="flex-1 overflow-auto p-8">
+            <main className="flex-1 overflow-auto p-4 md:p-6">
                 {loading ? (
                     <div className="flex justify-center items-center h-64">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
@@ -213,57 +213,59 @@ const StockView: React.FC = () => {
                     </div>
                 ) : (
                     <div className="bg-surface-dark border border-white/10 rounded-2xl overflow-hidden shadow-lg">
-                        <table className="w-full text-left">
-                            <thead className="bg-white/5 border-b border-white/10 font-bold text-xs uppercase text-slate-400">
-                                <tr>
-                                    <th className="px-6 py-4">Ações</th>
-                                    <th className="px-6 py-4">Produto</th>
-                                    <th className="px-6 py-4">Categoria</th>
-                                    <th className="px-6 py-4">Localização</th>
-                                    <th className="px-6 py-4 text-center">Estoque</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {filteredProducts.map((product) => (
-                                    <tr key={product.id} className="hover:bg-white/5 transition-colors group">
-                                        <td className="px-6 py-4 text-left">
-                                            <div className="flex justify-start gap-2">
-                                                <button onClick={() => openStockModal(product, 'IN')} className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-lg transition-all" title="Entrada"><span className="material-symbols-outlined text-[18px]">add</span></button>
-                                                <button onClick={() => openStockModal(product, 'OUT')} className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg transition-all" title="Saída"><span className="material-symbols-outlined text-[18px]">remove</span></button>
-                                                <button onClick={() => openStockModal(product, 'ADJUST')} className="p-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 rounded-lg transition-all" title="Ajuste"><span className="material-symbols-outlined text-[18px]">tune</span></button>
-                                                <button onClick={() => {
-                                                    setSelectedProduct(product);
-                                                    setIsProductModalOpen(true);
-                                                }} className="p-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-lg transition-all" title="Editar Produto"><span className="material-symbols-outlined text-[18px]">edit</span></button>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden border border-white/10 shrink-0">
-                                                {product.image ? (
-                                                    <img src={product.image} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span className="material-symbols-outlined text-slate-600">inventory_2</span>
-                                                )}
-                                            </div>
-                                            <span className="font-bold text-white">{product.name}</span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-slate-400">{product.category}</td>
-                                        <td className="px-6 py-4">
-                                            {product.storage_location ? (
-                                                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded font-bold uppercase tracking-wider">{product.storage_location}</span>
-                                            ) : (
-                                                <span className="text-slate-600">-</span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <span className={`font-mono font-bold ${computeQuantity(product.id) > 0 ? 'text-emerald-500' : 'text-slate-500'}`}>
-                                                {computeQuantity(product.id)}
-                                            </span>
-                                        </td>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left min-w-[800px]">
+                                <thead className="bg-white/5 border-b border-white/10 font-bold text-xs uppercase text-slate-400">
+                                    <tr>
+                                        <th className="px-6 py-4">Ações</th>
+                                        <th className="px-6 py-4">Produto</th>
+                                        <th className="px-6 py-4">Categoria</th>
+                                        <th className="px-6 py-4">Localização</th>
+                                        <th className="px-6 py-4 text-center">Estoque</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {filteredProducts.map((product) => (
+                                        <tr key={product.id} className="hover:bg-white/5 transition-colors group">
+                                            <td className="px-6 py-4 text-left">
+                                                <div className="flex justify-start gap-2">
+                                                    <button onClick={() => openStockModal(product, 'IN')} className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-lg transition-all" title="Entrada"><span className="material-symbols-outlined text-[18px]">add</span></button>
+                                                    <button onClick={() => openStockModal(product, 'OUT')} className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg transition-all" title="Saída"><span className="material-symbols-outlined text-[18px]">remove</span></button>
+                                                    <button onClick={() => openStockModal(product, 'ADJUST')} className="p-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 rounded-lg transition-all" title="Ajuste"><span className="material-symbols-outlined text-[18px]">tune</span></button>
+                                                    <button onClick={() => {
+                                                        setSelectedProduct(product);
+                                                        setIsProductModalOpen(true);
+                                                    }} className="p-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-lg transition-all" title="Editar Produto"><span className="material-symbols-outlined text-[18px]">edit</span></button>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden border border-white/10 shrink-0">
+                                                    {product.image ? (
+                                                        <img src={product.image} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <span className="material-symbols-outlined text-slate-600">inventory_2</span>
+                                                    )}
+                                                </div>
+                                                <span className="font-bold text-white">{product.name}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-slate-400">{product.category}</td>
+                                            <td className="px-6 py-4">
+                                                {product.storage_location ? (
+                                                    <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded font-bold uppercase tracking-wider">{product.storage_location}</span>
+                                                ) : (
+                                                    <span className="text-slate-600">-</span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <span className={`font-mono font-bold ${computeQuantity(product.id) > 0 ? 'text-emerald-500' : 'text-slate-500'}`}>
+                                                    {computeQuantity(product.id)}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 )}
             </main>

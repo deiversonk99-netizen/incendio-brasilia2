@@ -57,7 +57,7 @@ const ProjectsView: React.FC = () => {
   return (
     <>
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <div className="flex-none bg-background-dark border-b border-[#46252c] p-6 pb-4">
+        <div className="flex-none bg-background-dark border-b border-[#46252c] p-4 md:p-6 pb-4">
           <div className="max-w-[1600px] mx-auto w-full">
             <PageHeader
               title="Pipeline de Projetos"
@@ -65,7 +65,7 @@ const ProjectsView: React.FC = () => {
               actions={
                 <button
                   onClick={() => setIsModalOpen(true)}
-                  className="flex items-center gap-2 rounded-lg bg-primary px-4 h-10 text-white font-bold shadow-lg shadow-red-900/20 transition-all hover:bg-primary-dark"
+                  className="flex items-center justify-center w-full md:w-auto gap-2 rounded-lg bg-primary px-4 h-10 text-white font-bold shadow-lg shadow-red-900/20 transition-all hover:bg-primary-dark"
                 >
                   <span className="material-symbols-outlined">add</span>
                   <span>Novo Projeto</span>
@@ -73,7 +73,7 @@ const ProjectsView: React.FC = () => {
               }
             />
 
-            <div className="flex gap-2 overflow-x-auto pb-4 mt-6">
+            <div className="flex gap-2 overflow-x-auto pb-4 mt-6 custom-scrollbar">
               <button className="flex h-9 shrink-0 items-center gap-2 rounded-full bg-primary/20 border border-primary/30 px-4 text-white text-sm font-medium">
                 <span className="material-symbols-outlined text-[18px]">groups</span>
                 Todos os Clientes
@@ -87,7 +87,7 @@ const ProjectsView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-x-auto overflow-y-hidden p-6 bg-surface-dark">
+        <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 md:p-6 bg-surface-dark">
           <div className="flex h-full gap-6 min-w-[1200px]">
             {columns.map(col => (
               <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full">

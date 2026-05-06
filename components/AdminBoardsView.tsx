@@ -192,18 +192,18 @@ const AdminBoardsView: React.FC = () => {
 
     return (
         <div className="flex-1 flex flex-col h-full bg-background-dark overflow-hidden">
-            <header className="px-8 py-8 border-b border-white/5 bg-background-dark/40 backdrop-blur-md">
-                <div className="flex items-center justify-between">
+            <header className="px-4 md:px-8 py-6 md:py-8 border-b border-white/5 bg-background-dark/40 backdrop-blur-md">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h2 className="text-3xl font-black text-white flex items-center gap-3">
-                            <span className="material-symbols-outlined text-primary text-4xl">admin_panel_settings</span>
+                        <h2 className="text-2xl md:text-3xl font-black text-white flex items-center gap-3">
+                            <span className="material-symbols-outlined text-primary text-3xl md:text-4xl">admin_panel_settings</span>
                             Gerenciamento Central de Quadros
                         </h2>
-                        <p className="text-slate-400 mt-2 font-medium">Controle total sobre os espaços de trabalho de todos os usuários</p>
+                        <p className="text-sm md:text-base text-slate-400 mt-2 font-medium">Controle total sobre os espaços de trabalho de todos os usuários</p>
                     </div>
                     <button
                         onClick={() => setIsModalOpen(true)}
-                        className="px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-black uppercase tracking-widest transition-all shadow-xl shadow-primary/20 flex items-center gap-2"
+                        className="w-full md:w-auto px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-black uppercase tracking-widest transition-all shadow-xl shadow-primary/20 flex items-center justify-center md:justify-start gap-2"
                     >
                         <span className="material-symbols-outlined">add_circle</span>
                         Criar Quadro para Usuário
@@ -211,7 +211,7 @@ const AdminBoardsView: React.FC = () => {
                 </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-8">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6">
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-64 gap-4">
                         <div className="size-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -271,7 +271,7 @@ const AdminBoardsView: React.FC = () => {
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                     <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
-                        <form onSubmit={createBoard} className="p-8 space-y-6">
+                        <form onSubmit={createBoard} className="p-6 md:p-8 space-y-6">
                             <div className="flex justify-between items-center mb-2">
                                 <h3 className="text-xl font-bold text-white">Novo Quadro</h3>
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-white">
