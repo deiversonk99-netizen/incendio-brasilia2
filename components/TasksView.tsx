@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,21 +10,19 @@ const SYNC_BOARD_ID = 'central-sync';
 // ============================================================
 // TASK SYNC LOGIC (inlined from lib/taskSync.ts)
 // ============================================================
-const syncExpiredRenewals = async (supabaseClient: SupabaseClient, userId: string): Promise<boolean> => {
+const syncExpiredRenewals = async (supabase: SupabaseClient, userId: string): Promise<boolean> => {
     if (!userId) return false;
 
     const today = new Date().toISOString().split('T')[0];
     let hasChanges = false;
 
-    // 1. Fetch expired manual renewals that haven't created a task yet
-    const { data: expiredManuals } = await supabaseClient
+    const { data: expiredManuals } = await supabase
         .from('contract_renewals')
         .select('*, projects(name), clients(name)')
         .lte('end_date', today)
         .eq('task_created', false);
 
-    // 2. Fetch expired annual tasks that haven't created a task yet
-    const { data: expiredTasks } = await supabaseClient
+    const { data: expiredTasks } = await supabase
         .from('tasks')
         .select('*, projects(name)')
         .eq('is_annual', true)
@@ -36,8 +33,7 @@ const syncExpiredRenewals = async (supabaseClient: SupabaseClient, userId: strin
         return false;
     }
 
-    // 3. Pre-fetch ALL existing renewal task titles to prevent any duplicates
-    const { data: existingRenewalTasks } = await supabaseClient
+    const { data: existingRenewalTasks } = await supabase
         .from('tasks')
         .select('title')
         .or('title.ilike.[RENOVAÇÃO]%,title.ilike.[RENOVAÇÃO ANUAL]%');
@@ -46,67 +42,43 @@ const syncExpiredRenewals = async (supabaseClient: SupabaseClient, userId: strin
         (existingRenewalTasks || []).map(t => t.title.trim().toLowerCase())
     );
 
-    // 4. Helper to find the "Pendentes" group for a user
     const userGroupCache: Record<string, string | null> = {};
 
     const getGroupForUser = async (targetUserId: string) => {
         if (userGroupCache[targetUserId] !== undefined) return userGroupCache[targetUserId];
-
-        // Strategy A: Find boards owned by this user
-        const { data: boards } = await supabaseClient.from('task_boards').select('id').eq('user_id', targetUserId);
+        const { data: boards } = await supabase.from('task_boards').select('id').eq('user_id', targetUserId);
         if (boards && boards.length > 0) {
             const boardIds = boards.map(b => b.id);
-            const { data: groups } = await supabaseClient.from('task_groups')
-                .select('id')
-                .in('board_id', boardIds)
-                .ilike('name', '%Pendente%')
-                .limit(1);
+            const { data: groups } = await supabase.from('task_groups').select('id').in('board_id', boardIds).ilike('name', '%Pendente%').limit(1);
             if (groups && groups.length > 0) {
                 userGroupCache[targetUserId] = groups[0].id;
                 return groups[0].id;
             }
-            
-            // If no "Pendente" group found on user board, take the first group of any board they own
-            const { data: anyGroup } = await supabaseClient.from('task_groups')
-                .select('id')
-                .in('board_id', boardIds)
-                .limit(1);
+            const { data: anyGroup } = await supabase.from('task_groups').select('id').in('board_id', boardIds).limit(1);
             if (anyGroup && anyGroup.length > 0) {
                 userGroupCache[targetUserId] = anyGroup[0].id;
                 return anyGroup[0].id;
             }
         }
-
-        // Strategy B: Fallback to any "Pendentes" group in the system
-        const { data: fallbackGroup } = await supabaseClient.from('task_groups')
-            .select('id')
-            .ilike('name', '%Pendente%')
-            .limit(1)
-            .maybeSingle();
-            
-        userGroupCache[targetUserId] = fallbackGroup?.id || null;
-        return userGroupCache[targetUserId];
+        userGroupCache[targetUserId] = null;
+        return null;
     };
 
-    // 5. Process Manual Renewals
+    // Process Manual Renewals
     for (const manual of (expiredManuals || [])) {
         const targetUserId = manual.user_id || userId;
         const groupId = await getGroupForUser(targetUserId);
 
-        // SAFETY: Never create a task without a valid group
         if (!groupId) continue;
 
         const title = `[RENOVAÇÃO] ${manual.projects?.name || manual.clients?.name || 'Cliente Avulso'}`;
 
-        // DEDUPLICATION: Skip if a task with this exact title already exists
         if (existingTitles.has(title.trim().toLowerCase())) {
-            // Still mark as claimed so it doesn't keep trying
-            await supabaseClient.from('contract_renewals').update({ task_created: true }).eq('id', manual.id);
+            await supabase.from('contract_renewals').update({ task_created: true }).eq('id', manual.id);
             continue;
         }
 
-        // ATOMIC CLAIM: Try to reserve this renewal for task creation
-        const { data: claimed, error: claimError } = await supabaseClient
+        const { data: claimed, error: claimError } = await supabase
             .from('contract_renewals')
             .update({ task_created: true })
             .eq('id', manual.id)
@@ -114,12 +86,11 @@ const syncExpiredRenewals = async (supabaseClient: SupabaseClient, userId: strin
             .select()
             .single();
 
-        // If another session already claimed it, skip
         if (!claimed || claimError) continue;
 
         const description = `Contrato vencido em ${new Date(manual.end_date).toLocaleDateString('pt-BR')}.\nValor: R$ ${manual.value?.toLocaleString('pt-BR')}\nNotas: ${manual.notes || ''}`;
 
-        const { error: insertError } = await supabaseClient.from('tasks').insert({
+        const { error: insertError } = await supabase.from('tasks').insert({
             title,
             description,
             group_id: groupId,
@@ -127,39 +98,33 @@ const syncExpiredRenewals = async (supabaseClient: SupabaseClient, userId: strin
             project_id: manual.project_id,
             status: 'PENDING',
             priority: 'HIGH',
-            task_created: true // Mark the generated task itself so it's never reprocessed
+            task_created: true
         });
 
         if (insertError) {
-            // Rollback the claim so it can be attempted again later
-            await supabaseClient.from('contract_renewals').update({ task_created: false }).eq('id', manual.id);
+            await supabase.from('contract_renewals').update({ task_created: false }).eq('id', manual.id);
             console.error('Failed to create synced task for renewal:', insertError);
         } else {
-            // Add to our local set to prevent duplicates within the same sync run
             existingTitles.add(title.trim().toLowerCase());
             hasChanges = true;
         }
     }
 
-    // 6. Process Annual Tasks
+    // Process Annual Tasks
     for (const task of (expiredTasks || [])) {
         const targetUserId = task.user_id || userId;
         const groupId = await getGroupForUser(targetUserId);
 
-        // SAFETY: Never create a task without a valid group
         if (!groupId) continue;
 
         const title = `[RENOVAÇÃO ANUAL] ${task.title}`;
 
-        // DEDUPLICATION: Skip if a task with this exact title already exists
         if (existingTitles.has(title.trim().toLowerCase())) {
-            // Still mark as claimed so it doesn't keep trying
-            await supabaseClient.from('tasks').update({ task_created: true }).eq('id', task.id);
+            await supabase.from('tasks').update({ task_created: true }).eq('id', task.id);
             continue;
         }
 
-        // ATOMIC CLAIM: Try to reserve this task for creation
-        const { data: claimed, error: claimError } = await supabaseClient
+        const { data: claimed, error: claimError } = await supabase
             .from('tasks')
             .update({ task_created: true })
             .eq('id', task.id)
@@ -167,12 +132,11 @@ const syncExpiredRenewals = async (supabaseClient: SupabaseClient, userId: strin
             .select()
             .single();
 
-        // If another session already claimed it, skip
         if (!claimed || claimError) continue;
 
         const description = `Tarefa anual vencida em ${new Date(task.expiration_date).toLocaleDateString('pt-BR')}.\nOriginal: ${task.description || ''}`;
 
-        const { error: insertError } = await supabaseClient.from('tasks').insert({
+        const { error: insertError } = await supabase.from('tasks').insert({
             title,
             description,
             group_id: groupId,
@@ -180,12 +144,11 @@ const syncExpiredRenewals = async (supabaseClient: SupabaseClient, userId: strin
             project_id: task.project_id,
             status: 'PENDING',
             priority: 'HIGH',
-            task_created: true // Mark the generated task itself so it's never reprocessed
+            task_created: true
         });
 
         if (insertError) {
-            // Rollback the claim so it can be attempted again later
-            await supabaseClient.from('tasks').update({ task_created: false }).eq('id', task.id);
+            await supabase.from('tasks').update({ task_created: false }).eq('id', task.id);
             console.error('Failed to create synced task for annual task:', insertError);
         } else {
             existingTitles.add(title.trim().toLowerCase());
@@ -238,7 +201,7 @@ interface TasksViewProps {
 }
 
 // ============================================================
-// NEW TASK MODAL (inlined from NewTaskModal.tsx)
+// NEW TASK MODAL
 // ============================================================
 interface NewTaskModalProps {
     isOpen: boolean;
@@ -296,9 +259,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 setIsAnnual(taskToEdit.is_annual || false);
                 setExpirationDate(taskToEdit.expiration_date || '');
                 setAssignee(taskToEdit.assignee || '');
-                if (taskToEdit.id) {
-                    fetchChecklist(taskToEdit.id);
-                }
+                if (taskToEdit.id) fetchChecklist(taskToEdit.id);
             } else {
                 setTitle('');
                 setDescription('');
@@ -352,7 +313,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             supabase.from('proposals').select('project_id'),
             supabase.from('user_profiles').select('id, email, professional_title')
         ]);
-        if (uData) { setUsers(uData); }
+        if (uData) setUsers(uData);
         if (pData) {
             const linkedProjectIds = new Set([
                 ...(fData || []).map(f => f.project_id),
@@ -379,9 +340,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                     const boardOwnerId = Array.isArray(g.task_boards)
                         ? g.task_boards[0]?.user_id
                         : g.task_boards?.user_id;
-                    if (boardOwnerId && boardOwnerId !== user?.id) {
-                        return false;
-                    }
+                    if (boardOwnerId && boardOwnerId !== user?.id) return false;
                 }
                 if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
                 const key = `GROUP_${g.id}`;
@@ -396,9 +355,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             }
             if (!groupId && !taskToEdit && accessibleGroups.length > 0) {
                 const hasDefault = accessibleGroups.some((g: any) => g.id === defaultGroupId);
-                if (!hasDefault) {
-                    setGroupId(accessibleGroups[0].id);
-                }
+                if (!hasDefault) setGroupId(accessibleGroups[0].id);
             }
         }
     };
@@ -406,14 +363,13 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
     const handleUpload = async (uploadFile: File) => {
         const fileExt = uploadFile.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
-        const filePath = `${fileName}`;
         const { error: uploadError } = await supabase.storage
             .from('task-attachments')
-            .upload(filePath, uploadFile);
-        if (uploadError) { throw uploadError; }
+            .upload(fileName, uploadFile);
+        if (uploadError) throw uploadError;
         const { data: { publicUrl } } = supabase.storage
             .from('task-attachments')
-            .getPublicUrl(filePath);
+            .getPublicUrl(fileName);
         return publicUrl;
     };
 
@@ -426,7 +382,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
         setLoading(true);
         try {
             let fileUrl = '';
-            if (file) { fileUrl = await handleUpload(file); }
+            if (file) fileUrl = await handleUpload(file);
             let targetUserId = user?.id;
             if (!taskToEdit && groupId) {
                 const selectedGroup = groups.find(g => g.id === groupId);
@@ -434,7 +390,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                     const boardOwnerId = Array.isArray(selectedGroup.task_boards)
                         ? selectedGroup.task_boards[0]?.user_id
                         : (selectedGroup.task_boards as any)?.user_id;
-                    if (boardOwnerId) { targetUserId = boardOwnerId; }
+                    if (boardOwnerId) targetUserId = boardOwnerId;
                 }
             }
             const payload = {
@@ -456,11 +412,10 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 const deleteQuery = supabase.from('task_checklist_items').delete().eq('task_id', taskData.id);
                 if (currentIds.length > 0) {
                     await deleteQuery.not('id', 'in', `(${currentIds.join(',')})`);
-                } else { await deleteQuery; }
-                const itemsToUpsert = checklistItems.map(item => ({
-                    id: item.id, task_id: taskData.id, content: item.content, is_completed: item.is_completed
-                }));
-                for (const item of itemsToUpsert) {
+                } else {
+                    await deleteQuery;
+                }
+                for (const item of checklistItems) {
                     if (item.id) {
                         await supabase.from('task_checklist_items').update({ content: item.content, is_completed: item.is_completed }).eq('id', item.id);
                     } else {
@@ -468,12 +423,15 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                     }
                 }
             }
-            onSuccess(); onClose();
+            onSuccess();
+            onClose();
             setTitle(''); setDescription(''); setAssignee(''); setFile(null);
         } catch (error: any) {
             console.error('Error creating task:', error);
             alert('Erro ao criar tarefa: ' + (error.message || 'Erro desconhecido.'));
-        } finally { setLoading(false); }
+        } finally {
+            setLoading(false);
+        }
     };
 
     if (!isOpen) return null;
@@ -569,13 +527,11 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                             </div>
                         </div>
                     </div>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Prazo de Entrega / Vencimento</label>
-                            <div className="relative group">
-                                <input type="date" className="w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 outline-none text-sm transition-all" value={expirationDate} onChange={e => setExpirationDate(e.target.value)} />
-                                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none">event</span>
-                            </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Prazo de Entrega / Vencimento</label>
+                        <div className="relative group">
+                            <input type="date" className="w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 outline-none text-sm transition-all" value={expirationDate} onChange={e => setExpirationDate(e.target.value)} />
+                            <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none">event</span>
                         </div>
                     </div>
                     <div className="bg-primary/5 p-5 rounded-2xl border border-primary/20 shadow-xl shadow-black/20">
@@ -659,7 +615,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const [openMenuTaskId, setOpenMenuTaskId] = useState<string | null>(null);
   const fetchDataRef = useRef<() => Promise<void>>(null as any);
 
-  // Add Board Modal State
   const [isAddBoardModalOpen, setIsAddBoardModalOpen] = useState(false);
   const [newBoardName, setNewBoardName] = useState('');
   const [newBoardUserId, setNewBoardUserId] = useState('');
@@ -673,42 +628,35 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  const fetchData = async () => {
-    // Update ref to current version of fetchData
-    fetchDataRef.current = fetchData;
+  // FIX Bug 1 & 2: fetchData como useCallback com dependências corretas, sem depender do state `users`
+  const fetchData = useCallback(async () => {
     setLoading(true);
 
-    let currentUsers = users;
-    if (isCentral && users.length === 0) {
-      const { data: uData } = await supabase.from('user_profiles').select('id, email, professional_title');
+    // FIX Bug 1: Sempre busca usuários frescos do banco — nunca usa closure stale
+    let currentUsers: any[] = [];
+    if (isCentral) {
+      const { data: uData } = await supabase
+        .from('user_profiles')
+        .select('id, email, professional_title');
       if (uData) {
-        setUsers(uData);
         currentUsers = uData;
+        setUsers(uData);
       }
     }
 
     // 1. Fetch Boards
-    let boardsQuery = supabase
+    const { data: boardsData } = await supabase
       .from('task_boards')
       .select('*')
       .order('name');
 
-    const { data: boardsData } = await boardsQuery;
-
     if (boardsData) {
       let allowedBoards = boardsData.filter(b => {
         if (isTeamMonitoring && isCentral) return true;
-
-        // Regular users only see visible boards they own
-        if (b.user_id === user?.id) {
-          return b.is_visible !== false;
-        }
-
-        // Check explicitly granted permissions
+        if (b.user_id === user?.id) return b.is_visible !== false;
         const permKey = `BOARD_${b.id}`;
         return profile?.permissions && profile.permissions[permKey] === true;
       }).map(b => {
-        // Append user identification to board name if we are in Team Monitoring
         if (isTeamMonitoring && isCentral && b.user_id) {
           const owner = currentUsers.find(u => u.id === b.user_id);
           if (owner) {
@@ -719,14 +667,11 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       });
 
       if (isTeamMonitoring) {
-        // In team monitoring, we add the Sync Board as a virtual option
         const syncBoardOption = {
           id: SYNC_BOARD_ID,
           name: '🔄 Quadro Geral (Pendências)',
           user_id: undefined
         };
-        
-        // If central, they see ALL boards + sync board
         setBoards([syncBoardOption, ...allowedBoards]);
 
         if (!selectedBoardId) {
@@ -735,9 +680,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           return;
         }
       } else {
-        // Aba "Minhas Tarefas" Pessoal
         setBoards(allowedBoards);
-
         if (!selectedBoardId && allowedBoards.length > 0) {
           setSelectedBoardId(allowedBoards[0].id);
           setLoading(false);
@@ -753,15 +696,14 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
     // Special Sync Board Handling
     if (selectedBoardId === SYNC_BOARD_ID) {
-      // First get visible board IDs
+      // FIX Bug 3: Usar lógica consistente com allowedBoards (is_visible !== false)
       const { data: visibleBoards } = await supabase
         .from('task_boards')
         .select('id')
-        .eq('is_visible', true);
+        .or('is_visible.eq.true,is_visible.is.null');
 
       const visibleBoardIds = visibleBoards?.map(b => b.id) || [];
 
-      // Get groups belonging to these boards
       const { data: visibleGroups } = await supabase
         .from('task_groups')
         .select('id')
@@ -779,19 +721,12 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       const [{ data: syncData }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
         supabase
           .from('tasks')
-          .select(`
-            *, 
-            projects(name)
-          `)
+          .select('*, projects(name)')
           .eq('status', 'PENDING')
           .in('group_id', visibleGroupIds)
           .order('created_at', { ascending: false }),
-        supabase
-          .from('user_profiles')
-          .select('id, email'),
-        supabase
-          .from('task_checklist_items')
-          .select('task_id, is_completed')
+        supabase.from('user_profiles').select('id, email'),
+        supabase.from('task_checklist_items').select('task_id, is_completed')
       ]);
 
       if (syncData) {
@@ -799,7 +734,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           const taskChecklist = checklistsData?.filter((c: any) => c.task_id === t.id) || [];
           const completedCount = taskChecklist.filter((c: any) => c.is_completed).length;
           const totalCount = taskChecklist.length;
-
           return {
             ...t,
             user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
@@ -810,18 +744,14 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         });
         setTasks(enrichedSyncData);
 
-        // Group by user
-        const uniqueUserIds = Array.from(new Set(enrichedSyncData.map((t: any) => t.user_id)));
-        
-        // Vibrant palette for different team members
+        // FIX Bug 4: Filtrar tarefas sem user_id antes de criar grupos
+        const uniqueUserIds = Array.from(
+          new Set(enrichedSyncData.filter((t: any) => !!t.user_id).map((t: any) => t.user_id))
+        );
+
         const colorPalette = [
-            'bg-emerald-500', 
-            'bg-purple-500', 
-            'bg-amber-500', 
-            'bg-sky-500', 
-            'bg-rose-500', 
-            'bg-indigo-500', 
-            'bg-orange-500'
+          'bg-emerald-500', 'bg-purple-500', 'bg-amber-500',
+          'bg-sky-500', 'bg-rose-500', 'bg-indigo-500', 'bg-orange-500'
         ];
 
         const userGroups = uniqueUserIds.map((uId, idx) => ({
@@ -847,24 +777,16 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       .order('order_index', { ascending: true });
 
     if (groupsData) {
-      // Filter accessible groups
       const accessibleGroups = groupsData.filter(g => {
         if (!profile) return true;
-
         const key = `GROUP_${g.id}`;
-
-        // Explicit permissions override role check
         if (profile.permissions && profile.permissions[key] !== undefined) {
           return profile.permissions[key] === true;
         }
-
         if (isCentral) return true;
         if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
-
-        // Default: Visible
         return true;
       });
-
       setGroups(accessibleGroups);
     }
 
@@ -872,17 +794,9 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     const groupIds = groupsData?.map(g => g.id) || [];
 
     const [{ data: tasksData, error: tasksError }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
-      supabase
-        .from('tasks')
-        .select('*, projects(name)')
-        .in('group_id', groupIds)
-        .order('order_index', { ascending: true }),
-      supabase
-        .from('user_profiles')
-        .select('id, email'),
-      supabase
-        .from('task_checklist_items')
-        .select('task_id, is_completed')
+      supabase.from('tasks').select('*, projects(name)').in('group_id', groupIds).order('order_index', { ascending: true }),
+      supabase.from('user_profiles').select('id, email'),
+      supabase.from('task_checklist_items').select('task_id, is_completed')
     ]);
 
     if (tasksError) console.error('Tasks Fetch Error:', tasksError);
@@ -892,7 +806,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         const taskChecklist = checklistsData?.filter((c: any) => c.task_id === t.id) || [];
         const completedCount = taskChecklist.filter((c: any) => c.is_completed).length;
         const totalCount = taskChecklist.length;
-
         return {
           ...t,
           user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
@@ -905,66 +818,73 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     }
 
     setLoading(false);
-  };
+  }, [user?.id, selectedBoardId, isCentral, profile, isTeamMonitoring]);
 
+  // FIX Bug 6: Separar o real-time subscription do effect de dados
+  // Effect 1: Real-time — monta uma única vez, nunca recria o canal
   useEffect(() => {
     if (!user) return;
 
-    const init = async () => {
-      // Sync expired renewals/annual tasks into the system
-      const hasChanges = await syncExpiredRenewals(supabase, user.id);
-      
-      // Fetch initial data
-      await fetchData();
-    };
-
-    init();
-
-    // Set up real-time subscriptions with ref to avoid stale closure
     const channel = supabase.channel('tasks-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        if (fetchDataRef.current) fetchDataRef.current();
+        fetchDataRef.current?.();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_groups' }, () => {
-        if (fetchDataRef.current) fetchDataRef.current();
+        fetchDataRef.current?.();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_boards' }, () => {
-        if (fetchDataRef.current) fetchDataRef.current();
+        fetchDataRef.current?.();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, selectedBoardId]);
+  }, [user?.id]); // ← apenas user.id, não selectedBoardId
 
+  // Effect 2: Dados — roda quando board muda ou fetchData muda
+  useEffect(() => {
+    if (!user) return;
+
+    // Atualiza a ref sempre que fetchData for recriado
+    fetchDataRef.current = fetchData;
+
+    const init = async () => {
+      await syncExpiredRenewals(supabase, user.id);
+      await fetchData();
+    };
+
+    init();
+  }, [user?.id, selectedBoardId, fetchData]);
 
   const handleConvertToProject = async (task: Task) => {
     if (!confirm(`Deseja converter a tarefa "${task.title}" em um novo Projeto?`)) return;
-
     try {
-      const { data: newProject, error } = await supabase.from('projects').insert({
+      // Find client name from linked project or use default
+      let clientName = 'Indefinido (Via Tarefa)';
+      if (task.project_id) {
+        const { data: p } = await supabase.from('projects').select('client').eq('id', task.project_id).single();
+        if (p?.client) clientName = p.client;
+      }
+
+      const { error } = await supabase.from('projects').insert({
         name: task.title,
         status: 'ANALYSIS',
-        client: 'Indefinido (Via Tarefa)',
-        type: 'business', // Default
+        client: clientName,
+        type: 'business',
         value: 0,
         deadline: new Date().toISOString().split('T')[0],
         internal_observations: `Convertido da tarefa: ${task.description || ''}`,
         created_at: new Date().toISOString(),
         user_id: user?.id
-      }).select().single();
-
+      });
       if (error) throw error;
 
+      // Mark as completed
+      await supabase.from('tasks').update({ status: 'COMPLETED' }).eq('id', task.id);
+      
       alert('Projeto criado com sucesso! Status: Em Análise.');
-
-      // Optional: Delete the task or move it? 
-      // User said "move to Em Análise na Gestão de Projetos". 
-      // The task itself could be deleted or kept as reference. 
-      // Let's keep it but maybe mark it? Or just delete it?
-      // I'll leave it for now to avoid data loss.
-
+      fetchData();
     } catch (error: any) {
       console.error('Error converting to project:', error);
       alert('Erro ao converter: ' + error.message);
@@ -972,7 +892,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   };
 
   const handleUpdateTaskGroup = async (taskId: string, groupId: string) => {
-    // Optimistic
     setTasks((prev: Task[]) => prev.map((t: Task) => t.id === taskId ? { ...t, group_id: groupId } : t));
     await supabase.from('tasks').update({ group_id: groupId }).eq('id', taskId);
   };
@@ -987,23 +906,18 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     const isNowCompleted = !isCurrentlyDone;
     const newStatus = isNowCompleted ? 'DONE' : 'PENDING';
 
-    // Optimistic Update
-    setTasks((prev: Task[]) => prev.map((t: Task) => 
+    setTasks((prev: Task[]) => prev.map((t: Task) =>
       t.id === task.id ? { ...t, completed: isNowCompleted, status: newStatus } : t
     ));
 
     const { error } = await supabase
       .from('tasks')
-      .update({ 
-        completed: isNowCompleted, 
-        status: newStatus 
-      })
+      .update({ completed: isNowCompleted, status: newStatus })
       .eq('id', task.id);
 
     if (error) {
       console.error('Error toggling completion:', error);
-      // Revert if error
-      setTasks((prev: Task[]) => prev.map((t: Task) => 
+      setTasks((prev: Task[]) => prev.map((t: Task) =>
         t.id === task.id ? { ...t, completed: !isNowCompleted, status: isCurrentlyDone ? 'DONE' : task.status } : t
       ));
     }
@@ -1026,7 +940,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     const group = groups.find((g: TaskGroup) => g.id === groupId);
     const newName = prompt('Novo nome do grupo:', group?.name);
     if (!newName || newName === group?.name) return;
-
     setGroups((prev: TaskGroup[]) => prev.map((g: TaskGroup) => g.id === groupId ? { ...g, name: newName } : g));
     await supabase.from('task_groups').update({ name: newName }).eq('id', groupId);
   };
@@ -1036,7 +949,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     const board = boards.find((b: TaskBoard) => b.id === selectedBoardId);
     const newName = prompt('Novo nome do quadro:', board?.name);
     if (!newName || newName === board?.name) return;
-
     setBoards((prev: TaskBoard[]) => prev.map((b: TaskBoard) => b.id === selectedBoardId ? { ...b, name: newName } : b));
     await supabase.from('task_boards').update({ name: newName }).eq('id', selectedBoardId);
   };
@@ -1044,12 +956,10 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const handleDeleteBoard = async () => {
     if (!selectedBoardId || selectedBoardId === SYNC_BOARD_ID) return;
     if (!confirm('Deseja excluir este QUADRO INTEIRO? Esta ação não pode ser desfeita.')) return;
-
     setLoading(true);
     await supabase.from('tasks').delete().in('group_id', groups.map((g: TaskGroup) => g.id));
     await supabase.from('task_groups').delete().eq('board_id', selectedBoardId);
     await supabase.from('task_boards').delete().eq('id', selectedBoardId);
-
     setBoards((prev: TaskBoard[]) => prev.filter((b: TaskBoard) => b.id !== selectedBoardId));
     setSelectedBoardId('');
     setLoading(false);
@@ -1058,35 +968,17 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const handleReorderTask = async (taskId: string, targetGroupId: string, targetIndex: number) => {
     const taskToMove = tasks.find((t: Task) => t.id === taskId);
     if (!taskToMove) return;
-
     const otherTasks = tasks.filter((t: Task) => t.id !== taskId);
-
-    // Add to the new group at specific index
     const groupTasks = otherTasks.filter((t: Task) => t.group_id === targetGroupId);
     groupTasks.splice(targetIndex, 0, { ...taskToMove, group_id: targetGroupId });
-
-    // Update indexes for all in this group
     const updatedGroupTasks = groupTasks.map((t: Task, idx: number) => ({ ...t, order_index: idx }));
-
     const finalTasks = [
       ...otherTasks.filter((t: Task) => t.group_id !== targetGroupId),
       ...updatedGroupTasks
     ];
-
     setTasks(finalTasks as any);
-
-    // Persist to Supabase
-    const { error } = await supabase.from('tasks').update({
-      group_id: targetGroupId,
-      order_index: targetIndex
-    }).eq('id', taskId);
-
-    if (error) {
-      console.error('Swap error:', error);
-      return;
-    }
-
-    // Ensure database consistency
+    const { error } = await supabase.from('tasks').update({ group_id: targetGroupId, order_index: targetIndex }).eq('id', taskId);
+    if (error) { console.error('Swap error:', error); return; }
     const updates = updatedGroupTasks.map((t, idx) =>
       supabase.from('tasks').update({ order_index: idx }).eq('id', t.id)
     );
@@ -1097,7 +989,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     if (!selectedBoardId || selectedBoardId === SYNC_BOARD_ID) return;
     const name = prompt('Nome do novo grupo:');
     if (!name) return;
-
     try {
       const { data, error } = await supabase.from('task_groups').insert({
         name,
@@ -1106,7 +997,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         board_id: selectedBoardId,
         user_id: user?.id
       }).select().single();
-
       if (error) throw error;
       if (data) setGroups([...groups, data]);
     } catch (error: any) {
@@ -1115,26 +1005,29 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     }
   };
 
-  const handleAddBoardClick = () => {
+  // FIX Bug 7: Busca usuários frescos ao abrir o modal de criar quadro
+  const handleAddBoardClick = async () => {
     setIsAddBoardModalOpen(true);
     setNewBoardName('');
     setNewBoardUserId('');
+    if (isCentral) {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('id, email, professional_title');
+      if (data) setUsers(data);
+    }
   };
 
   const handleCreateBoardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBoardName) return;
-
     try {
       const { data: boardData, error: boardError } = await supabase.from('task_boards').insert({
         name: newBoardName,
         user_id: newBoardUserId || user?.id
       }).select().single();
-
       if (boardError) throw boardError;
-
       if (boardData) {
-        // Create a default column for the new board
         await supabase.from('task_groups').insert({
           name: 'Pendentes',
           color: 'bg-primary',
@@ -1142,7 +1035,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           board_id: boardData.id,
           user_id: newBoardUserId || user?.id
         });
-
         setBoards([...boards, boardData]);
         setSelectedBoardId(boardData.id);
         setIsAddBoardModalOpen(false);
@@ -1153,12 +1045,12 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     }
   };
 
-  const filteredTasks = tasks.filter((t: Task) => {
-    const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.projects?.name?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    return matchesSearch;
-  });
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((t: Task) =>
+      t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.projects?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [tasks, searchTerm]);
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -1187,7 +1079,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                   </select>
                   <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[14px] text-primary/60 pointer-events-none group-hover:text-primary transition-colors">expand_more</span>
                 </div>
-
                 <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
                   {isTeamMonitoring ? 'Visão global e por membro da equipe' : 'Controle de seus fluxos e processos'}
@@ -1195,10 +1086,8 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                <div className="relative group">
-                  <div className="bg-white/5 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 uppercase tracking-widest max-w-[300px] truncate">
-                    {boards.find((b: TaskBoard) => b.id === selectedBoardId)?.name || 'MEU QUADRO'}
-                  </div>
+                <div className="bg-white/5 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 uppercase tracking-widest max-w-[300px] truncate">
+                  {boards.find((b: TaskBoard) => b.id === selectedBoardId)?.name || 'MEU QUADRO'}
                 </div>
                 <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
@@ -1209,8 +1098,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
-
-            {/* View Controls */}
             <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
               <button
                 onClick={() => setIsCompact(!isCompact)}
@@ -1221,7 +1108,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
               </button>
             </div>
 
-            {/* Search & Action */}
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto">
               <div className="relative group w-full sm:w-auto flex-1">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 group-focus-within:text-primary transition-colors">search</span>
@@ -1247,17 +1133,16 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       </header>
 
       <div className="flex-1 overflow-x-auto p-4 md:p-6 z-10">
-        {/* Info Banner for Central Admin */}
         {isCentral && (
           <div className="mb-6 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex gap-3 text-sm text-blue-300">
             <span className="material-symbols-outlined text-blue-400 shrink-0">info</span>
             <div className="flex flex-col gap-2">
               <p className="font-bold text-blue-400 mb-1">Guia de Gestão de Tarefas (Admin Central)</p>
               <ul className="list-disc pl-5 space-y-1 text-xs opacity-90">
-                <li><strong className="text-blue-300 pointer-events-none">Aba de Tarefas Pessoais:</strong> Cada usuário visualiza apenas seus próprios quadros. Se o usuário não possuir nenhum, uma mensagem orienta o contato com a administração.</li>
-                <li><strong className="text-blue-300 pointer-events-none">Monitoramento da Equipe:</strong> Gestores podem alternar entre a visão de qualquer usuário. O "Quadro Geral (Pendências)" exibe as tarefas de todos agrupadas.</li>
-                <li><strong className="text-blue-300 pointer-events-none">Gerenciamento de Quadros:</strong> Localizado no menu lateral, permite criar, excluir, alternar visibilidade e renomear quadros da equipe.</li>
-                <li><strong className="text-blue-300 pointer-events-none">Automação de Renovações:</strong> Renovações expiradas ou no prazo se convertem automaticamente em tarefas no quadro de quem as gerou, sem duplicidade.</li>
+                <li><strong className="text-blue-300">Aba de Tarefas Pessoais:</strong> Cada usuário visualiza apenas seus próprios quadros.</li>
+                <li><strong className="text-blue-300">Monitoramento da Equipe:</strong> Gestores podem alternar entre a visão de qualquer usuário.</li>
+                <li><strong className="text-blue-300">Gerenciamento de Quadros:</strong> Localizado no menu lateral, permite criar, excluir, alternar visibilidade e renomear quadros.</li>
+                <li><strong className="text-blue-300">Automação de Renovações:</strong> Renovações expiradas se convertem automaticamente em tarefas, sem duplicidade.</li>
               </ul>
             </div>
           </div>
@@ -1276,349 +1161,305 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         ) : (
           <div className="flex h-full gap-6 min-w-max pb-3 px-4">
             {groups.map(group => {
-            const groupTasks = filteredTasks.filter(t => {
-              if (selectedBoardId === SYNC_BOARD_ID) {
-                return `sync-user-${t.user_id}` === group.id;
-              }
-              return t.group_id === group.id;
-            });
-            const getGroupIcon = (name: string) => {
-              const lower = name.toLowerCase();
-              if (lower.includes('penden') || lower.includes('fazer')) return 'inventory_2';
-              if (lower.includes('exec') || lower.includes('andamento')) return 'cyclone';
-              if (lower.includes('concl') || lower.includes('feito') || lower.includes('final')) return 'verified';
-              if (lower.includes('paus') || lower.includes('bloq')) return 'block';
-              return 'label';
-            };
+              const groupTasks = filteredTasks.filter(t => {
+                if (selectedBoardId === SYNC_BOARD_ID) {
+                  // FIX Bug 4: guard contra tarefas sem user_id
+                  if (!t.user_id) return false;
+                  return `sync-user-${t.user_id}` === group.id;
+                }
+                return t.group_id === group.id;
+              });
 
-            return (
-              <div key={group.id} className={`flex flex-col ${isCompact ? 'w-[260px]' : 'w-[320px]'} shrink-0 h-full rounded-2xl bg-white/[0.02] border border-white/5 overflow-hidden transition-all hover:bg-white/[0.04]`}>
-                <div className="p-4 flex items-center justify-between border-b border-white/5 bg-white/[0.02]">
-                  <div className="flex items-center gap-3">
-                    <div className={`size-8 rounded-lg ${group.color || 'bg-slate-500'} flex items-center justify-center shadow-lg shadow-black/20`}>
-                      <span className="material-symbols-outlined text-white text-[16px]">{getGroupIcon(group.name)}</span>
-                    </div>
-                    <div>
-                      <h3
-                        className="font-black text-white text-[11px] uppercase tracking-[0.1em] cursor-pointer hover:text-primary transition-colors"
-                        onDoubleClick={() => handleRenameGroup(group.id)} // Double click to rename
-                        title="Clique duas vezes para renomear"
-                      >
-                        {group.name}
-                      </h3>
-                      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{groupTasks.length} {groupTasks.length === 1 ? 'Tarefa' : 'Tarefas'}</p>
-                    </div>
-                  </div>
+              const getGroupIcon = (name: string) => {
+                const lower = name.toLowerCase();
+                if (lower.includes('penden') || lower.includes('fazer')) return 'inventory_2';
+                if (lower.includes('exec') || lower.includes('andamento')) return 'cyclone';
+                if (lower.includes('concl') || lower.includes('feito') || lower.includes('final')) return 'verified';
+                if (lower.includes('paus') || lower.includes('bloq')) return 'block';
+                return 'label';
+              };
 
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                    <button onClick={() => handleRenameGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
-                      <span className="material-symbols-outlined text-[18px]">edit</span>
-                    </button>
-                    <button onClick={() => handleDeleteGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-500 transition-all">
-                      <span className="material-symbols-outlined text-[18px]">delete</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  className={`${isCompact ? 'p-2 space-y-2' : 'p-3 space-y-3'} flex-1 overflow-y-auto bg-black/20 scrollbar-hide min-h-[200px]`}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={() => {
-                    if (selectedBoardId === SYNC_BOARD_ID) return;
-                    const draggedTaskId = (window as any)._draggedTaskId;
-                    if (draggedTaskId) handleReorderTask(draggedTaskId, group.id, groupTasks.length);
-                    (window as any)._draggedTaskId = null;
-                  }}
-                >
-                  {loading ? (
-                    <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-40">
-                      <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                      <span className="text-[10px] font-black uppercase tracking-widest">Carregando...</span>
-                    </div>
-) : groupTasks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-20 border-2 border-dashed border-white/5 rounded-2xl m-2">
-                      <span className="material-symbols-outlined text-[40px]">inbox</span>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-center px-4">Esta coluna está vazia</span>
-                    </div>
-                  ) : (
-                    groupTasks.map((task, index) => {
-                      const isExpired = task.expiration_date && new Date(task.expiration_date) < new Date();
-                      const initials = (task as any).user_profiles?.email?.charAt(0).toUpperCase() || '?';
-                      const isCompleted = task.status === 'DONE' || task.completed;
-
-                      return (
-                        <div
-                          key={task.id}
-                          draggable={selectedBoardId !== SYNC_BOARD_ID}
-                          onDragStart={() => (window as any)._draggedTaskId = task.id}
-                          onDragOver={e => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.stopPropagation();
-                            if (selectedBoardId === SYNC_BOARD_ID) return;
-                            const draggedTaskId = (window as any)._draggedTaskId;
-                            if (draggedTaskId && draggedTaskId !== task.id) {
-                              handleReorderTask(draggedTaskId, group.id, index);
-                            }
-                            (window as any)._draggedTaskId = null;
-                          }}
-                          onClick={() => {
-                            setEditingTask(task);
-                            setIsModalOpen(true);
-                          }}
-                          className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative cursor-pointer active:scale-[0.98] hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 hover:z-10 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''} ${isCompleted ? 'opacity-40 grayscale-[0.8] blur-[0.2px]' : ''}`}
+              return (
+                <div key={group.id} className={`flex flex-col ${isCompact ? 'w-[260px]' : 'w-[320px]'} shrink-0 h-full rounded-2xl bg-white/[0.02] border border-white/5 overflow-hidden transition-all hover:bg-white/[0.04]`}>
+                  <div className="p-4 flex items-center justify-between border-b border-white/5 bg-white/[0.02]">
+                    <div className="flex items-center gap-3">
+                      <div className={`size-8 rounded-lg ${group.color || 'bg-slate-500'} flex items-center justify-center shadow-lg shadow-black/20`}>
+                        <span className="material-symbols-outlined text-white text-[16px]">{getGroupIcon(group.name)}</span>
+                      </div>
+                      <div>
+                        <h3
+                          className="font-black text-white text-[11px] uppercase tracking-[0.1em] cursor-pointer hover:text-primary transition-colors"
+                          onDoubleClick={() => handleRenameGroup(group.id)}
+                          title="Clique duas vezes para renomear"
                         >
-                          {/* Quick Complete Check */}
-                          <button
-                            onClick={(e) => {
+                          {group.name}
+                        </h3>
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{groupTasks.length} {groupTasks.length === 1 ? 'Tarefa' : 'Tarefas'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <button onClick={() => handleRenameGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
+                        <span className="material-symbols-outlined text-[18px]">edit</span>
+                      </button>
+                      <button onClick={() => handleDeleteGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-500 transition-all">
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`${isCompact ? 'p-2 space-y-2' : 'p-3 space-y-3'} flex-1 overflow-y-auto bg-black/20 scrollbar-hide min-h-[200px]`}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={() => {
+                      if (selectedBoardId === SYNC_BOARD_ID) return;
+                      const draggedTaskId = (window as any)._draggedTaskId;
+                      if (draggedTaskId) handleReorderTask(draggedTaskId, group.id, groupTasks.length);
+                      (window as any)._draggedTaskId = null;
+                    }}
+                  >
+                    {loading ? (
+                      <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-40">
+                        <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-[10px] font-black uppercase tracking-widest">Carregando...</span>
+                      </div>
+                    ) : groupTasks.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-20 border-2 border-dashed border-white/5 rounded-2xl m-2">
+                        <span className="material-symbols-outlined text-[40px]">inbox</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-center px-4">Esta coluna está vazia</span>
+                      </div>
+                    ) : (
+                      groupTasks.map((task, index) => {
+                        const isExpired = task.expiration_date && new Date(task.expiration_date) < new Date();
+                        const initials = (task as any).user_profiles?.email?.charAt(0).toUpperCase() || '?';
+                        const isCompleted = task.status === 'DONE' || task.completed;
+
+                        return (
+                          <div
+                            key={task.id}
+                            draggable={selectedBoardId !== SYNC_BOARD_ID}
+                            onDragStart={() => (window as any)._draggedTaskId = task.id}
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={(e) => {
                               e.stopPropagation();
-                              handleToggleComplete(task);
+                              if (selectedBoardId === SYNC_BOARD_ID) return;
+                              const draggedTaskId = (window as any)._draggedTaskId;
+                              if (draggedTaskId && draggedTaskId !== task.id) {
+                                handleReorderTask(draggedTaskId, group.id, index);
+                              }
+                              (window as any)._draggedTaskId = null;
                             }}
-                            className={`absolute -left-2 -top-2 size-6 rounded-lg border flex items-center justify-center transition-all z-20 shadow-xl ${isCompleted ? 'bg-green-500 border-green-400 text-white shadow-green-500/20' : 'bg-surface-dark border-white/10 text-transparent hover:border-green-500/50 hover:text-green-500 group-hover:scale-110'}`}
-                            title={isCompleted ? "Reabrir tarefa" : "Concluir tarefa"}
+                            onClick={() => {
+                              setEditingTask(task);
+                              setIsModalOpen(true);
+                            }}
+                            className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative cursor-pointer active:scale-[0.98] hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 hover:z-10 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''} ${isCompleted ? 'opacity-40 grayscale-[0.8] blur-[0.2px]' : ''}`}
                           >
-                            <span className="material-symbols-outlined text-[14px] font-bold">check</span>
-                          </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleToggleComplete(task); }}
+                              className={`absolute -left-2 -top-2 size-6 rounded-lg border flex items-center justify-center transition-all z-20 shadow-xl ${isCompleted ? 'bg-green-500 border-green-400 text-white shadow-green-500/20' : 'bg-surface-dark border-white/10 text-transparent hover:border-green-500/50 hover:text-green-500 group-hover:scale-110'}`}
+                              title={isCompleted ? "Reabrir tarefa" : "Concluir tarefa"}
+                            >
+                              <span className="material-symbols-outlined text-[14px] font-bold">check</span>
+                            </button>
 
-                          {/* Priority Color Indicator */}
-                          {task.label_color && task.label_color !== 'transparent' && (
-                            <div className={`absolute top-0 right-0 w-1.5 h-full ${task.label_color} rounded-tr-xl rounded-br-xl`}></div>
-                          )}
+                            {task.label_color && task.label_color !== 'transparent' && (
+                              <div className={`absolute top-0 right-0 w-1.5 h-full ${task.label_color} rounded-tr-xl rounded-br-xl`}></div>
+                            )}
 
-                          {isExpired && (
-                            <div className="absolute top-0 left-0 w-full h-[3px] bg-red-500 animate-pulse rounded-t-xl"></div>
-                          )}
+                            {isExpired && (
+                              <div className="absolute top-0 left-0 w-full h-[3px] bg-red-500 animate-pulse rounded-t-xl"></div>
+                            )}
 
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2">
-                              {!isCompact && (
-                                <span className="text-[9px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/10 truncate max-w-[140px]">
-                                  {task.projects?.name || 'Projeto Avulso'}
-                                </span>
-                              )}
-                              {task.is_annual && (
-                                <div className="size-4 rounded-full bg-yellow-500/20 flex items-center justify-center" title="Renovação Anual">
-                                  <span className="material-symbols-outlined text-yellow-500 text-[10px]">refresh</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all -mr-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingTask(task);
-                                  setIsModalOpen(true);
-                                }}
-                                className="size-7 flex items-center justify-center hover:bg-primary/10 rounded-lg text-slate-500 hover:text-primary transition-all bg-white/5 border border-white/10 shadow-sm"
-                                title="Editar"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">edit</span>
-                              </button>
-                            </div>
-                          </div>
-
-                          <h4 className={`text-white font-bold leading-relaxed tracking-tight ${isCompact ? 'text-[12px]' : 'text-[13px] mb-2'}`}>{task.title}</h4>
-
-                          {!isCompact && task.description && (
-                            <p className="text-[11px] text-slate-400 line-clamp-2 mb-2 leading-relaxed opacity-60 font-medium">{task.description}</p>
-                          )}
-
-                          {/* Deadline Display */}
-                          {!isCompact && task.expiration_date && (
-                            <div className={`flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg w-fit text-[10px] font-bold ${
-                              isExpired 
-                                ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
-                                : (new Date(task.expiration_date).getTime() - new Date().getTime() < 7 * 24 * 60 * 60 * 1000)
-                                  ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-                                  : 'bg-white/5 text-slate-400 border border-white/5'
-                            }`}>
-                              <span className="material-symbols-outlined text-[12px]">{isExpired ? 'warning' : 'schedule'}</span>
-                              <span>{isExpired ? 'Atrasado' : 'Prazo'}:</span>
-                              <span>{new Date(task.expiration_date).toLocaleDateString('pt-BR')}</span>
-                            </div>
-                          )}
-
-                          <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                            <div className="flex items-center gap-2">
-                              {/* User Avatar Initial & Email Label - ALWAYS VISIBLE NOW */}
-                              <div className="flex items-center gap-1.5" title={`Dono do Quadro: ${(task as any).user_profiles?.email}`}>
-                                <div className="size-6 rounded-lg bg-surface-dark border border-white/10 flex items-center justify-center text-[10px] font-black text-slate-400 shadow-inner">
-                                  {initials}
-                                </div>
-                                <span className="text-[9px] font-bold text-slate-500 truncate max-w-[80px]">
-                                  {(task as any).user_profiles?.email?.split('@')[0]}
-                                </span>
-                              </div>
-
-                              {/* Assignee Avatar */}
-                              {(task as any).assignee_profile && (
-                                <div className="flex items-center gap-1.5 ml-2 border-l border-white/10 pl-2">
-                                  <span className="text-[8px] font-bold text-slate-500 uppercase">Resp:</span>
-                                  <div className="size-6 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-black text-primary shadow-inner" title={`Atribuído a: ${(task as any).assignee_profile.email}`}>
-                                    {(task as any).assignee_profile.email?.charAt(0).toUpperCase()}
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-2">
+                                {!isCompact && (
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/10 truncate max-w-[140px]">
+                                    {task.projects?.name || 'Projeto Avulso'}
+                                  </span>
+                                )}
+                                {task.is_annual && (
+                                  <div className="size-4 rounded-full bg-yellow-500/20 flex items-center justify-center" title="Renovação Anual">
+                                    <span className="material-symbols-outlined text-yellow-500 text-[10px]">refresh</span>
                                   </div>
-                                  <span className="text-[9px] font-bold text-primary truncate max-w-[80px]">
-                                    {(task as any).assignee_profile.email?.split('@')[0]}
+                                )}
+                              </div>
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all -mr-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setEditingTask(task); setIsModalOpen(true); }}
+                                  className="size-7 flex items-center justify-center hover:bg-primary/10 rounded-lg text-slate-500 hover:text-primary transition-all bg-white/5 border border-white/10 shadow-sm"
+                                  title="Editar"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            <h4 className={`text-white font-bold leading-relaxed tracking-tight ${isCompact ? 'text-[12px]' : 'text-[13px] mb-2'}`}>{task.title}</h4>
+
+                            {!isCompact && task.description && (
+                              <p className="text-[11px] text-slate-400 line-clamp-2 mb-2 leading-relaxed opacity-60 font-medium">{task.description}</p>
+                            )}
+
+                            {!isCompact && task.expiration_date && (
+                              <div className={`flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg w-fit text-[10px] font-bold ${
+                                isExpired
+                                  ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                  : (new Date(task.expiration_date).getTime() - new Date().getTime() < 7 * 24 * 60 * 60 * 1000)
+                                    ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                                    : 'bg-white/5 text-slate-400 border border-white/5'
+                              }`}>
+                                <span className="material-symbols-outlined text-[12px]">{isExpired ? 'warning' : 'schedule'}</span>
+                                <span>{isExpired ? 'Atrasado' : 'Prazo'}:</span>
+                                <span>{new Date(task.expiration_date).toLocaleDateString('pt-BR')}</span>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5" title={`Dono: ${(task as any).user_profiles?.email}`}>
+                                  <div className="size-6 rounded-lg bg-surface-dark border border-white/10 flex items-center justify-center text-[10px] font-black text-slate-400 shadow-inner">
+                                    {initials}
+                                  </div>
+                                  <span className="text-[9px] font-bold text-slate-500 truncate max-w-[80px]">
+                                    {(task as any).user_profiles?.email?.split('@')[0]}
                                   </span>
                                 </div>
-                              )}
-                              <span className="text-[9px] font-black uppercase tracking-widest text-[#c7949f] opacity-40">
-                                {task.category}
-                              </span>
-                            </div>
 
-                            <div className="flex items-center gap-2">
-                              {/* Checklist Indicator */}
-                              {(task as any).checklist_progress && (
-                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 text-[9px] font-bold text-slate-400" title="Checklist">
-                                  <span className="material-symbols-outlined text-[12px]">check_box</span>
-                                  <span>{(task as any).checklist_progress}</span>
-                                </div>
-                              )}
-
-                              {task.file_url && (
-                                <a href={task.file_url} target="_blank" rel="noreferrer" className="size-6 flex items-center justify-center bg-primary/10 border border-primary/20 rounded-lg text-primary hover:bg-primary/20 transition-all">
-                                  <span className="material-symbols-outlined text-[14px]">attachment</span>
-                                  <span>Ver Detalhes?</span>
-                                  {/* Just attachment for now, but user asked for "Ver Detalhes" button in card. 
-                                      Maybe the edit button assumes that role? 
-                                      Or I should add a specific button. 
-                                  */}
-                                </a>
-                              )}
-
-                              <div className="flex gap-1">
-                                {['bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'].map(c => (
-                                  <button
-                                    key={c}
-                                    onClick={(e) => { e.stopPropagation(); handleUpdateTaskColor(task.id, c); }}
-                                    className={`w-2 h-2 rounded-full ${c} ${task.label_color === c ? 'ring-2 ring-white scale-110 shadow-lg shadow-black/40' : 'opacity-20 hover:opacity-100 transition-all hover:scale-125'}`}
-                                  />
-                                ))}
+                                {(task as any).assignee_profile && (
+                                  <div className="flex items-center gap-1.5 ml-2 border-l border-white/10 pl-2">
+                                    <span className="text-[8px] font-bold text-slate-500 uppercase">Resp:</span>
+                                    <div className="size-6 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-black text-primary shadow-inner" title={`Atribuído a: ${(task as any).assignee_profile.email}`}>
+                                      {(task as any).assignee_profile.email?.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="text-[9px] font-bold text-primary truncate max-w-[80px]">
+                                      {(task as any).assignee_profile.email?.split('@')[0]}
+                                    </span>
+                                  </div>
+                                )}
+                                <span className="text-[9px] font-black uppercase tracking-widest text-[#c7949f] opacity-40">
+                                  {task.category}
+                                </span>
                               </div>
 
-                              {/* Move Action (Quick Menu) - Simplified to just Edit triggers modal which allows move, 
-                                  User asked for "change status" action in card.
-                                  Let's add a small dropdown/popover or just a 'Move' button that cycles? 
-                                  Or a small select? A select might be too cramped.
-                                  Let's add a "Quick Move" button that opens a mini-menu or just relies on Drag/Drop/Edit.
-                                  User specified: "trocar o status do cardo, ver os detalhes do card"
-                                  "Status" usually maps to Column.
-                                  "Ver Detalhes" maps to opening the modal.
-                              */}
-                              <div className="relative ml-1">
-                                <button
-                                  onClick={(e: React.MouseEvent) => {
-                                    e.stopPropagation();
-                                    setOpenMenuTaskId(openMenuTaskId === task.id ? null : task.id);
-                                  }}
-                                  className={`size-6 flex items-center justify-center rounded-lg transition-all ${openMenuTaskId === task.id ? 'bg-white/20 text-white' : 'hover:bg-white/10 text-slate-500 hover:text-white'}`}
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">more_vert</span>
-                                </button>
-                                {/* Dropdown Menu */}
-                                <div className={`absolute right-0 top-full mt-2 w-40 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-1 transition-all z-50 flex flex-col gap-1 ${openMenuTaskId === task.id ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-95'}`}>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingTask(task);
-                                      setIsModalOpen(true);
-                                    }}
-                                    className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-300 hover:text-white text-left uppercase tracking-wider"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">visibility</span>
-                                    Ver Detalhes
-                                  </button>
+                              <div className="flex items-center gap-2">
+                                {(task as any).checklist_progress && (
+                                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 text-[9px] font-bold text-slate-400" title="Checklist">
+                                    <span className="material-symbols-outlined text-[12px]">check_box</span>
+                                    <span>{(task as any).checklist_progress}</span>
+                                  </div>
+                                )}
 
-                                  {/* Convert to Project Action */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleConvertToProject(task);
-                                    }}
-                                    className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-300 hover:text-emerald-400 text-left uppercase tracking-wider"
-                                    title="Transformar esta tarefa em um novo projeto"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">engineering</span>
-                                    Virar Projeto
-                                  </button>
+                                {task.file_url && (
+                                  <a href={task.file_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="size-6 flex items-center justify-center bg-primary/10 border border-primary/20 rounded-lg text-primary hover:bg-primary/20 transition-all">
+                                    <span className="material-symbols-outlined text-[14px]">attachment</span>
+                                  </a>
+                                )}
 
-                                  <div className="h-px bg-white/5 my-0.5"></div>
-                                  <span className="text-[9px] font-black text-slate-600 px-3 py-1 uppercase tracking-widest">Mover para:</span>
-                                  {selectedBoardId !== SYNC_BOARD_ID ? (
-                                    groups.filter(g => g.id !== group.id).map(g => (
-                                      <button
-                                        key={g.id}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleUpdateTaskGroup(task.id, g.id);
-                                        }}
-                                        className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left truncate"
-                                      >
-                                        <span className="size-2 rounded-full bg-slate-500"></span>
-                                        {g.name}
-                                      </button>
-                                    ))
-                                  ) : (
-                                    <span className="text-[9px] px-3 py-2 text-slate-500">Não suportado no Monitoramento</span>
-                                  )}
+                                <div className="flex gap-1">
+                                  {['bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'].map(c => (
+                                    <button
+                                      key={c}
+                                      onClick={(e) => { e.stopPropagation(); handleUpdateTaskColor(task.id, c); }}
+                                      className={`w-2 h-2 rounded-full ${c} ${task.label_color === c ? 'ring-2 ring-white scale-110 shadow-lg shadow-black/40' : 'opacity-20 hover:opacity-100 transition-all hover:scale-125'}`}
+                                    />
+                                  ))}
+                                </div>
 
-                                  <div className="h-px bg-white/5 my-0.5"></div>
+                                <div className="relative ml-1">
                                   <button
-                                    onClick={(e) => {
+                                    onClick={(e: React.MouseEvent) => {
                                       e.stopPropagation();
-                                      handleDelete(task.id);
-                                      setOpenMenuTaskId(null);
+                                      setOpenMenuTaskId(openMenuTaskId === task.id ? null : task.id);
                                     }}
-                                    className="flex items-center gap-2 w-full px-3 py-2 hover:bg-red-500/10 rounded-lg text-[10px] font-bold text-red-400 hover:text-red-300 text-left uppercase tracking-wider"
-                                    title="Excluir esta tarefa"
+                                    className={`size-6 flex items-center justify-center rounded-lg transition-all ${openMenuTaskId === task.id ? 'bg-white/20 text-white' : 'hover:bg-white/10 text-slate-500 hover:text-white'}`}
                                   >
-                                    <span className="material-symbols-outlined text-[14px]">delete</span>
-                                    Excluir Tarefa
+                                    <span className="material-symbols-outlined text-[16px]">more_vert</span>
                                   </button>
+                                  <div className={`absolute right-0 top-full mt-2 w-40 bg-surface-dark border border-white/10 rounded-xl shadow-2xl p-1 transition-all z-50 flex flex-col gap-1 ${openMenuTaskId === task.id ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-95'}`}>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setEditingTask(task); setIsModalOpen(true); }}
+                                      className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-300 hover:text-white text-left uppercase tracking-wider"
+                                    >
+                                      <span className="material-symbols-outlined text-[14px]">visibility</span>
+                                      Ver Detalhes
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleConvertToProject(task); }}
+                                      className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-300 hover:text-emerald-400 text-left uppercase tracking-wider"
+                                    >
+                                      <span className="material-symbols-outlined text-[14px]">engineering</span>
+                                      Virar Projeto
+                                    </button>
+
+                                    <div className="h-px bg-white/5 my-0.5"></div>
+                                    <span className="text-[9px] font-black text-slate-600 px-3 py-1 uppercase tracking-widest">Mover para:</span>
+                                    {selectedBoardId !== SYNC_BOARD_ID ? (
+                                      groups.filter(g => g.id !== group.id).map(g => (
+                                        <button
+                                          key={g.id}
+                                          onClick={(e) => { e.stopPropagation(); handleUpdateTaskGroup(task.id, g.id); }}
+                                          className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white text-left truncate"
+                                        >
+                                          <span className="size-2 rounded-full bg-slate-500"></span>
+                                          {g.name}
+                                        </button>
+                                      ))
+                                    ) : (
+                                      <span className="text-[9px] px-3 py-2 text-slate-500">Não suportado no Monitoramento</span>
+                                    )}
+
+                                    <div className="h-px bg-white/5 my-0.5"></div>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleDelete(task.id); setOpenMenuTaskId(null); }}
+                                      className="flex items-center gap-2 w-full px-3 py-2 hover:bg-red-500/10 rounded-lg text-[10px] font-bold text-red-400 hover:text-red-300 text-left uppercase tracking-wider"
+                                    >
+                                      <span className="material-symbols-outlined text-[14px]">delete</span>
+                                      Excluir Tarefa
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="w-full py-4 flex flex-col items-center justify-center gap-2 text-slate-500 hover:text-primary hover:bg-primary/5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border-2 border-dashed border-white/5 hover:border-primary/20 transition-all group/btn"
-                  >
-                    <div className="size-8 rounded-full bg-white/5 flex items-center justify-center group-hover/btn:bg-primary/20 transition-all">
-                      <span className="material-symbols-outlined text-[20px]">add</span>
-                    </div>
-                    Nova Tarefa
-                  </button>
+                        );
+                      })
+                    )}
+                    <button
+                      onClick={() => setIsModalOpen(true)}
+                      className="w-full py-4 flex flex-col items-center justify-center gap-2 text-slate-500 hover:text-primary hover:bg-primary/5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border-2 border-dashed border-white/5 hover:border-primary/20 transition-all group/btn"
+                    >
+                      <div className="size-8 rounded-full bg-white/5 flex items-center justify-center group-hover/btn:bg-primary/20 transition-all">
+                        <span className="material-symbols-outlined text-[20px]">add</span>
+                      </div>
+                      Nova Tarefa
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
 
-          {/* Add Group Column Placeholder */}
-          {selectedBoardId && selectedBoardId !== SYNC_BOARD_ID && (
-            <div className={`${isCompact ? 'w-[260px]' : 'w-[320px]'} shrink-0 h-full flex flex-col items-center justify-center px-8 border-2 border-dashed border-white/5 rounded-2xl bg-white/[0.01] transition-all hover:bg-white/[0.03] hover:border-primary/20 group`}>
-              <button
-                onClick={handleAddGroup}
-                className="flex flex-col items-center gap-5 text-slate-600 group-hover:text-primary transition-all active:scale-95 text-center"
-              >
-                <div className="size-16 rounded-full bg-white/5 flex items-center justify-center border-2 border-white/5 shadow-xl group-hover:border-primary/30 group-hover:bg-primary/10 group-hover:shadow-primary/5 transition-all">
-                  <span className="material-symbols-outlined text-[40px] group-hover:scale-110 transition-transform">add_box</span>
-                </div>
-                <div>
-                  <h4 className="text-[12px] font-black uppercase tracking-[0.2em] mb-2 group-hover:text-white transition-colors">Nova Coluna</h4>
-                  <p className="text-[10px] font-medium text-slate-600 group-hover:text-slate-500 max-w-[160px] leading-relaxed">
-                    Adicione um novo estágio para o seu fluxo de trabalho
-                  </p>
-                </div>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+            {selectedBoardId && selectedBoardId !== SYNC_BOARD_ID && (
+              <div className={`${isCompact ? 'w-[260px]' : 'w-[320px]'} shrink-0 h-full flex flex-col items-center justify-center px-8 border-2 border-dashed border-white/5 rounded-2xl bg-white/[0.01] transition-all hover:bg-white/[0.03] hover:border-primary/20 group`}>
+                <button
+                  onClick={handleAddGroup}
+                  className="flex flex-col items-center gap-5 text-slate-600 group-hover:text-primary transition-all active:scale-95 text-center"
+                >
+                  <div className="size-16 rounded-full bg-white/5 flex items-center justify-center border-2 border-white/5 shadow-xl group-hover:border-primary/30 group-hover:bg-primary/10 transition-all">
+                    <span className="material-symbols-outlined text-[40px] group-hover:scale-110 transition-transform">add_box</span>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-black uppercase tracking-[0.2em] mb-2 group-hover:text-white transition-colors">Nova Coluna</h4>
+                    <p className="text-[10px] font-medium text-slate-600 group-hover:text-slate-500 max-w-[160px] leading-relaxed">
+                      Adicione um novo estágio para o seu fluxo de trabalho
+                    </p>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Add Board Modal */}
       {isAddBoardModalOpen && (
@@ -1630,7 +1471,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
-
             <form onSubmit={handleCreateBoardSubmit} className="p-6 space-y-4">
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Nome do Quadro</label>
@@ -1643,7 +1483,6 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                   onChange={(e) => setNewBoardName(e.target.value)}
                 />
               </div>
-
               {isCentral && (
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Atribuir a (Opcional)</label>
@@ -1660,20 +1499,11 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                   <p className="text-[10px] text-slate-500 mt-1">Se não selecionado, o quadro será seu.</p>
                 </div>
               )}
-
               <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsAddBoardModalOpen(false)}
-                  className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg font-bold"
-                >
+                <button type="button" onClick={() => setIsAddBoardModalOpen(false)} className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg font-bold">
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  disabled={!newBoardName}
-                  className="flex-1 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold disabled:opacity-50"
-                >
+                <button type="submit" disabled={!newBoardName} className="flex-1 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold disabled:opacity-50">
                   Criar Quadro
                 </button>
               </div>
@@ -1684,10 +1514,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
       <NewTaskModal
         isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingTask(null);
-        }}
+        onClose={() => { setIsModalOpen(false); setEditingTask(null); }}
         onSuccess={() => fetchData()}
         defaultGroupId={groups[0]?.id}
         boardId={selectedBoardId}

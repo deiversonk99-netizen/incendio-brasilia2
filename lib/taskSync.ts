@@ -66,15 +66,8 @@ export const syncExpiredRenewals = async (supabase: SupabaseClient, userId: stri
             }
         }
 
-        // Strategy B: Fallback to any "Pendentes" group in the system
-        const { data: fallbackGroup } = await supabase.from('task_groups')
-            .select('id')
-            .ilike('name', '%Pendente%')
-            .limit(1)
-            .maybeSingle();
-            
-        userGroupCache[targetUserId] = fallbackGroup?.id || null;
-        return userGroupCache[targetUserId];
+        userGroupCache[targetUserId] = null;
+        return null;
     };
 
     // 5. Process Manual Renewals
