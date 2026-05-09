@@ -603,6 +603,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
 
 const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const { user, profile } = useAuth();
+  const [viewMode, setViewMode] = useState<'minhas_tarefas' | 'monitoramento'>(isTeamMonitoring ? 'monitoramento' : 'minhas_tarefas');
   const [boards, setBoards] = useState<TaskBoard[]>([]);
   const [selectedBoardId, setSelectedBoardId] = useState<string>('');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -628,11 +629,19 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
+  // Limpa tarefas e colunas ao trocar de aba e recarrega
+  useEffect(() => {
+    setTasks([]);
+    setGroups([]);
+    if (fetchDataRef.current) fetchDataRef.current();
+  }, [viewMode]);
+
   // FIX Bug 1 & 2: fetchData como useCallback com dependências corretas, sem depender do state `users`
   const fetchData = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
 
-    // FIX Bug 1: Sempre busca usuários frescos do banco — nunca usa closure stale
+    // 1. Fetch Board/User Info
     let currentUsers: any[] = [];
     if (isCentral) {
       const { data: uData } = await supabase
@@ -644,71 +653,20 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       }
     }
 
-    // 1. Fetch Boards
-    const { data: boardsData } = await supabase
-      .from('task_boards')
-      .select('*')
-      .order('name');
-
-    if (boardsData) {
-      let allowedBoards = boardsData.filter(b => {
-        if (isTeamMonitoring && isCentral) return true;
-        if (b.user_id === user?.id) return b.is_visible !== false;
-        const permKey = `BOARD_${b.id}`;
-        return profile?.permissions && profile.permissions[permKey] === true;
-      }).map(b => {
-        if (isTeamMonitoring && isCentral && b.user_id) {
-          const owner = currentUsers.find(u => u.id === b.user_id);
-          if (owner) {
-            return { ...b, name: `${b.name} (${owner.email.split('@')[0]})` };
-          }
-        }
-        return b;
-      });
-
-      if (isTeamMonitoring) {
-        const syncBoardOption = {
-          id: SYNC_BOARD_ID,
-          name: '🔄 Quadro Geral (Pendências)',
-          user_id: undefined
-        };
-        setBoards([syncBoardOption, ...allowedBoards]);
-
-        if (!selectedBoardId) {
-          setSelectedBoardId(SYNC_BOARD_ID);
-          setLoading(false);
-          return;
-        }
-      } else {
-        setBoards(allowedBoards);
-        if (!selectedBoardId && allowedBoards.length > 0) {
-          setSelectedBoardId(allowedBoards[0].id);
-          setLoading(false);
-          return;
-        }
-      }
-    }
-
-    if (!selectedBoardId) {
-      setLoading(false);
-      return;
-    }
-
-    // Special Sync Board Handling
-    if (selectedBoardId === SYNC_BOARD_ID) {
-      // FIX Bug 3: Usar lógica consistente com allowedBoards (is_visible !== false)
+    if (viewMode === 'monitoramento') {
+      // MONITORAMENTO MODE: Fetch all pending tasks across visible boards
+      // Use the existing SYNC_BOARD_ID logic but explicitly tied to viewMode
+      
       const { data: visibleBoards } = await supabase
         .from('task_boards')
         .select('id')
         .or('is_visible.eq.true,is_visible.is.null');
 
       const visibleBoardIds = visibleBoards?.map(b => b.id) || [];
-
       const { data: visibleGroups } = await supabase
         .from('task_groups')
         .select('id')
         .in('board_id', visibleBoardIds);
-
       const visibleGroupIds = visibleGroups?.map(g => g.id) || [];
 
       if (visibleGroupIds.length === 0) {
@@ -722,7 +680,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         supabase
           .from('tasks')
           .select('*, projects(name)')
-          .eq('status', 'PENDING')
+          .eq('status', 'PENDING') // User requested: Trazer apenas pendentes no monitoramento
           .in('group_id', visibleGroupIds)
           .order('created_at', { ascending: false }),
         supabase.from('user_profiles').select('id, email'),
@@ -744,7 +702,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         });
         setTasks(enrichedSyncData);
 
-        // FIX Bug 4: Filtrar tarefas sem user_id antes de criar grupos
+        // Group by User
         const uniqueUserIds = Array.from(
           new Set(enrichedSyncData.filter((t: any) => !!t.user_id).map((t: any) => t.user_id))
         );
@@ -756,7 +714,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
         const userGroups = uniqueUserIds.map((uId, idx) => ({
           id: `sync-user-${uId}`,
-          name: `Pendentes - ${enrichedSyncData.find((t: any) => t.user_id === uId)?.user_profiles?.email?.split('@')[0] || 'Usuário'}`,
+          name: `Monitoramento - ${enrichedSyncData.find((t: any) => t.user_id === uId)?.user_profiles?.email?.split('@')[0] || 'Usuário'}`,
           color: colorPalette[idx % colorPalette.length],
           order_index: idx,
           board_id: SYNC_BOARD_ID
@@ -764,61 +722,61 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
         setGroups(userGroups);
       }
+    } else {
+      // MINHAS TAREFAS MODE: Filter strictly by user_id
+      const { data: boardsData } = await supabase
+        .from('task_boards')
+        .select('*')
+        .eq('user_id', user.id) // Strict user_id filter
+        .order('name');
 
-      setLoading(false);
-      return;
-    }
-
-    // 2. Fetch Groups for Selected Board
-    const { data: groupsData } = await supabase
-      .from('task_groups')
-      .select('*')
-      .eq('board_id', selectedBoardId)
-      .order('order_index', { ascending: true });
-
-    if (groupsData) {
-      const accessibleGroups = groupsData.filter(g => {
-        if (!profile) return true;
-        const key = `GROUP_${g.id}`;
-        if (profile.permissions && profile.permissions[key] !== undefined) {
-          return profile.permissions[key] === true;
+      if (boardsData) {
+        setBoards(boardsData);
+        let activeBoardId = selectedBoardId;
+        if (!activeBoardId && boardsData.length > 0) {
+          activeBoardId = boardsData[0].id;
+          setSelectedBoardId(activeBoardId);
         }
-        if (isCentral) return true;
-        if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
-        return true;
-      });
-      setGroups(accessibleGroups);
-    }
 
-    // 3. Fetch Tasks
-    const groupIds = groupsData?.map(g => g.id) || [];
+        if (activeBoardId) {
+          const { data: groupsData } = await supabase
+            .from('task_groups')
+            .select('*')
+            .eq('board_id', activeBoardId)
+            .order('order_index', { ascending: true });
 
-    const [{ data: tasksData, error: tasksError }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
-      supabase.from('tasks').select('*, projects(name)').in('group_id', groupIds).order('order_index', { ascending: true }),
-      supabase.from('user_profiles').select('id, email'),
-      supabase.from('task_checklist_items').select('task_id, is_completed')
-    ]);
+          if (groupsData) {
+            setGroups(groupsData);
+            const groupIds = groupsData.map(g => g.id);
 
-    if (tasksError) console.error('Tasks Fetch Error:', tasksError);
+            const [{ data: tasksData }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
+              supabase.from('tasks').select('*, projects(name)').in('group_id', groupIds).order('order_index', { ascending: true }),
+              supabase.from('user_profiles').select('id, email'),
+              supabase.from('task_checklist_items').select('task_id, is_completed')
+            ]);
 
-    if (tasksData) {
-      const enrichedTasks = tasksData.map((t: any) => {
-        const taskChecklist = checklistsData?.filter((c: any) => c.task_id === t.id) || [];
-        const completedCount = taskChecklist.filter((c: any) => c.is_completed).length;
-        const totalCount = taskChecklist.length;
-        return {
-          ...t,
-          user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
-          assignee_profile: t.assignee ? profilesData?.find(p => p.id === t.assignee) : null,
-          checklist_progress: totalCount > 0 ? `${completedCount}/${totalCount}` : null,
-          checklist_percentage: totalCount > 0 ? (completedCount / totalCount) * 100 : 0
-        };
-      });
-      setTasks(enrichedTasks as any);
+            if (tasksData) {
+              const enrichedTasks = tasksData.map((t: any) => {
+                const taskChecklist = checklistsData?.filter((c: any) => c.task_id === t.id) || [];
+                const completedCount = taskChecklist.filter((c: any) => c.is_completed).length;
+                const totalCount = taskChecklist.length;
+                return {
+                  ...t,
+                  user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
+                  assignee_profile: t.assignee ? profilesData?.find(p => p.id === t.assignee) : null,
+                  checklist_progress: totalCount > 0 ? `${completedCount}/${totalCount}` : null,
+                  checklist_percentage: totalCount > 0 ? (completedCount / totalCount) * 100 : 0
+                };
+              });
+              setTasks(enrichedTasks as any);
+            }
+          }
+        }
+      }
     }
 
     setLoading(false);
-  }, [user?.id, selectedBoardId, isCentral, profile, isTeamMonitoring]);
+  }, [user?.id, selectedBoardId, isCentral, profile, viewMode]);
 
   // FIX Bug 6: Separar o real-time subscription do effect de dados
   // Effect 1: Real-time — monta uma única vez, nunca recria o canal
@@ -1060,38 +1018,69 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
               <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
                 <span className="material-symbols-outlined text-primary text-[24px]">
-                  {isTeamMonitoring ? 'groups' : 'task_alt'}
+                  {viewMode === 'monitoramento' ? 'groups' : 'task_alt'}
                 </span>
               </div>
-              {isTeamMonitoring ? 'Monitoramento da Equipe' : 'Minhas Tarefas'}
+              {viewMode === 'monitoramento' ? 'Monitoramento da Equipe' : 'Minhas Tarefas'}
             </h2>
-            {boards.length > 1 || isTeamMonitoring ? (
-              <div className="flex items-center gap-3">
-                <div className="relative group">
-                  <select
-                    className="appearance-none bg-white/5 hover:bg-white/10 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 outline-none cursor-pointer transition-all uppercase tracking-widest pl-4 pr-8 max-w-[300px] truncate"
-                    value={selectedBoardId}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedBoardId(e.target.value)}
-                  >
-                    {boards.map((b: TaskBoard) => (
-                      <option key={b.id} value={b.id} className="bg-surface-dark text-white uppercase text-[10px] font-black">{b.name}</option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[14px] text-primary/60 pointer-events-none group-hover:text-primary transition-colors">expand_more</span>
-                </div>
-                <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
-                  {isTeamMonitoring ? 'Visão global e por membro da equipe' : 'Controle de seus fluxos e processos'}
-                </p>
+
+            {/* Controle de Abas para Admins */}
+            {isCentral && (
+              <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5 w-fit mt-2">
+                <button
+                  onClick={() => setViewMode('minhas_tarefas')}
+                  className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'minhas_tarefas' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                >
+                  Minhas Tarefas
+                </button>
+                <button
+                  onClick={() => setViewMode('monitoramento')}
+                  className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'monitoramento' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                >
+                  Monitoramento
+                </button>
               </div>
+            )}
+
+            {viewMode === 'minhas_tarefas' ? (
+              boards.length > 1 ? (
+                <div className="flex items-center gap-3 mt-1">
+                  <div className="relative group">
+                    <select
+                      className="appearance-none bg-white/5 hover:bg-white/10 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 outline-none cursor-pointer transition-all uppercase tracking-widest pl-4 pr-8 max-w-[300px] truncate"
+                      value={selectedBoardId}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedBoardId(e.target.value)}
+                    >
+                      {boards.map((b: TaskBoard) => (
+                        <option key={b.id} value={b.id} className="bg-surface-dark text-white uppercase text-[10px] font-black">{b.name}</option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[14px] text-primary/60 pointer-events-none group-hover:text-primary transition-colors">expand_more</span>
+                  </div>
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
+                  <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
+                    Controle de seus fluxos e processos
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 mt-1">
+                  <div className="bg-white/5 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 uppercase tracking-widest max-w-[300px] truncate">
+                    {boards.find((b: TaskBoard) => b.id === selectedBoardId)?.name || 'MEU QUADRO'}
+                  </div>
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
+                  <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
+                    Controle de seus fluxos e processos
+                  </p>
+                </div>
+              )
             ) : (
-              <div className="flex items-center gap-3">
-                <div className="bg-white/5 text-primary text-[10px] font-black border border-white/5 rounded-full px-4 py-1.5 uppercase tracking-widest max-w-[300px] truncate">
-                  {boards.find((b: TaskBoard) => b.id === selectedBoardId)?.name || 'MEU QUADRO'}
+              <div className="flex items-center gap-3 mt-1">
+                <div className="bg-emerald-500/10 text-emerald-400 text-[10px] font-black border border-emerald-500/20 rounded-full px-4 py-1.5 uppercase tracking-widest">
+                  Visão Geral da Equipe (Apenas Pendentes)
                 </div>
                 <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
-                  Controle de seus fluxos e processos
+                  Acompanhando produtividade e gargalos
                 </p>
               </div>
             )}
@@ -1118,7 +1107,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 />
               </div>
-              {selectedBoardId !== SYNC_BOARD_ID && (
+              {viewMode === 'minhas_tarefas' && (
                 <button
                   onClick={() => setIsModalOpen(true)}
                   className="flex items-center justify-center gap-2 rounded-xl h-10 px-6 bg-primary hover:bg-red-600 text-white text-[11px] font-black uppercase tracking-[0.15em] transition-all shadow-xl shadow-primary/20 active:scale-95 w-full sm:w-auto"
@@ -1162,8 +1151,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           <div className="flex h-full gap-6 min-w-max pb-3 px-4">
             {groups.map(group => {
               const groupTasks = filteredTasks.filter(t => {
-                if (selectedBoardId === SYNC_BOARD_ID) {
-                  // FIX Bug 4: guard contra tarefas sem user_id
+                if (viewMode === 'monitoramento') {
                   if (!t.user_id) return false;
                   return `sync-user-${t.user_id}` === group.id;
                 }
@@ -1211,7 +1199,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                     className={`${isCompact ? 'p-2 space-y-2' : 'p-3 space-y-3'} flex-1 overflow-y-auto bg-black/20 scrollbar-hide min-h-[200px]`}
                     onDragOver={e => e.preventDefault()}
                     onDrop={() => {
-                      if (selectedBoardId === SYNC_BOARD_ID) return;
+                      if (viewMode === 'monitoramento') return;
                       const draggedTaskId = (window as any)._draggedTaskId;
                       if (draggedTaskId) handleReorderTask(draggedTaskId, group.id, groupTasks.length);
                       (window as any)._draggedTaskId = null;
@@ -1236,12 +1224,12 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                         return (
                           <div
                             key={task.id}
-                            draggable={selectedBoardId !== SYNC_BOARD_ID}
+                            draggable={viewMode === 'minhas_tarefas'}
                             onDragStart={() => (window as any)._draggedTaskId = task.id}
                             onDragOver={e => e.preventDefault()}
                             onDrop={(e) => {
                               e.stopPropagation();
-                              if (selectedBoardId === SYNC_BOARD_ID) return;
+                              if (viewMode === 'monitoramento') return;
                               const draggedTaskId = (window as any)._draggedTaskId;
                               if (draggedTaskId && draggedTaskId !== task.id) {
                                 handleReorderTask(draggedTaskId, group.id, index);
@@ -1394,7 +1382,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
 
                                     <div className="h-px bg-white/5 my-0.5"></div>
                                     <span className="text-[9px] font-black text-slate-600 px-3 py-1 uppercase tracking-widest">Mover para:</span>
-                                    {selectedBoardId !== SYNC_BOARD_ID ? (
+                                    {viewMode === 'minhas_tarefas' ? (
                                       groups.filter(g => g.id !== group.id).map(g => (
                                         <button
                                           key={g.id}
@@ -1406,7 +1394,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                                         </button>
                                       ))
                                     ) : (
-                                      <span className="text-[9px] px-3 py-2 text-slate-500">Não suportado no Monitoramento</span>
+                                      <span className="text-[9px] px-3 py-2 text-slate-500 text-center italic">Apenas leitura no Monitoramento</span>
                                     )}
 
                                     <div className="h-px bg-white/5 my-0.5"></div>
@@ -1425,21 +1413,23 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                         );
                       })
                     )}
-                    <button
-                      onClick={() => setIsModalOpen(true)}
-                      className="w-full py-4 flex flex-col items-center justify-center gap-2 text-slate-500 hover:text-primary hover:bg-primary/5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border-2 border-dashed border-white/5 hover:border-primary/20 transition-all group/btn"
-                    >
-                      <div className="size-8 rounded-full bg-white/5 flex items-center justify-center group-hover/btn:bg-primary/20 transition-all">
-                        <span className="material-symbols-outlined text-[20px]">add</span>
-                      </div>
-                      Nova Tarefa
-                    </button>
+                    {viewMode === 'minhas_tarefas' && (
+                      <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="w-full py-4 flex flex-col items-center justify-center gap-2 text-slate-500 hover:text-primary hover:bg-primary/5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border-2 border-dashed border-white/5 hover:border-primary/20 transition-all group/btn"
+                      >
+                        <div className="size-8 rounded-full bg-white/5 flex items-center justify-center group-hover/btn:bg-primary/20 transition-all">
+                          <span className="material-symbols-outlined text-[20px]">add</span>
+                        </div>
+                        Nova Tarefa
+                      </button>
+                    )}
                   </div>
                 </div>
               );
             })}
 
-            {selectedBoardId && selectedBoardId !== SYNC_BOARD_ID && (
+            {viewMode === 'minhas_tarefas' && selectedBoardId && (
               <div className={`${isCompact ? 'w-[260px]' : 'w-[320px]'} shrink-0 h-full flex flex-col items-center justify-center px-8 border-2 border-dashed border-white/5 rounded-2xl bg-white/[0.01] transition-all hover:bg-white/[0.03] hover:border-primary/20 group`}>
                 <button
                   onClick={handleAddGroup}
