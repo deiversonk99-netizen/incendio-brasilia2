@@ -403,15 +403,23 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 order_index: taskToEdit ? (taskToEdit.order_index || 0) : 0,
                 status: taskToEdit ? (taskToEdit.status || 'PENDING') : 'PENDING'
             };
-            const { data: taskData, error } = taskToEdit
-                ? await supabase.from('tasks').update(payload).eq('id', taskToEdit.id).select().single()
-                : await supabase.from('tasks').insert(payload).select().single();
-            if (error) throw error;
-            if (taskData) {
+            
+            let taskId = taskToEdit?.id;
+            
+            if (taskToEdit) {
+                const { error } = await supabase.from('tasks').update(payload).eq('id', taskToEdit.id);
+                if (error) throw error;
+            } else {
+                const { data, error } = await supabase.from('tasks').insert(payload).select().single();
+                if (error) throw error;
+                if (data) taskId = data.id;
+            }
+
+            if (taskId) {
                 const currentIds = checklistItems.filter(i => i.id).map(i => i.id);
-                const deleteQuery = supabase.from('task_checklist_items').delete().eq('task_id', taskData.id);
+                const deleteQuery = supabase.from('task_checklist_items').delete().eq('task_id', taskId);
                 if (currentIds.length > 0) {
-                    await deleteQuery.not('id', 'in', `(${currentIds.join(',')})`);
+                    await deleteQuery.not('id', 'in', `(${currentIds.map(id => `'${id}'`).join(',')})`);
                 } else {
                     await deleteQuery;
                 }
@@ -419,7 +427,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                     if (item.id) {
                         await supabase.from('task_checklist_items').update({ content: item.content, is_completed: item.is_completed }).eq('id', item.id);
                     } else {
-                        await supabase.from('task_checklist_items').insert({ task_id: taskData.id, content: item.content, is_completed: item.is_completed });
+                        await supabase.from('task_checklist_items').insert({ task_id: taskId, content: item.content, is_completed: item.is_completed });
                     }
                 }
             }
