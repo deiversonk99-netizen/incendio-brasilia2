@@ -629,6 +629,17 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const [newBoardUserId, setNewBoardUserId] = useState('');
   const [users, setUsers] = useState<any[]>([]);
 
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<TaskGroup | null>(null);
+  const [groupFormName, setGroupFormName] = useState('');
+  const [groupFormColor, setGroupFormColor] = useState('bg-slate-500');
+
+  const GROUP_COLORS = [
+    'bg-slate-500', 'bg-blue-500', 'bg-sky-500', 'bg-emerald-500',
+    'bg-green-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500',
+    'bg-rose-500', 'bg-pink-500', 'bg-purple-500', 'bg-indigo-500'
+  ];
+
   const isCentral = isTaskCentralUser(user?.email);
 
   useEffect(() => {
@@ -902,12 +913,11 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     await supabase.from('task_groups').delete().eq('id', groupId);
   };
 
-  const handleRenameGroup = async (groupId: string) => {
-    const group = groups.find((g: TaskGroup) => g.id === groupId);
-    const newName = prompt('Novo nome do grupo:', group?.name);
-    if (!newName || newName === group?.name) return;
-    setGroups((prev: TaskGroup[]) => prev.map((g: TaskGroup) => g.id === groupId ? { ...g, name: newName } : g));
-    await supabase.from('task_groups').update({ name: newName }).eq('id', groupId);
+  const handleEditGroupClick = (group: TaskGroup) => {
+    setEditingGroup(group);
+    setGroupFormName(group.name);
+    setGroupFormColor(group.color || 'bg-slate-500');
+    setIsGroupModalOpen(true);
   };
 
   const handleRenameBoard = async () => {
@@ -951,23 +961,40 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     await Promise.all(updates);
   };
 
-  const handleAddGroup = async () => {
+  const handleAddGroupClick = () => {
     if (!selectedBoardId || selectedBoardId === SYNC_BOARD_ID) return;
-    const name = prompt('Nome do novo grupo:');
-    if (!name) return;
+    setEditingGroup(null);
+    setGroupFormName('');
+    setGroupFormColor('bg-slate-500');
+    setIsGroupModalOpen(true);
+  };
+
+  const handleSaveGroupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!groupFormName.trim()) return;
+    setLoading(true);
+
     try {
-      const { data, error } = await supabase.from('task_groups').insert({
-        name,
-        color: 'bg-slate-400',
-        order_index: groups.length,
-        board_id: selectedBoardId,
-        user_id: user?.id
-      }).select().single();
-      if (error) throw error;
-      if (data) setGroups([...groups, data]);
+      if (editingGroup) {
+        setGroups((prev) => prev.map(g => g.id === editingGroup.id ? { ...g, name: groupFormName, color: groupFormColor } : g));
+        await supabase.from('task_groups').update({ name: groupFormName, color: groupFormColor }).eq('id', editingGroup.id);
+      } else {
+        const { data, error } = await supabase.from('task_groups').insert({
+          name: groupFormName,
+          color: groupFormColor,
+          order_index: groups.length,
+          board_id: selectedBoardId,
+          user_id: user?.id
+        }).select().single();
+        if (error) throw error;
+        if (data) setGroups([...groups, data]);
+      }
+      setIsGroupModalOpen(false);
     } catch (error: any) {
-      console.error('Error adding group:', error);
-      alert('Erro ao criar grupo: ' + error.message);
+      console.error('Error saving group:', error);
+      alert('Erro ao salvar coluna: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1185,8 +1212,8 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                       <div>
                         <h3
                           className="font-black text-white text-[11px] uppercase tracking-[0.1em] cursor-pointer hover:text-primary transition-colors"
-                          onDoubleClick={() => handleRenameGroup(group.id)}
-                          title="Clique duas vezes para renomear"
+                          onDoubleClick={() => handleEditGroupClick(group)}
+                          title="Clique duas vezes para editar"
                         >
                           {group.name}
                         </h3>
@@ -1194,7 +1221,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                      <button onClick={() => handleRenameGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
+                      <button onClick={() => handleEditGroupClick(group)} className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
                         <span className="material-symbols-outlined text-[18px]">edit</span>
                       </button>
                       <button onClick={() => handleDeleteGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-500 transition-all">
@@ -1440,7 +1467,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             {viewMode === 'minhas_tarefas' && selectedBoardId && (
               <div className={`${isCompact ? 'w-[260px]' : 'w-[320px]'} shrink-0 h-full flex flex-col items-center justify-center px-8 border-2 border-dashed border-white/5 rounded-2xl bg-white/[0.01] transition-all hover:bg-white/[0.03] hover:border-primary/20 group`}>
                 <button
-                  onClick={handleAddGroup}
+                  onClick={handleAddGroupClick}
                   className="flex flex-col items-center gap-5 text-slate-600 group-hover:text-primary transition-all active:scale-95 text-center"
                 >
                   <div className="size-16 rounded-full bg-white/5 flex items-center justify-center border-2 border-white/5 shadow-xl group-hover:border-primary/30 group-hover:bg-primary/10 transition-all">
@@ -1494,7 +1521,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                       <option key={u.id} value={u.id}>{u.email} {u.professional_title ? `(${u.professional_title})` : ''}</option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-slate-500 mt-1">Se não selecionado, o quadro será seu.</p>
+                  <p className="text-[10px] text-slate-500 mt-1">Se não selecionado, o quadro será seu. Nota: Apenas usuários que já realizaram o primeiro acesso ao sistema aparecem nesta lista.</p>
                 </div>
               )}
               <div className="flex gap-3 pt-4">
@@ -1503,6 +1530,62 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                 </button>
                 <button type="submit" disabled={!newBoardName} className="flex-1 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-bold disabled:opacity-50">
                   Criar Quadro
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit/Add Group Modal */}
+      {isGroupModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-surface-dark border border-white/10 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+              <div className="flex items-center gap-3">
+                <div className={`size-10 rounded-xl flex items-center justify-center border border-white/10 ${groupFormColor}`}>
+                  <span className="material-symbols-outlined text-white text-[20px]">{editingGroup ? 'edit' : 'add_box'}</span>
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white tracking-tight">{editingGroup ? 'Editar Coluna' : 'Nova Coluna'}</h3>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{editingGroup ? 'Ajuste o nome e a cor' : 'Adicione um novo estágio'}</p>
+                </div>
+              </div>
+              <button onClick={() => setIsGroupModalOpen(false)} className="size-8 flex items-center justify-center hover:bg-white/5 rounded-xl text-slate-400 hover:text-white transition-all">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+            <form onSubmit={handleSaveGroupSubmit} className="p-6 space-y-6">
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Nome da Coluna</label>
+                <input
+                  required
+                  type="text"
+                  className="w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all font-medium text-sm"
+                  placeholder="Ex: Em Andamento"
+                  value={groupFormName}
+                  onChange={(e) => setGroupFormName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Cor de Destaque</label>
+                <div className="flex flex-wrap gap-3 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                  {GROUP_COLORS.map(color => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setGroupFormColor(color)}
+                      className={`size-8 rounded-full ${color} transition-all shadow-lg ${groupFormColor === color ? 'ring-2 ring-white scale-110 shadow-black/40' : 'opacity-40 hover:opacity-100 hover:scale-110'}`}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-4 pt-2">
+                <button type="button" onClick={() => setIsGroupModalOpen(false)} className="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={loading || !groupFormName.trim()} className="flex-[2] px-6 py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {loading ? 'Salvando...' : 'Salvar Coluna'}
                 </button>
               </div>
             </form>
