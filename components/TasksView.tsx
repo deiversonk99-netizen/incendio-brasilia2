@@ -332,7 +332,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             setProjects(uniqueProjects);
         }
         if (gData) {
-            const isCentral = isTaskCentralUser(user?.email);
+            const isCentral = isTaskCentralUser(user?.email, profile);
             const accessibleGroups = (gData as any[]).filter(g => {
                 if (isCentral) return true;
                 if (!profile) return true;
@@ -640,7 +640,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     'bg-rose-500', 'bg-pink-500', 'bg-purple-500', 'bg-indigo-500'
   ];
 
-  const isCentral = isTaskCentralUser(user?.email);
+  const isCentral = isTaskCentralUser(user?.email, profile);
 
   useEffect(() => {
     const handleClickOutside = () => setOpenMenuTaskId(null);

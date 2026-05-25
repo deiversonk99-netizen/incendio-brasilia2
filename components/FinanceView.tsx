@@ -27,9 +27,17 @@ const FinanceView: React.FC = () => {
     const allowedIds = [
       '30c7f748-9e2e-4632-9950-4bff1311aa44', // incendiobrasilia@gmail.com
       'fccae473-8363-4d73-8a12-f4a295229a3e', // contato@incendiobrasilia.com.br
-      'd0de3a9e-c949-4665-9101-298f4a11c314'  // cleodson.batata@gmail.com
+      'd0de3a9e-c949-4665-9101-298f4a11c314', // cleodson.batata@gmail.com
+      'ae7d22aa-7484-4066-9265-9a8d38d108e8'  // cleodsonbatata.eng@gmail.com
     ];
-    return user?.id && allowedIds.includes(user.id);
+    const allowedEmails = [
+      'incendiobrasilia@gmail.com',
+      'contato@incendiobrasilia.com.br',
+      'cleodson.batata@gmail.com',
+      'cleodsonbatata@gmail.com',
+      'cleodsonbatata.eng@gmail.com'
+    ];
+    return user && (allowedIds.includes(user.id) || (user.email && allowedEmails.includes(user.email.toLowerCase())));
   }, [user]);
 
   // Advanced Filters State

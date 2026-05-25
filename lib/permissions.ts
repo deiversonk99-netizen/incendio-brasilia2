@@ -11,25 +11,33 @@ export const STOCK_ADMINS = [
     ...SUPER_ADMINS,
     'preraldovasconcelos@gmail.com',
     'cleodson.batata@gmail.com',
+    'cleodsonbatata@gmail.com',
+    'cleodsonbatata.eng@gmail.com',
     'franciscoeudes7891@gmail.com'
 ];
 
 export const FINANCE_ADMINS = [
     ...SUPER_ADMINS,
     'incendiobrasilia@gmail.com',
-    'cleodson.batata@gmail.com'
+    'cleodson.batata@gmail.com',
+    'cleodsonbatata@gmail.com',
+    'cleodsonbatata.eng@gmail.com'
 ];
 
 export const PROPOSAL_ADMINS = [
     ...SUPER_ADMINS,
     'incendiobrasilia@gmail.com',
-    'cleodson.batata@gmail.com'
+    'cleodson.batata@gmail.com',
+    'cleodsonbatata@gmail.com',
+    'cleodsonbatata.eng@gmail.com'
 ];
 
 export const TASK_CENTRAL_USERS = [
     ...SUPER_ADMINS,
     'incendiobrasilia@gmail.com',
-    'cleodson.batata@gmail.com'
+    'cleodson.batata@gmail.com',
+    'cleodsonbatata@gmail.com',
+    'cleodsonbatata.eng@gmail.com'
 ];
 
 export const isSuperAdmin = (email?: string, profile?: any) => {

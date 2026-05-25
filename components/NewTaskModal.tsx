@@ -139,7 +139,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
         }
 
         if (gData) {
-            const isCentral = isTaskCentralUser(user?.email);
+            const isCentral = isTaskCentralUser(user?.email, profile);
             const accessibleGroups = (gData as any[]).filter(g => {
                 if (isCentral) return true;
                 if (!profile) return true;
