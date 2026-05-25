@@ -33,7 +33,7 @@ const AdminBoardsView: React.FC = () => {
     // Create Board Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [newBoardName, setNewBoardName] = useState('');
-    const [selectedUserId, setSelectedUserId] = useState('');
+    const [selectedUserValue, setSelectedUserValue] = useState(''); // Can be UUID or email
 
     const fetchData = async () => {
         setLoading(true);
@@ -52,9 +52,10 @@ const AdminBoardsView: React.FC = () => {
             .order('created_at', { ascending: false });
 
         if (boardsData) {
-            const enrichedBoards = boardsData.map(b => ({
+            const enrichedBoards = boardsData.map((b: any) => ({
                 ...b,
-                user_email: userData?.find(u => u.id === b.user_id)?.email || 'Unknown'
+                // Priority: matched profile email > user_email column > 'Unknown'
+                user_email: userData?.find(u => u.id === b.user_id)?.email || b.user_email || 'Unknown'
             }));
             setBoards(enrichedBoards);
 
@@ -151,44 +152,58 @@ const AdminBoardsView: React.FC = () => {
         }
     };
 
-    // Filter users to only those with a valid ID (linked to auth)
-    const usersWithId = users.filter(u => u.id && u.id.length > 5);
+    // Helper: check if a string looks like a UUID
+    const isUUID = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
     const createBoard = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newBoardName || !selectedUserId) return;
+        if (!newBoardName || !selectedUserValue) return;
+
+        // Determine if selectedUserValue is a UUID (auth user) or an email (pre-registered only)
+        const selectedIsUUID = isUUID(selectedUserValue);
 
         try {
+            const insertPayload: any = {
+                name: newBoardName,
+                is_visible: true
+            };
+
+            if (selectedIsUUID) {
+                insertPayload.user_id = selectedUserValue;
+                insertPayload.user_email = users.find(u => u.id === selectedUserValue)?.email || null;
+            } else {
+                // User only has email (hasn't logged in yet) — store email, leave user_id null
+                insertPayload.user_id = null;
+                insertPayload.user_email = selectedUserValue;
+            }
+
             const { data: board, error } = await supabase
                 .from('task_boards')
-                .insert({
-                    name: newBoardName,
-                    user_id: selectedUserId,
-                    is_visible: true
-                })
+                .insert(insertPayload)
                 .select()
                 .single();
 
             if (error) throw error;
 
-            // Add default column
+            // Add default column — user_id may be null for pre-registered users
             await supabase.from('task_groups').insert({
                 name: 'Pendentes',
                 color: 'bg-primary',
                 order_index: 0,
                 board_id: board.id,
-                user_id: selectedUserId
+                user_id: selectedIsUUID ? selectedUserValue : null
             });
 
             setIsModalOpen(false);
             setNewBoardName('');
-            setSelectedUserId('');
+            setSelectedUserValue('');
             fetchData();
         } catch (err: any) {
             console.error('Erro ao criar quadro:', err);
             alert('Erro ao criar quadro: ' + err.message);
         }
     };
+
 
     return (
         <div className="flex-1 flex flex-col h-full bg-background-dark overflow-hidden">
@@ -296,14 +311,20 @@ const AdminBoardsView: React.FC = () => {
                                 <select
                                     required
                                     className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-all"
-                                    value={selectedUserId}
-                                    onChange={e => setSelectedUserId(e.target.value)}
+                                    value={selectedUserValue}
+                                    onChange={e => setSelectedUserValue(e.target.value)}
                                 >
                                     <option value="">Selecione um usuário...</option>
-                                    {usersWithId.map(u => (
-                                        <option key={u.id} value={u.id}>{u.email}</option>
+                                    {users.map(u => (
+                                        // Use UUID if available, otherwise use email as identifier
+                                        <option key={u.id || u.email} value={u.id && u.id.length > 5 ? u.id : u.email}>
+                                            {u.email}{!u.id ? ' (aguardando 1º acesso)' : ''}
+                                        </option>
                                     ))}
                                 </select>
+                                <p className="text-[10px] text-slate-500 mt-1">
+                                    Usuários marcados como "aguardando 1º acesso" ainda não fizeram login. O quadro será vinculado automaticamente quando eles entrarem.
+                                </p>
                             </div>
 
                             <div className="pt-4">

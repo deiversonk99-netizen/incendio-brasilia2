@@ -1014,11 +1014,33 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const handleCreateBoardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBoardName) return;
+
+    // Check if the selected value is a UUID or an email (pre-registered user with no auth ID)
+    const isUUID = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    const selectedIsUUID = newBoardUserId ? isUUID(newBoardUserId) : false;
+
     try {
-      const { data: boardData, error: boardError } = await supabase.from('task_boards').insert({
-        name: newBoardName,
-        user_id: newBoardUserId || user?.id
-      }).select().single();
+      const insertPayload: any = { name: newBoardName };
+
+      if (!newBoardUserId) {
+        // No user selected → assign to current user
+        insertPayload.user_id = user?.id;
+        insertPayload.user_email = user?.email || null;
+      } else if (selectedIsUUID) {
+        insertPayload.user_id = newBoardUserId;
+        insertPayload.user_email = users.find(u => u.id === newBoardUserId)?.email || null;
+      } else {
+        // Email-only (pre-registered, no auth ID yet)
+        insertPayload.user_id = null;
+        insertPayload.user_email = newBoardUserId; // newBoardUserId holds the email in this case
+      }
+
+      const { data: boardData, error: boardError } = await supabase
+        .from('task_boards')
+        .insert(insertPayload)
+        .select()
+        .single();
+
       if (boardError) throw boardError;
       if (boardData) {
         await supabase.from('task_groups').insert({
@@ -1026,7 +1048,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           color: 'bg-primary',
           order_index: 0,
           board_id: boardData.id,
-          user_id: newBoardUserId || user?.id
+          user_id: selectedIsUUID ? newBoardUserId : (newBoardUserId ? null : user?.id)
         });
         setBoards([...boards, boardData]);
         setSelectedBoardId(boardData.id);
@@ -1517,11 +1539,13 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                     onChange={(e) => setNewBoardUserId(e.target.value)}
                   >
                     <option value="">Selecione um usuário...</option>
-                    {users.filter(u => u.id).map(u => (
-                      <option key={u.id} value={u.id}>{u.email} {u.professional_title ? `(${u.professional_title})` : ''}</option>
+                    {users.map(u => (
+                      <option key={u.id || u.email} value={u.id && u.id.length > 5 ? u.id : u.email}>
+                        {u.email}{u.professional_title ? ` (${u.professional_title})` : ''}{!u.id ? ' — aguardando 1º acesso' : ''}
+                      </option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-slate-500 mt-1">Se não selecionado, o quadro será seu. Nota: Apenas usuários que já realizaram o primeiro acesso ao sistema aparecem nesta lista.</p>
+                  <p className="text-[10px] text-slate-500 mt-1">Se não selecionado, o quadro será seu. Usuários "aguardando 1º acesso" ainda não fizeram login; o quadro será vinculado automaticamente quando eles entrarem.</p>
                 </div>
               )}
               <div className="flex gap-3 pt-4">
