@@ -34,10 +34,7 @@ export const PROPOSAL_ADMINS = [
 
 export const TASK_CENTRAL_USERS = [
     ...SUPER_ADMINS,
-    'incendiobrasilia@gmail.com',
-    'cleodson.batata@gmail.com',
-    'cleodsonbatata@gmail.com',
-    'cleodsonbatata.eng@gmail.com'
+    'incendiobrasilia@gmail.com'
 ];
 
 export const isSuperAdmin = (email?: string, profile?: any) => {

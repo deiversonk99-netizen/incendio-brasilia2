@@ -611,7 +611,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
 
 const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
   const { user, profile } = useAuth();
-  const [viewMode, setViewMode] = useState<'minhas_tarefas' | 'monitoramento'>(isTeamMonitoring ? 'monitoramento' : 'minhas_tarefas');
+  const [viewMode, setViewMode] = useState<'minhas_tarefas' | 'atribuidas' | 'monitoramento'>(isTeamMonitoring ? 'monitoramento' : 'minhas_tarefas');
   const [boards, setBoards] = useState<TaskBoard[]>([]);
   const [selectedBoardId, setSelectedBoardId] = useState<string>('');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -740,6 +740,43 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         }));
 
         setGroups(userGroups);
+      }
+    } else if (viewMode === 'atribuidas') {
+      // TAREFAS ATRIBUIDAS MODE: Fetch tasks assigned to the logged-in user
+      const [{ data: tasksData }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
+        supabase
+          .from('tasks')
+          .select('*, projects(name), task_groups(id, name, color, order_index, board_id, task_boards(id, name))')
+          .eq('assignee', user.id)
+          .order('created_at', { ascending: false }),
+        supabase.from('user_profiles').select('id, email'),
+        supabase.from('task_checklist_items').select('task_id, is_completed')
+      ]);
+
+      if (tasksData) {
+        const enrichedTasks = tasksData.map((t: any) => {
+          const taskChecklist = checklistsData?.filter((c: any) => c.task_id === t.id) || [];
+          const completedCount = taskChecklist.filter((c: any) => c.is_completed).length;
+          const totalCount = taskChecklist.length;
+          return {
+            ...t,
+            user_profiles: profilesData?.find(p => p.id === t.user_id) || { email: '?' },
+            assignee_profile: t.assignee ? profilesData?.find(p => p.id === t.assignee) : null,
+            checklist_progress: totalCount > 0 ? `${completedCount}/${totalCount}` : null,
+            checklist_percentage: totalCount > 0 ? (completedCount / totalCount) * 100 : 0
+          };
+        });
+        setTasks(enrichedTasks);
+
+        // Extract unique groups from the assigned tasks
+        const uniqueGroupsMap: Record<string, any> = {};
+        enrichedTasks.forEach((t: any) => {
+          if (t.task_groups) {
+            uniqueGroupsMap[t.task_groups.id] = t.task_groups;
+          }
+        });
+        const assignedGroups = Object.values(uniqueGroupsMap).sort((a: any, b: any) => a.order_index - b.order_index);
+        setGroups(assignedGroups as any);
       }
     } else {
       // MINHAS TAREFAS MODE: Filter strictly by user_id
@@ -1075,29 +1112,35 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
               <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
                 <span className="material-symbols-outlined text-primary text-[24px]">
-                  {viewMode === 'monitoramento' ? 'groups' : 'task_alt'}
+                  {viewMode === 'monitoramento' ? 'groups' : viewMode === 'atribuidas' ? 'assignment_ind' : 'task_alt'}
                 </span>
               </div>
-              {viewMode === 'monitoramento' ? 'Monitoramento da Equipe' : 'Minhas Tarefas'}
+              {viewMode === 'monitoramento' ? 'Monitoramento da Equipe' : viewMode === 'atribuidas' ? 'Tarefas Atribuídas a Mim' : 'Minhas Tarefas'}
             </h2>
 
-            {/* Controle de Abas para Admins */}
-            {isCentral && (
-              <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5 w-fit mt-2">
-                <button
-                  onClick={() => setViewMode('minhas_tarefas')}
-                  className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'minhas_tarefas' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                >
-                  Minhas Tarefas
-                </button>
+            {/* Controle de Abas */}
+            <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5 w-fit mt-2">
+              <button
+                onClick={() => setViewMode('minhas_tarefas')}
+                className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'minhas_tarefas' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                Minhas Tarefas
+              </button>
+              <button
+                onClick={() => setViewMode('atribuidas')}
+                className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'atribuidas' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                Atribuídas a Mim
+              </button>
+              {isCentral && (
                 <button
                   onClick={() => setViewMode('monitoramento')}
                   className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'monitoramento' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
                 >
                   Monitoramento
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
             {viewMode === 'minhas_tarefas' ? (
               boards.length > 1 ? (
@@ -1130,6 +1173,16 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                   </p>
                 </div>
               )
+            ) : viewMode === 'atribuidas' ? (
+              <div className="flex items-center gap-3 mt-1">
+                <div className="bg-primary/10 text-primary text-[10px] font-black border border-primary/20 rounded-full px-4 py-1.5 uppercase tracking-widest">
+                  Tarefas Sob Minha Responsabilidade
+                </div>
+                <span className="w-1.5 h-1.5 rounded-full bg-white/10"></span>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">
+                  Acompanhando o que foi atribuído a você
+                </p>
+              </div>
             ) : (
               <div className="flex items-center gap-3 mt-1">
                 <div className="bg-emerald-500/10 text-emerald-400 text-[10px] font-black border border-emerald-500/20 rounded-full px-4 py-1.5 uppercase tracking-widest">
@@ -1194,7 +1247,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           </div>
         )}
 
-        {!selectedBoardId && boards.length === 0 ? (
+        {viewMode === 'minhas_tarefas' && !selectedBoardId && boards.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <div className="size-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
               <span className="material-symbols-outlined text-red-500 text-[32px]">warning_amber</span>
@@ -1202,6 +1255,16 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             <div className="text-center">
               <h3 className="text-lg font-bold text-white mb-1">Nenhum quadro encontrado</h3>
               <p className="text-slate-400 max-w-xs mx-auto">Entre em contato com a administração para criar ou habilitar um quadro de tarefas para você.</p>
+            </div>
+          </div>
+        ) : viewMode === 'atribuidas' && groups.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-4 py-20">
+            <div className="size-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
+              <span className="material-symbols-outlined text-primary text-[32px]">assignment_turned_in</span>
+            </div>
+            <div className="text-center">
+              <h3 className="text-lg font-bold text-white mb-1">Nenhuma tarefa atribuída</h3>
+              <p className="text-slate-400 max-w-xs mx-auto">Você não possui nenhuma tarefa atribuída no momento.</p>
             </div>
           </div>
         ) : (
@@ -1234,22 +1297,29 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                       <div>
                         <h3
                           className="font-black text-white text-[11px] uppercase tracking-[0.1em] cursor-pointer hover:text-primary transition-colors"
-                          onDoubleClick={() => handleEditGroupClick(group)}
-                          title="Clique duas vezes para editar"
+                          onDoubleClick={() => {
+                            if (viewMode === 'minhas_tarefas') handleEditGroupClick(group);
+                          }}
+                          title={viewMode === 'minhas_tarefas' ? "Clique duas vezes para editar" : undefined}
                         >
                           {group.name}
                         </h3>
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{groupTasks.length} {groupTasks.length === 1 ? 'Tarefa' : 'Tarefas'}</p>
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
+                          {groupTasks.length} {groupTasks.length === 1 ? 'Tarefa' : 'Tarefas'}
+                          {viewMode === 'atribuidas' && (group as any).task_boards?.name ? ` • ${(group as any).task_boards.name}` : ''}
+                        </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                      <button onClick={() => handleEditGroupClick(group)} className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
-                        <span className="material-symbols-outlined text-[18px]">edit</span>
-                      </button>
-                      <button onClick={() => handleDeleteGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-500 transition-all">
-                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                      </button>
-                    </div>
+                    {viewMode === 'minhas_tarefas' && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <button onClick={() => handleEditGroupClick(group)} className="size-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all">
+                          <span className="material-symbols-outlined text-[18px]">edit</span>
+                        </button>
+                        <button onClick={() => handleDeleteGroup(group.id)} className="size-8 flex items-center justify-center hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-500 transition-all">
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div
@@ -1400,12 +1470,13 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
                                   </a>
                                 )}
 
-                                <div className="flex gap-1">
+                                <div className="flex gap-1.5">
                                   {['bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'].map(c => (
                                     <button
                                       key={c}
                                       onClick={(e) => { e.stopPropagation(); handleUpdateTaskColor(task.id, c); }}
-                                      className={`w-2 h-2 rounded-full ${c} ${task.label_color === c ? 'ring-2 ring-white scale-110 shadow-lg shadow-black/40' : 'opacity-20 hover:opacity-100 transition-all hover:scale-125'}`}
+                                      className={`w-3.5 h-3.5 rounded-full ${c} ${task.label_color === c ? 'ring-2 ring-white scale-110 shadow-lg shadow-black/40' : 'opacity-50 hover:opacity-100 transition-all hover:scale-125'}`}
+                                      title={`Trocar cor para ${c.replace('bg-', '').replace('-500', '')}`}
                                     />
                                   ))}
                                 </div>
