@@ -436,7 +436,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     setReplicationSummary(summary);
 
     // 4. Prepare inserts
-    const newItems = Object.entries(aggregation).map(([name, qty]) => {
+    const newItems = Object.entries(aggregation)
+      .filter(([_, qty]) => qty > 0)
+      .map(([name, qty]) => {
       // Fix: strip the [INFRA:...] part before checking price catalog
       // Example: "TUBO 1/2 [INFRA:Infra Alarme]" -> "TUBO 1/2"
       const cleanName = name.includes('[INFRA:') ? name.split('[INFRA:')[0].trim() : name.trim();

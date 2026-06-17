@@ -197,7 +197,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     try {
       // 1. Save to project-specific settings
-      await supabase
+      const { error: pdfError } = await supabase
         .from('pdf_settings')
         .upsert({
           project_id: selectedProjectId,
@@ -205,6 +205,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           variables: newSettings,
           updated_at: new Date().toISOString()
         }, { onConflict: 'project_id, phase' });
+
+      if (pdfError) {
+        console.error('Error saving PDF settings:', pdfError);
+        alert('Erro ao salvar as configurações do PDF. O arquivo pode ser muito grande.');
+      }
 
       // 2. Save global defaults to user profile (signature, CRQ, credentials, stamps)
       const globalFields = {
@@ -217,11 +222,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         updated_at: new Date().toISOString()
       };
 
-      await supabase
+      const { error: profileError } = await supabase
         .from('user_profiles')
         .update(globalFields)
         .eq('id', user.id);
 
+      if (profileError) {
+        console.error('Error saving user profile:', profileError);
+      }
     } catch (e) {
       console.error('Error saving PDF settings:', e);
     }
@@ -454,16 +462,22 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           updated_at: new Date().toISOString()
         };
 
-        const { data: existing } = await supabase
+        const { data: existing, error: findError } = await supabase
           .from('proposals')
           .select('id')
           .eq('project_id', selectedProjectId)
-          .single();
+          .maybeSingle();
+
+        if (findError) {
+          console.error('Error finding proposal:', findError);
+        }
 
         if (existing) {
-          await supabase.from('proposals').update(payload).eq('id', existing.id);
+          const { error } = await supabase.from('proposals').update(payload).eq('id', existing.id);
+          if (error) console.error('Error updating proposal:', error);
         } else {
-          await supabase.from('proposals').insert(payload);
+          const { error } = await supabase.from('proposals').insert(payload);
+          if (error) console.error('Error inserting proposal:', error);
         }
       } catch (err) {
         console.error('Erro no auto-save da proposta:', err);
@@ -1486,9 +1500,18 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // Remove 'else' block wrapper so services can still be listed
 
-      const activeCentralItems = pdfSettings.group_products_as_service 
+      const activeCentralItemsRaw = pdfSettings.group_products_as_service 
         ? centralItems.filter((i: any) => i.item_type === 'SERVICE' || i.item_type === 'CUSTOM')
         : centralItems;
+
+      // Group by name
+      const groupedCentralMap = activeCentralItemsRaw.reduce((acc: Record<string, any>, item: any) => {
+        const name = item.name || 'Item';
+        if (!acc[name]) acc[name] = { ...item };
+        else acc[name].quantity_final += item.quantity_final;
+        return acc;
+      }, {});
+      const activeCentralItems = Object.values(groupedCentralMap);
 
       // Add Central Items
       if (activeCentralItems.length > 0) {
@@ -1531,7 +1554,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             return !proposal.hide_products_pdf;
           });
 
-          if (visibleItems.length === 0) return;
+          // Group items within the model by name to prevent duplicates
+          const groupedModelItemsMap = visibleItems.reduce((acc: Record<string, any>, item: any) => {
+            const name = item.name;
+            if (!acc[name]) acc[name] = { ...item };
+            else acc[name].quantity_final += item.quantity_final;
+            return acc;
+          }, {});
+          const mergedVisibleItems = Object.values(groupedModelItemsMap);
+
+          if (mergedVisibleItems.length === 0) return;
 
           majorIndex++;
           const modelTotal = mItems.reduce((acc: number, i: any) => acc + (i.quantity_final * i.unit_price), 0);
@@ -1547,7 +1579,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             styles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold' }
           }]);
 
-          visibleItems.forEach((item: any, idx: number) => {
+          mergedVisibleItems.forEach((item: any, idx: number) => {
             const cleanName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
             const row = [`${majorIndex}.${idx + 1} ${cleanName}`, item.quantity_final || 0];
 
@@ -3045,9 +3077,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
                         {pdfSettings.group_products_as_service && (
                           <div className="mt-3 pl-9 animate-in slide-in-from-top-1">
-                            <input
-                              type="text"
-                              className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none text-sm"
+                            <textarea
+                              className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none text-sm min-h-[80px]"
                               placeholder="Nome do grupo (Padrão: Fornecimento de Equipamentos e Materiais)"
                               value={pdfSettings.group_products_name || ''}
                               onChange={e => savePdfSettings({ ...pdfSettings, group_products_name: e.target.value })}

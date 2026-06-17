@@ -625,6 +625,13 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
         .filter(([name]) => checks[name] !== false)
         .map(([name, qty]) => [name, qty]);
 
+      const kits = items.infra_kits || [];
+      kits.forEach((kit: any) => {
+        if (Number(kit.meters) > 0) {
+          tableData.push([`[KIT] ${kit.name}`, `${kit.meters}m`]);
+        }
+      });
+
       if (tableData.length > 0) {
         autoTable(doc, {
           startY: yPos,
