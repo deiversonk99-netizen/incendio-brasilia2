@@ -172,7 +172,7 @@ const SettingsView: React.FC = () => {
         }]);
 
         if (!error) {
-            alert('Usuário convidado/adicionado com sucesso!');
+            alert('Usuário autorizado com sucesso!\n\nIMPORTANTE: Informe ao usuário que ele deve acessar a tela de Login, clicar em "Não tem conta? Crie uma agora" e informar este mesmo e-mail para criar sua senha de acesso.');
             setIsAddUserModalOpen(false);
             setNewUserEmail('');
             fetchSettings();

@@ -57,7 +57,11 @@ const LoginView: React.FC = () => {
                 setMode('LOGIN');
             }
         } catch (err: any) {
-            setError(err.message);
+            if (err.message === 'Invalid login credentials') {
+                setError('Email ou senha incorretos. Se você acabou de criar a conta, verifique se confirmou o link enviado para o seu e-mail. Se o administrador liberou seu acesso agora, você deve clicar em "Não tem conta? Crie uma agora" para definir sua senha pela primeira vez.');
+            } else {
+                setError(err.message);
+            }
         } finally {
             setLoading(false);
         }
