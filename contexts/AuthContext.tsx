@@ -37,32 +37,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isRecoveryMode, setIsRecoveryMode] = useState(false);
 
     const fetchProfile = async (email: string) => {
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from('user_profiles')
             .select('*')
-            .eq('email', email)
-            .single();
+            .ilike('email', email)
+            .limit(1)
+            .maybeSingle();
         if (data) setProfile(data);
+        else console.error('fetchProfile failed:', error);
     };
 
     useEffect(() => {
         // Check active sessions and sets the user
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase.auth.getSession().then(async ({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
-            if (session?.user?.email) fetchProfile(session.user.email);
+            if (session?.user?.email) await fetchProfile(session.user.email);
             setLoading(false);
         });
 
         // Listen for changes on auth state (logged in, signed out, etc.)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (event === 'PASSWORD_RECOVERY') {
                 setIsRecoveryMode(true);
             }
 
             setSession(session);
             setUser(session?.user ?? null);
-            if (session?.user?.email) fetchProfile(session.user.email);
+            if (session?.user?.email) await fetchProfile(session.user.email);
             else setProfile(null);
             setLoading(false);
         });

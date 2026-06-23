@@ -112,12 +112,28 @@ const AppContent: React.FC = () => {
     }
   }, [currentView, engineeringProjectId, user]);
 
-  // Initial Redirection for FUNCIONARIO
+  // Initial Redirection
   React.useEffect(() => {
-    if (session && profile?.role === 'FUNCIONARIO' && currentView === AppView.DASHBOARD) {
-      setCurrentView(AppView.PLACAS);
+    if (session && currentView === AppView.DASHBOARD) {
+      if (profile?.role === 'FUNCIONARIO') {
+        setCurrentView(AppView.PLACAS);
+      } else if (profile && !canViewTab(AppView.DASHBOARD, user?.email, profile)) {
+        // Find the first tab they have access to
+        const allNavItems = [
+          AppView.CLIENTS, AppView.TASKS, AppView.KITS, AppView.CATALOG,
+          AppView.SUPPLIERS, AppView.PLACAS, AppView.SERVICES, AppView.SERVICE_MODELS,
+          AppView.ENGINEERING_PHASE_A, AppView.ENGINEERING_PHASE_B, AppView.ENGINEERING_PHASE_C,
+          AppView.RENEWALS, AppView.FINANCE, AppView.STOCK, AppView.SETTINGS, AppView.TEAM_TASKS, AppView.ADMIN_BOARDS
+        ];
+        for (const view of allNavItems) {
+          if (canViewTab(view, user?.email, profile)) {
+            setCurrentView(view);
+            break;
+          }
+        }
+      }
     }
-  }, [session, profile, currentView]);
+  }, [session, profile, currentView, user?.email]);
 
   if (loading) {
     return (
