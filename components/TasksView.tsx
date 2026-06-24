@@ -779,11 +779,10 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         setGroups(assignedGroups as any);
       }
     } else {
-      // MINHAS TAREFAS MODE: Filter strictly by user_id
+      // GLOBAL TAREFAS MODE: Fetch all boards independently of user_id
       const { data: boardsData } = await supabase
         .from('task_boards')
         .select('*')
-        .eq('user_id', user.id) // Strict user_id filter
         .order('name');
 
       if (boardsData) {

@@ -68,35 +68,38 @@ const SettingsView: React.FC = () => {
 
     const fetchSettings = async () => {
         setLoading(true);
+        try {
+            // 1. Fetch User Profiles - Order by email
+            const { data: profileData } = await supabase
+                .from('user_profiles')
+                .select('*')
+                .order('email');
 
-        // 1. Fetch User Profiles - Order by email
-        const { data: profileData } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .order('email');
+            if (profileData) setProfiles(profileData);
 
-        if (profileData) setProfiles(profileData);
+            // Fetch Task Boards for Permissions
+            const { data: boardsData } = await supabase
+                .from('task_boards')
+                .select('id, name, user_id')
+                .order('name');
 
-        // Fetch Task Boards for Permissions
-        const { data: boardsData } = await supabase
-            .from('task_boards')
-            .select('id, name, user_id')
-            .order('name');
+            if (boardsData) setTaskBoards(boardsData as any);
 
-        if (boardsData) setTaskBoards(boardsData as any);
+            // 2. Fetch PDF Settings
+            const { data: appData, error: appError } = await supabase.from('app_settings').select('*').eq('key', 'pdf_global_config').maybeSingle();
+            if (appData) setPdfSettings(appData.value);
 
-        // 2. Fetch PDF Settings
-        const { data: appData } = await supabase.from('app_settings').select('*').eq('key', 'pdf_global_config').single();
-        if (appData) setPdfSettings(appData.value);
+            // 3. Fetch Terms
+            const { data: pmData, error: pmError } = await supabase.from('payment_methods').select('*').order('label');
+            if (pmData) setPaymentMethods(pmData);
 
-        // 3. Fetch Terms
-        const { data: pmData } = await supabase.from('payment_methods').select('*').order('label');
-        if (pmData) setPaymentMethods(pmData);
-
-        const { data: esData } = await supabase.from('execution_schedules').select('*').order('label');
-        if (esData) setExecutionSchedules(esData);
-
-        setLoading(false);
+            const { data: esData, error: esError } = await supabase.from('execution_schedules').select('*').order('label');
+            if (esData) setExecutionSchedules(esData);
+        } catch (err) {
+            console.error("Error fetching settings:", err);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleUpdateRole = async (email: string, newRole: string) => {

@@ -29,7 +29,17 @@ const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [engineeringProjectId, setEngineeringProjectId] = useState<string>('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { session, user, profile, loading, isRecoveryMode } = useAuth(); // Added profile and isRecoveryMode
+  const { session, user, profile, loading, isRecoveryMode } = useAuth();
+  const [safetyLoading, setSafetyLoading] = React.useState(true);
+
+  // Safety net: never show the spinner for more than 3 seconds
+  React.useEffect(() => {
+    const timer = setTimeout(() => setSafetyLoading(false), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const isLoading = loading && safetyLoading;
+
 
   const renderContent = useCallback(() => {
     const userRoleCheck = (view: AppView) => {
@@ -135,7 +145,7 @@ const AppContent: React.FC = () => {
     }
   }, [session, profile, currentView, user?.email]);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background-dark">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>

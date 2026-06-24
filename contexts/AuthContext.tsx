@@ -48,45 +48,76 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     useEffect(() => {
-        // Check active sessions and sets the user
-        supabase.auth.getSession().then(async ({ data: { session } }) => {
-            setSession(session);
-            setUser(session?.user ?? null);
-            if (session?.user?.email) await fetchProfile(session.user.email);
-            setLoading(false);
-        });
+        let isMounted = true;
+        let profileSubscription: any = null;
 
-        // Listen for changes on auth state (logged in, signed out, etc.)
+        const setupProfileListener = (userId: string) => {
+            if (profileSubscription) return;
+            profileSubscription = supabase
+                .channel('custom-user-profile')
+                .on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `id=eq.${userId}` },
+                    (payload) => {
+                        if (isMounted) setProfile(payload.new as UserProfile);
+                    }
+                )
+                .subscribe();
+        };
+
+        const initAuth = async () => {
+            try {
+                // Try to get session — Supabase reads from localStorage, usually instant
+                const { data: { session } } = await supabase.auth.getSession();
+
+                if (isMounted) {
+                    setSession(session);
+                    setUser(session?.user ?? null);
+                    if (session?.user?.email) {
+                        await fetchProfile(session.user.email).catch(e => console.error('fetchProfile err', e));
+                    }
+                    if (session?.user?.id) {
+                        setupProfileListener(session.user.id);
+                    }
+                }
+            } catch (err) {
+                console.error('Auth init error:', err);
+            } finally {
+                if (isMounted) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        initAuth();
+
+        // Listen for auth state changes (login, logout, token refresh, etc.)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (!isMounted) return;
+
             if (event === 'PASSWORD_RECOVERY') {
                 setIsRecoveryMode(true);
             }
 
             setSession(session);
             setUser(session?.user ?? null);
-            if (session?.user?.email) await fetchProfile(session.user.email);
-            else setProfile(null);
-            setLoading(false);
-        });
 
-        // Real-time listener for profile updates
-        let profileSubscription: any = null;
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            if (session?.user?.id) {
-                profileSubscription = supabase
-                    .channel('custom-user-profile')
-                    .on(
-                        'postgres_changes',
-                        { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `id=eq.${session.user.id}` },
-                        (payload) => {
-                            setProfile(payload.new as UserProfile);
-                        }
-                    )
-                    .subscribe();
+            if (session?.user?.email) {
+                await fetchProfile(session.user.email).catch(e => console.error('fetchProfile err', e));
+            } else {
+                setProfile(null);
             }
+
+            if (session?.user?.id) {
+                setupProfileListener(session.user.id);
+            }
+
+            // Always clear loading on any auth event
+            if (isMounted) setLoading(false);
         });
 
         return () => {
+            isMounted = false;
             subscription.unsubscribe();
             if (profileSubscription) supabase.removeChannel(profileSubscription);
         };

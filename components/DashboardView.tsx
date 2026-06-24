@@ -94,7 +94,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const fetchData = async () => {
     setLoading(true);
 
-    // 1. Projects
+    try {
+    // 1. Projects — global, no user filter needed (RLS disabled)
     const { data: projData } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
     if (projData) {
       setProjects(projData as Project[]);
@@ -169,18 +170,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     const { data: profilesData } = await supabase.from('user_profiles').select('id, email, role');
     if (profilesData) setAllProfiles(profilesData);
 
-    // 7. Fetch Quick Tasks (group_id IS NULL)
-    if (user) {
-      const { data: quickTasksData } = await supabase
-        .from('tasks')
-        .select('*')
-        .is('group_id', null)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (quickTasksData) {
-        setTasks(quickTasksData);
-      }
+    // 7. Fetch Quick Tasks (group_id IS NULL) — global
+    const { data: quickTasksData } = await supabase
+      .from('tasks')
+      .select('*')
+      .is('group_id', null)
+      .order('created_at', { ascending: false });
+    if (quickTasksData) {
+      setTasks(quickTasksData);
     }
 
     // 8. Custom Status Columns & Migration
@@ -235,12 +232,17 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       }
     }
 
-    setLoading(false);
+    } catch (err) {
+      console.error('fetchData error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
+    // Load all data on mount — data is global (RLS disabled)
     fetchData();
-  }, [user]);
+  }, []);
 
   const handleTaskToggle = async (id: string, currentStatus: boolean) => {
     // Optimistic
