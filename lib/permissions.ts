@@ -68,38 +68,12 @@ export const canViewTab = (viewId: string, email?: string, profile?: any) => {
     // 2. Default RBAC fallbacks (If not explicitly permitted/denied)
     const role = profile?.role || 'USER';
 
-    // Groups logic (Whitelist based on emails)
-    if (viewId === 'FINANCE') {
-        if (FINANCE_ADMINS.includes(email.toLowerCase())) return true;
+    // Tabs that are strictly for admins by default
+    if (viewId === 'SETTINGS' || viewId === 'ADMIN_BOARDS') {
         return role === 'ADMIN';
     }
 
-    if (viewId === 'PLACAS' || viewId === 'STOCK' || viewId === 'SUPPLIERS') {
-        if (STOCK_ADMINS.includes(email.toLowerCase())) return true;
-        return role === 'ADMIN' || role === 'MANAGER';
-    }
-
-    if (viewId.startsWith('ENG_')) {
-        if (PROPOSAL_ADMINS.includes(email.toLowerCase())) return true;
-        return role === 'ADMIN' || role === 'MANAGER';
-    }
-
-    // Special case for FUNCIONARIO role default visibility
-    if (role === 'FUNCIONARIO') {
-        return viewId === 'PLACAS' || viewId === 'STOCK';
-    }
-
-    // Tabs only visible to Staff by default
-    const staffOnlyTabs = [
-        'DASHBOARD', 'CLIENTS', 'TASKS', 'KITS', 'CATALOG',
-        'SERVICES', 'SERVICE_MODELS', 'RENEWALS', 'SETTINGS', 'ADMIN_BOARDS'
-    ];
-
-    if (staffOnlyTabs.includes(viewId)) {
-        return role === 'ADMIN' || role === 'MANAGER';
-    }
-
-    // Default: visible to anyone (e.g. basic landing views if any exist)
+    // Default: visible to anyone (since the user requested all data to be open by default unless restricted in Settings)
     return true;
 };
 

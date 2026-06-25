@@ -60,6 +60,14 @@ const syncExpiredRenewals = async (supabase: SupabaseClient, userId: string): Pr
                 return anyGroup[0].id;
             }
         }
+        
+        // Fallback: If no boards found for user, just find ANY pending group globally
+        const { data: globalGroups } = await supabase.from('task_groups').select('id').ilike('name', '%Pendente%').limit(1);
+        if (globalGroups && globalGroups.length > 0) {
+             userGroupCache[targetUserId] = globalGroups[0].id;
+             return globalGroups[0].id;
+        }
+
         userGroupCache[targetUserId] = null;
         return null;
     };
@@ -340,7 +348,8 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                     const boardOwnerId = Array.isArray(g.task_boards)
                         ? g.task_boards[0]?.user_id
                         : g.task_boards?.user_id;
-                    if (boardOwnerId && boardOwnerId !== user?.id) return false;
+                    // Relaxed validation: Allow assigning tasks to any board since we are loosening restrictions
+                    // if (boardOwnerId && boardOwnerId !== user?.id) return false;
                 }
                 if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
                 const key = `GROUP_${g.id}`;

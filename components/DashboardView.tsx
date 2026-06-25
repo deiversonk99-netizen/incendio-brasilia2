@@ -62,7 +62,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [labelDefinitions, setLabelDefinitions] = useState<{ color: string, label: string }[]>([]);
   const [showLabelSettings, setShowLabelSettings] = useState(false);
   const [editingLabels, setEditingLabels] = useState<{ color: string, label: string }[]>([]);
-  
+
   // Task Assignment States
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [projectForTask, setProjectForTask] = useState<Project | null>(null);
@@ -70,7 +70,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [projectForColor, setProjectForColor] = useState<Project | null>(null);
   const [allProfiles, setAllProfiles] = useState<any[]>([]);
   const [selectedAssignee, setSelectedAssignee] = useState<string>('');
-  
+
   const { user, profile } = useAuth();
 
   const highlightText = (text: string, highlight: string) => {
@@ -95,142 +95,156 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     setLoading(true);
 
     try {
-    // 1. Projects — global, no user filter needed (RLS disabled)
-    const { data: projData } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
-    if (projData) {
-      setProjects(projData as Project[]);
+      // 1. Projects — global, no user filter needed (RLS disabled)
+      const { data: projData, error: projError } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+      
+      console.log('--- DASHBOARD FETCH DATA ---');
+      console.log('Projects Data:', projData);
+      console.log('Projects Error:', projError);
 
-      // Calculate Chart Data
-      const monthlyData: Record<string, number> = {};
-      const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+      if (projData) {
+        setProjects(projData as Project[]);
 
-      // Initialize months
-      months.forEach(m => monthlyData[m] = 0);
+        // Calculate Chart Data
+        const monthlyData: Record<string, number> = {};
+        const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-      projData.forEach((p: any) => {
-        if (p.created_at) {
-          const date = new Date(p.created_at);
-          const monthName = months[date.getMonth()];
-          monthlyData[monthName] += Number(p.value || 0);
+        // Initialize months
+        months.forEach(m => monthlyData[m] = 0);
+
+        projData.forEach((p: any) => {
+          if (p.created_at) {
+            const date = new Date(p.created_at);
+            const monthName = months[date.getMonth()];
+            monthlyData[monthName] += Number(p.value || 0);
+          }
+        });
+
+        const formattedChartData = months.map(m => ({
+          name: m,
+          real: monthlyData[m]
+        }));
+        setChartData(formattedChartData);
+      }
+
+      // 2. Clients (for fantasy name mapping)
+      const { data: clientsData } = await supabase.from('clients').select('name, fantasy_name');
+      if (clientsData) setClients(clientsData);
+
+      // 3. Proposals (to check which projects have them)
+      const { data: proposalData } = await supabase.from('proposals').select('project_id');
+      if (proposalData) {
+        setProjectsWithProposals(new Set(proposalData.map(p => p.project_id)));
+      }
+
+      // 4. Floors (Phase A)
+      const { data: floorsData } = await supabase.from('floors').select('project_id');
+      if (floorsData) {
+        setProjectsWithFloors(new Set(floorsData.map(f => f.project_id)));
+      }
+
+
+      // 5. Calculated Items (Phase B)
+      const { data: itemsData } = await supabase.from('budget_items').select('project_id').eq('origin', 'CALCULATED');
+      if (itemsData) {
+        setProjectsWithCalculatedItems(new Set(itemsData.map(i => i.project_id)));
+      }
+
+      // 6. Label Definitions (Global/Admin-based)
+      // We fetch from the 'contato@incendiobrasilia.com.br' or first admin to act as global central legend
+      const { data: adminProfiles } = await supabase.from('user_profiles').select('id').eq('role', 'ADMIN').limit(1);
+      const adminProfile = adminProfiles && adminProfiles.length > 0 ? adminProfiles[0] : null;
+
+      if (adminProfile) {
+        const { data: labelData } = await supabase.from('project_label_definitions').select('*').limit(10);
+        if (labelData && labelData.length > 0) {
+          setLabelDefinitions(labelData);
+        } else {
+          // Default definitions
+          setLabelDefinitions([
+            { color: 'bg-red-500', label: 'Crítico' },
+            { color: 'bg-orange-500', label: 'Urgente' },
+            { color: 'bg-yellow-500', label: 'Atenção' },
+            { color: 'bg-green-500', label: 'Normal' },
+            { color: 'bg-blue-500', label: 'Baixa Prioridade' },
+            { color: 'bg-purple-500', label: 'Aguardando' },
+          ]);
         }
-      });
-
-      const formattedChartData = months.map(m => ({
-        name: m,
-        real: monthlyData[m]
-      }));
-      setChartData(formattedChartData);
-    }
-
-    // 2. Clients (for fantasy name mapping)
-    const { data: clientsData } = await supabase.from('clients').select('name, fantasy_name');
-    if (clientsData) setClients(clientsData);
-
-    // 3. Proposals (to check which projects have them)
-    const { data: proposalData } = await supabase.from('proposals').select('project_id');
-    if (proposalData) {
-      setProjectsWithProposals(new Set(proposalData.map(p => p.project_id)));
-    }
-
-    // 4. Floors (Phase A)
-    const { data: floorsData } = await supabase.from('floors').select('project_id');
-    if (floorsData) {
-      setProjectsWithFloors(new Set(floorsData.map(f => f.project_id)));
-    }
-
-
-    // 5. Calculated Items (Phase B)
-    const { data: itemsData } = await supabase.from('budget_items').select('project_id').eq('origin', 'CALCULATED');
-    if (itemsData) {
-      setProjectsWithCalculatedItems(new Set(itemsData.map(i => i.project_id)));
-    }
-
-    // 6. Label Definitions (Global/Admin-based)
-    // We fetch from the 'contato@incendiobrasilia.com.br' or first admin to act as global central legend
-    const { data: adminProfile } = await supabase.from('user_profiles').select('id').eq('role', 'ADMIN').limit(1).single();
-    
-    if (adminProfile) {
-      const { data: labelData } = await supabase.from('project_label_definitions').select('*').eq('user_id', adminProfile.id);
-      if (labelData && labelData.length > 0) {
-        setLabelDefinitions(labelData);
-      } else {
-        // Default definitions
-        setLabelDefinitions([
-          { color: 'bg-red-500', label: 'Crítico' },
-          { color: 'bg-orange-500', label: 'Urgente' },
-          { color: 'bg-yellow-500', label: 'Atenção' },
-          { color: 'bg-green-500', label: 'Normal' },
-          { color: 'bg-blue-500', label: 'Baixa Prioridade' },
-          { color: 'bg-purple-500', label: 'Aguardando' },
-        ]);
       }
-    }
 
-    // Fetch all profiles for task assignment
-    const { data: profilesData } = await supabase.from('user_profiles').select('id, email, role');
-    if (profilesData) setAllProfiles(profilesData);
+      // Fetch all profiles for task assignment
+      const { data: profilesData } = await supabase.from('user_profiles').select('id, email, role');
+      if (profilesData) setAllProfiles(profilesData);
 
-    // 7. Fetch Quick Tasks (group_id IS NULL) — global
-    const { data: quickTasksData } = await supabase
-      .from('tasks')
-      .select('*')
-      .is('group_id', null)
-      .order('created_at', { ascending: false });
-    if (quickTasksData) {
-      setTasks(quickTasksData);
-    }
-
-    // 8. Custom Status Columns & Migration
-    // Fetch ALL status columns (shared dashboard)
-    const { data: colsData } = await supabase
-      .from('project_status_columns')
-      .select('*')
-      .order('order_index', { ascending: true });
-
-    let currentCols = colsData || [];
-
-    if (currentCols.length === 0 && user) {
-      // First time initialization (only if NO columns exist at all)
-      const defaultCols = [
-        { user_id: user.id, label: 'Em Análise', color: 'bg-blue-400', shadow_class: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]', order_index: 0, project_types: ['business', 'factory', 'store', 'residential'] },
-        { user_id: user.id, label: 'Aprovado', color: 'bg-yellow-400', shadow_class: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]', order_index: 1, project_types: ['business', 'factory', 'store', 'residential'] },
-        { user_id: user.id, label: 'Execução', color: 'bg-primary', shadow_class: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]', order_index: 2, project_types: ['business', 'factory', 'store', 'residential'] },
-        { user_id: user.id, label: 'Concluído', color: 'bg-emerald-400', shadow_class: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]', order_index: 3, project_types: ['business', 'factory', 'store', 'residential'] },
-      ];
-
-      const { data: insertedCols } = await supabase.from('project_status_columns').insert(defaultCols).select();
-      if (insertedCols) {
-        currentCols = insertedCols.sort((a, b) => a.order_index - b.order_index);
+      // 7. Fetch Quick Tasks (group_id IS NULL) — global
+      const { data: quickTasksData } = await supabase
+        .from('tasks')
+        .select('*')
+        .is('group_id', null)
+        .order('created_at', { ascending: false });
+      if (quickTasksData) {
+        setTasks(quickTasksData);
       }
-    }
 
-    if (currentCols.length > 0) {
-      setStatusColumns(currentCols);
+      // 8. Custom Status Columns & Migration
+      // Fetch ALL status columns (shared dashboard)
+      const { data: colsData, error: colsError } = await supabase
+        .from('project_status_columns')
+        .select('*')
+        .order('order_index', { ascending: true });
 
-      // Universal Migration: Ensure all projects use UUIDs instead of legacy strings
-      const colMap: Record<string, string> = {
-        'ANALYSIS': currentCols.find(c => c.label === 'Em Análise')?.id || currentCols[0].id,
-        'APPROVED': currentCols.find(c => c.label === 'Aprovado')?.id || currentCols[Math.min(1, currentCols.length - 1)].id,
-        'EXECUTION': currentCols.find(c => c.label === 'Execução')?.id || currentCols[Math.min(2, currentCols.length - 1)].id,
-        'DONE': currentCols.find(c => c.label === 'Concluído')?.id || currentCols[currentCols.length - 1].id
-      };
+      console.log('Columns Data:', colsData);
+      console.log('Columns Error:', colsError);
 
-      // Check if any project still has a legacy status
-      const legacyStatuses = ['ANALYSIS', 'APPROVED', 'EXECUTION', 'DONE'];
-      const needsMigration = projData?.some((p: any) => legacyStatuses.includes(p.status));
+      let currentCols = colsData || [];
 
-      if (needsMigration && user) {
-        console.log("Migrating legacy project statuses to UUIDs...");
-        for (const [oldStatus, newId] of Object.entries(colMap)) {
-          await supabase.from('projects')
-            .update({ status: newId })
-            .eq('status', oldStatus);
-          // No user_id filter here to catch everyone's legacy projects during migration
+      if (currentCols.length === 0) {
+        // First time initialization (only if NO columns exist at all)
+        // If user is null, we can just use a dummy id or wait. Since we removed strict validation,
+        // we can just use the user's ID if available, or a fallback if required by DB.
+        const defaultCols = [
+          { user_id: user?.id || null, label: 'Em Análise', color: 'bg-blue-400', shadow_class: 'shadow-[0_0_8px_rgba(96,165,250,0.6)]', order_index: 0, project_types: ['business', 'factory', 'store', 'residential'] },
+          { user_id: user?.id || null, label: 'Aprovado', color: 'bg-yellow-400', shadow_class: 'shadow-[0_0_8px_rgba(250,204,21,0.6)]', order_index: 1, project_types: ['business', 'factory', 'store', 'residential'] },
+          { user_id: user?.id || null, label: 'Execução', color: 'bg-primary', shadow_class: 'shadow-[0_0_8px_rgba(226,29,72,0.6)]', order_index: 2, project_types: ['business', 'factory', 'store', 'residential'] },
+          { user_id: user?.id || null, label: 'Concluído', color: 'bg-emerald-400', shadow_class: 'shadow-[0_0_8px_rgba(52,211,153,0.6)]', order_index: 3, project_types: ['business', 'factory', 'store', 'residential'] },
+        ];
+
+        const { data: insertedCols, error: insertError } = await supabase.from('project_status_columns').insert(defaultCols).select();
+        console.log('Inserted Columns:', insertedCols);
+        console.log('Insert Error:', insertError);
+        
+        if (insertedCols) {
+          currentCols = insertedCols.sort((a, b) => a.order_index - b.order_index);
         }
-
-        // Update local state is handled below when setting projects
       }
-    }
+
+      if (currentCols.length > 0) {
+        setStatusColumns(currentCols);
+
+        // Universal Migration: Ensure all projects use UUIDs instead of legacy strings
+        const colMap: Record<string, string> = {
+          'ANALYSIS': currentCols.find(c => c.label === 'Em Análise')?.id || currentCols[0].id,
+          'APPROVED': currentCols.find(c => c.label === 'Aprovado')?.id || currentCols[Math.min(1, currentCols.length - 1)].id,
+          'EXECUTION': currentCols.find(c => c.label === 'Execução')?.id || currentCols[Math.min(2, currentCols.length - 1)].id,
+          'DONE': currentCols.find(c => c.label === 'Concluído')?.id || currentCols[currentCols.length - 1].id
+        };
+
+        // Check if any project still has a legacy status
+        const legacyStatuses = ['ANALYSIS', 'APPROVED', 'EXECUTION', 'DONE'];
+        const needsMigration = projData?.some((p: any) => legacyStatuses.includes(p.status));
+
+        if (needsMigration && user) {
+          console.log("Migrating legacy project statuses to UUIDs...");
+          for (const [oldStatus, newId] of Object.entries(colMap)) {
+            await supabase.from('projects')
+              .update({ status: newId })
+              .eq('status', oldStatus);
+            // No user_id filter here to catch everyone's legacy projects during migration
+          }
+
+          // Update local state is handled below when setting projects
+        }
+      }
 
     } catch (err) {
       console.error('fetchData error:', err);
@@ -337,7 +351,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
     try {
       // Find the admin representing global settings
-      const { data: adminProfile } = await supabase.from('user_profiles').select('id').eq('role', 'ADMIN').limit(1).single();
+      const { data: adminProfiles } = await supabase.from('user_profiles').select('id').eq('role', 'ADMIN').limit(1);
+      const adminProfile = adminProfiles && adminProfiles.length > 0 ? adminProfiles[0] : null;
       const targetUserId = adminProfile ? adminProfile.id : user.id;
 
       // Delete existing definitions for target
@@ -430,10 +445,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     return 'NEW';
   };
 
-  const dynamicColumnsMapped = statusColumns.map(c => ({ 
-    id: c.id, 
-    label: c.label, 
-    color: c.color, 
+  const dynamicColumnsMapped = statusColumns.map(c => ({
+    id: c.id,
+    label: c.label,
+    color: c.color,
     shadow: c.shadow_class,
     project_types: c.project_types,
     allowed_labels: c.allowed_labels,
@@ -670,237 +685,219 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                 </div>
               </div>
             </div>
-            
+
             <div className="overflow-x-auto overflow-y-hidden custom-scrollbar pb-4 scroll-smooth">
               <div className="flex h-[500px] gap-6 min-w-[1200px]">
                 {activeColumns.map(col => (
-                <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${col.color} ${col.shadow}`}></span>
-                      <h3 className="text-white font-bold text-sm uppercase tracking-wider">{col.label}</h3>
-                      <span className="bg-[#46252c] text-text-muted text-xs font-bold px-2 py-0.5 rounded-full">
-                        {projects.filter(p => {
-                          const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
-                          if (!matchesView) return false;
-                          if (viewMode === 'STATUS' && col.project_types) {
-                            if (!col.project_types.includes(p.type)) return false;
-                          }
-                          
-                          // Label Filter
-                          if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
-                            if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
-                          }
+                  <div key={col.id} className="flex-1 flex flex-col min-w-[300px] h-full bg-surface-dark/50 rounded-xl border border-white/5 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${col.color} ${col.shadow}`}></span>
+                        <h3 className="text-white font-bold text-sm uppercase tracking-wider">{col.label}</h3>
+                        <span className="bg-[#46252c] text-text-muted text-xs font-bold px-2 py-0.5 rounded-full">
+                          {projects.filter(p => {
+                            const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
+                            if (!matchesView) return false;
+                            if (viewMode === 'STATUS' && col.project_types) {
+                              if (!col.project_types.includes(p.type)) return false;
+                            }
 
-                          // Client Filter
-                          if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
-                            if (!col.allowed_clients.includes(p.client)) return false;
-                          }
+                            // Label Filter
+                            if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
+                              if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
+                            }
 
-                          return true;
-                        }).length}
-                      </span>
+                            // Client Filter
+                            if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
+                              if (!col.allowed_clients.includes(p.client)) return false;
+                            }
+
+                            return true;
+                          }).length}
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-3">
-                    {loading ? (
-                      <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
-                    ) : (
-                      projects
-                        .filter(p => {
-                          // Prevent projects from vanishing if their status doesn't match any existing column
-                          // If status doesn't match ANY column, force it to show up in the very first column.
-                          const isValidStatus = statusColumns.some(c => c.id === p.status);
-                          const matchesView = viewMode === 'STATUS' 
-                            ? (p.status === col.id || (!isValidStatus && col.id === statusColumns[0]?.id))
-                            : getProjectPhase(p) === col.id;
-                            
-                          if (!matchesView) return false;
-                        if (viewMode === 'STATUS' && col.project_types) {
-                          if (!col.project_types.includes(p.type || 'business')) return false;
-                        }
+                    <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-3">
+                      {loading ? (
+                        <div className="text-center text-slate-500 text-xs py-4">Carregando...</div>
+                      ) : (
+                        projects
+                          .filter(p => {
+                            // Prevent projects from vanishing if their status doesn't match any existing column
+                            // If status doesn't match ANY column, force it to show up in the very first column.
+                            const isValidStatus = statusColumns.some(c => c.id === p.status);
+                            const matchesView = viewMode === 'STATUS'
+                              ? (p.status === col.id || (!isValidStatus && col.id === statusColumns[0]?.id))
+                              : getProjectPhase(p) === col.id;
 
-                        // Label Filter
-                        if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
-                          if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
-                        }
+                            if (!matchesView) return false;
+                            if (viewMode === 'STATUS' && col.project_types) {
+                              if (!col.project_types.includes(p.type || 'business')) return false;
+                            }
 
-                        // Client Filter
-                        if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
-                          if (!col.allowed_clients.includes(p.client)) return false;
-                        }
-                          return true;
-                        })
-                        .filter(p => {
-                          // Filter by Type
-                          if (filterType !== 'ALL' && p.type !== filterType) return false;
+                            // Label Filter
+                            if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
+                              if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
+                            }
 
-                          // Filter by Client
-                          if (filterClient !== 'ALL' && p.client !== filterClient) return false;
+                            // Client Filter
+                            if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
+                              if (!col.allowed_clients.includes(p.client)) return false;
+                            }
+                            return true;
+                          })
+                          .filter(p => {
+                            // Filter by Type
+                            if (filterType !== 'ALL' && p.type !== filterType) return false;
 
-                          // Search filter
-                          const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-                          if (searchWords.length === 0) return true;
-                          const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
-                          return searchWords.every(word => {
-                            const projNumStr = p.project_number ? String(p.project_number) : '';
-                            const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
-                            const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+                            // Filter by Client
+                            if (filterClient !== 'ALL' && p.client !== filterClient) return false;
 
-                            const cleanWordNumber = word.replace(/^0+/, '') || '0';
-                            const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
-                            const wordNumbersOnly = word.replace(/\D/g, '');
+                            // Search filter
+                            const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+                            if (searchWords.length === 0) return true;
+                            const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
+                            return searchWords.every(word => {
+                              const projNumStr = p.project_number ? String(p.project_number) : '';
+                              const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
+                              const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
 
-                            return (p.name?.toLowerCase() || '').includes(word) ||
-                              (p.client?.toLowerCase() || '').includes(word) ||
-                              (projNumStr && projNumStr === cleanWordNumber) ||
-                              (projNumStr && projNumStr === wordBeforeSlash) ||
-                              (projNumStr && projNumStr === wordNumbersOnly) ||
-                              (projNumPadded && projNumPadded.includes(word)) ||
-                              (prFormatted && prFormatted.includes(word)) ||
-                              projectTypeLabel.includes(word);
-                          });
-                        })
-                        .map(proj => (
-                          <div
-                            key={proj.id}
-                            onClick={() => handleProjectClick(proj)}
-                            className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative overflow-hidden flex flex-col min-h-[170px]"
-                            style={{
-                              backgroundColor: proj.label_color && proj.label_color !== 'transparent' 
-                                ? `rgba(${proj.label_color.includes('red') ? '239, 68, 68' : 
-                                   proj.label_color.includes('orange') ? '249, 115, 22' :
-                                   proj.label_color.includes('yellow') ? '234, 179, 8' :
-                                   proj.label_color.includes('green') ? '34, 197, 94' :
-                                   proj.label_color.includes('blue') ? '59, 130, 246' :
-                                   proj.label_color.includes('purple') ? '168, 85, 247' : '0, 0, 0'}, 0.08)` 
-                                : undefined
-                            }}
-                          >
-                            {/* Color Label Indicator */}
-                            {proj.label_color && proj.label_color !== 'transparent' && (
-                              <div
-                                className={`absolute top-0 right-0 w-1.5 h-full ${proj.label_color} rounded-r-xl`}
-                                title={labelDefinitions.find(l => l.color === proj.label_color)?.label || ''}
-                              ></div>
-                            )}
+                              const cleanWordNumber = word.replace(/^0+/, '') || '0';
+                              const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
+                              const wordNumbersOnly = word.replace(/\D/g, '');
 
-                            <div className="flex justify-between items-start mb-2">
-                              <div className="flex items-center gap-1.5">
-                                {proj.project_number && (
-                                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary text-white border border-primary/20 leading-none">
-                                    PR{String(proj.project_number).padStart(3, '0')}
-                                  </span>
-                                )}
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/5 text-slate-500 border border-white/5 leading-none uppercase tracking-wider">
-                                  {proj.created_at ? new Date(proj.created_at).toLocaleDateString('pt-BR') : 'Sem data'}
-                                </span>
-                              </div>
+                              return (p.name?.toLowerCase() || '').includes(word) ||
+                                (p.client?.toLowerCase() || '').includes(word) ||
+                                (projNumStr && projNumStr === cleanWordNumber) ||
+                                (projNumStr && projNumStr === wordBeforeSlash) ||
+                                (projNumStr && projNumStr === wordNumbersOnly) ||
+                                (projNumPadded && projNumPadded.includes(word)) ||
+                                (prFormatted && prFormatted.includes(word)) ||
+                                projectTypeLabel.includes(word);
+                            });
+                          })
+                          .map(proj => (
+                            <div
+                              key={proj.id}
+                              onClick={() => handleProjectClick(proj)}
+                              className="bg-card-dark rounded-xl p-4 border border-[#64353f] hover:border-primary/50 cursor-pointer group shadow-sm transition-all hover:translate-y-[-2px] active:scale-[0.98] relative overflow-hidden flex flex-col min-h-[170px]"
+                              style={{
+                                backgroundColor: proj.label_color && proj.label_color !== 'transparent'
+                                  ? `rgba(${proj.label_color.includes('red') ? '239, 68, 68' :
+                                    proj.label_color.includes('orange') ? '249, 115, 22' :
+                                      proj.label_color.includes('yellow') ? '234, 179, 8' :
+                                        proj.label_color.includes('green') ? '34, 197, 94' :
+                                          proj.label_color.includes('blue') ? '59, 130, 246' :
+                                            proj.label_color.includes('purple') ? '168, 85, 247' : '0, 0, 0'}, 0.08)`
+                                  : undefined
+                              }}
+                            >
+                              {/* Color Label Indicator */}
+                              {proj.label_color && proj.label_color !== 'transparent' && (
+                                <div
+                                  className={`absolute top-0 right-0 w-1.5 h-full ${proj.label_color} rounded-r-xl`}
+                                  title={labelDefinitions.find(l => l.color === proj.label_color)?.label || ''}
+                                ></div>
+                              )}
 
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
-                                {/* Send to Pending Button */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setProjectForTask(proj);
-                                    setIsTaskModalOpen(true);
-                                  }}
-                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 hover:text-indigo-300 transition-all border border-indigo-500/30"
-                                  title="Transformar em Tarefa"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">assignment_turned_in</span>
-                                  <span className="text-[9px] font-black uppercase tracking-tight">Tarefa</span>
-                                </button>
-
-                                {/* Color Label Button */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setProjectForColor(proj);
-                                    setIsColorModalOpen(true);
-                                  }}
-                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-white/10"
-                                  title="Sinalizar Projeto"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">palette</span>
-                                  <span className="text-[9px] font-black uppercase tracking-tight">Sinal</span>
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-white font-bold text-sm mb-0.5 mt-1 truncate flex items-center gap-2">
-                                {highlightText(proj.name, searchTerm)}
-                                {proj.internal_observations && (
-                                  <span className="material-symbols-outlined text-amber-500 text-[14px]" title="Dica: Possui observações internas">info</span>
-                                )}
-                              </h4>
-                              
-                              <p className="text-[9px] text-amber-500/90 italic mb-1 line-clamp-1 border-l border-amber-500/30 pl-2 leading-tight h-3 overflow-hidden">
-                                {proj.internal_observations || ""}
-                              </p>
-
-                              <div className="flex items-center gap-1.5 mb-2 h-4">
-                                <span className="material-symbols-outlined text-slate-500 text-[14px]">apartment</span>
-                                <p className="text-slate-400 text-[11px] font-medium truncate">
-                                  {highlightText(
-                                    getClientDisplayName(
-                                      clients.find(c => c.name === proj.client) || { name: proj.client },
-                                      'ui'
-                                    ),
-                                    searchTerm
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="flex items-center gap-1.5">
+                                  {proj.project_number && (
+                                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary text-white border border-primary/20 leading-none">
+                                      PR{String(proj.project_number).padStart(3, '0')}
+                                    </span>
                                   )}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="h-px bg-white/5 w-full mb-2"></div>
-                            <div className="flex justify-between items-center mt-auto">
-                              <div className="text-right w-full flex justify-between items-center">
-                                <div className="text-left">
-                                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-0">Valor Global</p>
-                                  <p className="text-white text-[13px] font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                  <p className="text-slate-500 text-[9px] uppercase font-bold tracking-tight">Vence em {proj.deadline}</p>
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/5 text-slate-500 border border-white/5 leading-none uppercase tracking-wider">
+                                    {proj.created_at ? new Date(proj.created_at).toLocaleDateString('pt-BR') : 'Sem data'}
+                                  </span>
                                 </div>
-                                {projectsWithProposals.has(proj.id) && (
+
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
+                                  {/* Send to Pending Button */}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onSelectProject(proj.id);
-                                      onViewChange(AppView.ENGINEERING_PHASE_C);
+                                      setProjectForTask(proj);
+                                      setIsTaskModalOpen(true);
                                     }}
-                                    className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[9px] font-black uppercase"
-                                    title="Ir para a Proposta"
+                                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 hover:text-indigo-300 transition-all border border-indigo-500/30"
+                                    title="Transformar em Tarefa"
                                   >
-                                    <span className="material-symbols-outlined text-[14px]">description</span>
-                                    Proposta
+                                    <span className="material-symbols-outlined text-[14px]">assignment_turned_in</span>
+                                    <span className="text-[9px] font-black uppercase tracking-tight">Tarefa</span>
                                   </button>
-                                )}
+
+                                  {/* Color Label Button */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setProjectForColor(proj);
+                                      setIsColorModalOpen(true);
+                                    }}
+                                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-white/10"
+                                    title="Sinalizar Projeto"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">palette</span>
+                                    <span className="text-[9px] font-black uppercase tracking-tight">Sinal</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-white font-bold text-sm mb-0.5 mt-1 truncate flex items-center gap-2">
+                                  {highlightText(proj.name, searchTerm)}
+                                  {proj.internal_observations && (
+                                    <span className="material-symbols-outlined text-amber-500 text-[14px]" title="Dica: Possui observações internas">info</span>
+                                  )}
+                                </h4>
+
+                                <p className="text-[9px] text-amber-500/90 italic mb-1 line-clamp-1 border-l border-amber-500/30 pl-2 leading-tight h-3 overflow-hidden">
+                                  {proj.internal_observations || ""}
+                                </p>
+
+                                <div className="flex items-center gap-1.5 mb-2 h-4">
+                                  <span className="material-symbols-outlined text-slate-500 text-[14px]">apartment</span>
+                                  <p className="text-slate-400 text-[11px] font-medium truncate">
+                                    {highlightText(
+                                      getClientDisplayName(
+                                        clients.find(c => c.name === proj.client) || { name: proj.client },
+                                        'ui'
+                                      ),
+                                      searchTerm
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="h-px bg-white/5 w-full mb-2"></div>
+                              <div className="flex justify-between items-center mt-auto">
+                                <div className="text-right w-full flex justify-between items-center">
+                                  <div className="text-left">
+                                    <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-0">Valor Global</p>
+                                    <p className="text-white text-[13px] font-bold">R$ {Number(proj.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-slate-500 text-[9px] uppercase font-bold tracking-tight">Vence em {proj.deadline}</p>
+                                  </div>
+                                  {projectsWithProposals.has(proj.id) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelectProject(proj.id);
+                                        onViewChange(AppView.ENGINEERING_PHASE_C);
+                                      }}
+                                      className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-[9px] font-black uppercase"
+                                      title="Ir para a Proposta"
+                                    >
+                                      <span className="material-symbols-outlined text-[14px]">description</span>
+                                      Proposta
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
-                    )}
-                    {!loading && projects.filter(p => {
-                      const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
-                      if (!matchesView) return false;
-                      if (viewMode === 'STATUS' && col.project_types) {
-                        if (!col.project_types.includes(p.type)) return false;
-                      }
-
-                      // Label Filter
-                      if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
-                        if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
-                      }
-
-                      // Client Filter
-                      if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
-                        if (!col.allowed_clients.includes(p.client)) return false;
-                      }
-                      return true;
-                    }).length > 0 &&
-                      projects.filter(p => {
+                          ))
+                      )}
+                      {!loading && projects.filter(p => {
                         const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
                         if (!matchesView) return false;
                         if (viewMode === 'STATUS' && col.project_types) {
@@ -916,42 +913,60 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                         if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
                           if (!col.allowed_clients.includes(p.client)) return false;
                         }
-
                         return true;
-                      }).filter(p => {
-                        if (filterType !== 'ALL' && p.type !== filterType) return false;
-                        if (filterClient !== 'ALL' && p.client !== filterClient) return false;
+                      }).length > 0 &&
+                        projects.filter(p => {
+                          const matchesView = viewMode === 'STATUS' ? p.status === col.id : getProjectPhase(p) === col.id;
+                          if (!matchesView) return false;
+                          if (viewMode === 'STATUS' && col.project_types) {
+                            if (!col.project_types.includes(p.type)) return false;
+                          }
 
-                        const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-                        return searchWords.every(word => {
-                          const projNumStr = p.project_number ? String(p.project_number) : '';
-                          const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
-                          const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+                          // Label Filter
+                          if (viewMode === 'STATUS' && col.allowed_labels && col.allowed_labels.length > 0) {
+                            if (!col.allowed_labels.includes(p.label_color || 'transparent')) return false;
+                          }
 
-                          const cleanWordNumber = word.replace(/^0+/, '') || '0';
-                          const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
-                          const wordNumbersOnly = word.replace(/\D/g, '');
-                          const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
+                          // Client Filter
+                          if (viewMode === 'STATUS' && col.allowed_clients && col.allowed_clients.length > 0) {
+                            if (!col.allowed_clients.includes(p.client)) return false;
+                          }
 
-                          return p.name.toLowerCase().includes(word) ||
-                            p.client.toLowerCase().includes(word) ||
-                            (projNumStr && projNumStr === cleanWordNumber) ||
-                            (projNumStr && projNumStr === wordBeforeSlash) ||
-                            (projNumStr && projNumStr === wordNumbersOnly) ||
-                            (projNumPadded && projNumPadded.includes(word)) ||
-                            (prFormatted && prFormatted.includes(word)) ||
-                            projectTypeLabel.includes(word);
-                        });
-                      }).length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-                          <span className="material-symbols-outlined text-slate-600 text-[32px] mb-2">search_off</span>
-                          <p className="text-slate-500 text-xs italic">Nenhum projeto corresponde aos filtros nesta coluna.</p>
-                        </div>
-                      )
-                    }
+                          return true;
+                        }).filter(p => {
+                          if (filterType !== 'ALL' && p.type !== filterType) return false;
+                          if (filterClient !== 'ALL' && p.client !== filterClient) return false;
+
+                          const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+                          return searchWords.every(word => {
+                            const projNumStr = p.project_number ? String(p.project_number) : '';
+                            const projNumPadded = p.project_number ? String(p.project_number).padStart(3, '0') : '';
+                            const prFormatted = p.project_number ? `pr${projNumPadded}` : '';
+
+                            const cleanWordNumber = word.replace(/^0+/, '') || '0';
+                            const wordBeforeSlash = word.split('/')[0].replace(/^0+/, '') || '0';
+                            const wordNumbersOnly = word.replace(/\D/g, '');
+                            const projectTypeLabel = p.type === 'business' ? 'comercial' : p.type === 'factory' ? 'industrial' : 'residencial';
+
+                            return p.name.toLowerCase().includes(word) ||
+                              p.client.toLowerCase().includes(word) ||
+                              (projNumStr && projNumStr === cleanWordNumber) ||
+                              (projNumStr && projNumStr === wordBeforeSlash) ||
+                              (projNumStr && projNumStr === wordNumbersOnly) ||
+                              (projNumPadded && projNumPadded.includes(word)) ||
+                              (prFormatted && prFormatted.includes(word)) ||
+                              projectTypeLabel.includes(word);
+                          });
+                        }).length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                            <span className="material-symbols-outlined text-slate-600 text-[32px] mb-2">search_off</span>
+                            <p className="text-slate-500 text-xs italic">Nenhum projeto corresponde aos filtros nesta coluna.</p>
+                          </div>
+                        )
+                      }
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
               </div>
             </div>
           </div>
