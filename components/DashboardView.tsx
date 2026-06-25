@@ -68,7 +68,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [projectForTask, setProjectForTask] = useState<Project | null>(null);
   const [isColorModalOpen, setIsColorModalOpen] = useState(false);
   const [projectForColor, setProjectForColor] = useState<Project | null>(null);
-  const [allProfiles, setAllProfiles] = useState<any[]>([]);
+  const [allProfiles, setAllProfiles] = useState<{ id: string, email: string, role: string }[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string>('');
   const [selectedAssignee, setSelectedAssignee] = useState<string>('');
 
   const { user, profile } = useAuth();
@@ -92,15 +93,20 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   };
 
   const fetchData = async () => {
+    console.error('--- fetchData HAS STARTED!!! ---');
     setLoading(true);
 
     try {
       // 1. Projects — global, no user filter needed (RLS disabled)
       const { data: projData, error: projError } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
       
-      console.log('--- DASHBOARD FETCH DATA ---');
-      console.log('Projects Data:', projData);
-      console.log('Projects Error:', projError);
+      console.error('--- DASHBOARD FETCH DATA ---');
+      console.error('Projects Data Length:', projData?.length);
+      console.error('Projects Error:', projError);
+
+      if (projError) {
+        setErrorMsg('Supabase Error: ' + projError.message);
+      }
 
       if (projData) {
         setProjects(projData as Project[]);
@@ -246,8 +252,9 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
         }
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('fetchData error:', err);
+      setErrorMsg('Catch Error: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -462,7 +469,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
         <div className="mx-auto max-w-[1600px] flex flex-col gap-8">
           <PageHeader
             title="Visão Geral"
-            subtitle="Resumo de operações e desempenho da Incêndio Brasília"
+            subtitle={`Debug -> Projects: ${projects.length} | Status Cols: ${statusColumns.length} | Error: ${errorMsg || 'None'} | User ID: ${user?.id}`}
             actions={
               <div className="flex gap-3">
                 <Button
