@@ -103,7 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(session?.user ?? null);
 
             if (session?.user?.email) {
-                await fetchProfile(session.user.email).catch(e => console.error('fetchProfile err', e));
+                fetchProfile(session.user.email).catch(e => console.error('fetchProfile err', e));
             } else {
                 setProfile(null);
             }

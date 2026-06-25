@@ -72,7 +72,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [selectedAssignee, setSelectedAssignee] = useState<string>('');
 
-  const { user, profile } = useAuth();
+  const { user, profile, session } = useAuth();
 
   const highlightText = (text: string, highlight: string) => {
     if (!highlight.trim()) return <span>{text}</span>;
@@ -93,16 +93,11 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   };
 
   const fetchData = async () => {
-    console.error('--- fetchData HAS STARTED!!! ---');
     setLoading(true);
 
     try {
       // 1. Projects — global, no user filter needed (RLS disabled)
       const { data: projData, error: projError } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
-      
-      console.error('--- DASHBOARD FETCH DATA ---');
-      console.error('Projects Data Length:', projData?.length);
-      console.error('Projects Error:', projError);
 
       if (projError) {
         setErrorMsg('Supabase Error: ' + projError.message);
@@ -469,7 +464,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
         <div className="mx-auto max-w-[1600px] flex flex-col gap-8">
           <PageHeader
             title="Visão Geral"
-            subtitle={`Debug -> Projects: ${projects.length} | Status Cols: ${statusColumns.length} | Error: ${errorMsg || 'None'} | User ID: ${user?.id}`}
+            subtitle="Métricas e andamento de todos os projetos ativos."
             actions={
               <div className="flex gap-3">
                 <Button
