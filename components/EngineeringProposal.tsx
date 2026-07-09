@@ -1374,9 +1374,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             const splitText = doc.splitTextToSize(section.content, pageWidth - 40);
-            doc.text(splitText, 20, yPos);
-
-            yPos += (splitText.length * 5) + 15;
+            splitText.forEach((line: string) => {
+              if (yPos > pageHeight - 50) {
+                doc.addPage();
+                drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
+                yPos = 70;
+              }
+              doc.text(line, 20, yPos);
+              yPos += 5;
+            });
+            yPos += 10;
           });
         } else {
           // Fallback to Standard Static Text
@@ -1392,9 +1399,16 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           doc.setFont('helvetica', 'normal');
           const introText = `A presente proposta tem por objetivo apresentar os custos e condições técnicas para serviços de engenharia no empreendimento "${pdfSettings.project_name_pdf || project.name}", contemplando o fornecimento de materiais ou mão de obra conforme detalhamento técnico a seguir.`;
           const splitIntro = doc.splitTextToSize(introText, pageWidth - 40);
-          doc.text(splitIntro, 20, yPos);
-
-          yPos += (splitIntro.length * 5) + 10;
+          splitIntro.forEach((line: string) => {
+            if (yPos > pageHeight - 50) {
+              doc.addPage();
+              drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
+              yPos = 70;
+            }
+            doc.text(line, 20, yPos);
+            yPos += 5;
+          });
+          yPos += 5;
 
           if (proposal.observations) {
             if (yPos > pageHeight - 40) {
@@ -1411,7 +1425,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             const splitObs = doc.splitTextToSize(proposal.observations, pageWidth - 40);
-            doc.text(splitObs, 20, yPos);
+            splitObs.forEach((line: string) => {
+              if (yPos > pageHeight - 50) {
+                doc.addPage();
+                drawHeader(doc, 'ESCOPO TÉCNICO E OBJETIVO');
+                yPos = 70;
+              }
+              doc.text(line, 20, yPos);
+              yPos += 5;
+            });
           }
         }
       }
