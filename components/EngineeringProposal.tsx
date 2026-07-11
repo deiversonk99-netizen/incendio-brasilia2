@@ -1505,7 +1505,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         const headerText = pdfSettings.group_products_name ? 'RESUMO DE EQUIPAMENTOS E MATERIAIS' : 'FORNECIMENTO DE EQUIPAMENTOS E MATERIAIS';
         tableBody.push([{ content: `${majorIndex}. ${headerText}`, colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
 
-        const rowItemDesc = pdfSettings.group_products_name ? pdfSettings.group_products_name : 'Lote de equipamentos e materiais diversos conforme projeto';
+        const rawDesc = pdfSettings.group_products_name ? pdfSettings.group_products_name : 'Lote de equipamentos e materiais diversos conforme projeto';
+        const rowItemDesc = rawDesc.replace(/\t/g, '   ');
         const row = [`${majorIndex}.1 ${rowItemDesc}`, 1];
         if (pdfSettings.show_cost_column) {
           row.push(`R$ ${vals.productsBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -1544,7 +1545,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         tableBody.push([{ content: `${majorIndex}. ${pdfSettings.group_products_as_service ? 'SERVIÇOS DE ENGENHARIA' : 'ITENS DE COTAÇÃO CENTRAL'}`, colSpan: colSpan, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
 
         activeCentralItems.forEach((item: any, idx: number) => {
-          const row = [`${majorIndex}.${idx + 1} ${item.name || 'Item'}`, item.quantity_final || 0];
+          const rawName = item.name || 'Item';
+          const cleanName = rawName.replace(/\t/g, '   ');
+          const row = [`${majorIndex}.${idx + 1} ${cleanName}`, item.quantity_final || 0];
           if (pdfSettings.show_cost_column) {
             row.push(`R$ ${Number(item.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
             row.push(`R$ ${(Number(item.quantity_final || 0) * Number(item.cost_price || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -1602,7 +1605,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           }]);
 
           mergedVisibleItems.forEach((item: any, idx: number) => {
-            const cleanName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
+            const rawName = item.name.includes('[MODELO:') ? item.name.split('] ')[1] : item.name;
+            const cleanName = rawName.replace(/\t/g, '   ');
             const row = [`${majorIndex}.${idx + 1} ${cleanName}`, item.quantity_final || 0];
 
             if (pdfSettings.show_cost_column) {
@@ -1644,7 +1648,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           tableBody.push([{ content: `${majorIndex}. INFRAESTRUTURA: ${kitName.toUpperCase()}`, colSpan: colSpan, styles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold' } }]);
 
           visibleKitItems.forEach((item: any, idx: number) => {
-            const cleanName = item.name.includes('[INFRA:') ? item.name.split('[INFRA:')[0].trim() : item.name;
+            const rawName = item.name.includes('[INFRA:') ? item.name.split('[INFRA:')[0].trim() : item.name;
+            const cleanName = rawName.replace(/\t/g, '   ');
             const row = [`${majorIndex}.${idx + 1} ${cleanName}`, item.quantity_final || 0];
             if (pdfSettings.show_cost_column) {
               row.push(`R$ ${Number(item.cost_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -2821,8 +2826,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 {expandedNames[item.id] && (
                                   <div className="animate-in slide-in-from-top-1 duration-200">
                                     {itemDescriptions[item.name] && (
-                                      <div className="text-[9px] text-slate-400 mt-1 italic leading-tight border-l border-slate-500/30 pl-2 whitespace-pre-wrap">
-                                        {itemDescriptions[item.name]}
+                                      <div className="mt-1">
+                                        <p className="text-[9px] text-amber-500/90 italic mb-1 border-l border-amber-500/30 pl-2 leading-tight whitespace-pre-wrap">
+                                          {itemDescriptions[item.name]}
+                                        </p>
                                       </div>
                                     )}
                                     {item.observation && (
