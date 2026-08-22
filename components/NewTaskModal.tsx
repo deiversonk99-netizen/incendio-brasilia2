@@ -71,7 +71,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 setProjectId('');
                 setIsAnnual(false);
                 setExpirationDate('');
-                setAssignee('');
+                setAssignee(profile && ['USER', 'FUNCIONARIO'].includes(profile.role) ? (user?.id || '') : '');
                 setChecklistItems([]);
                 setNewChecklistItem('');
             }
@@ -326,7 +326,12 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                         <div>
                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Responsável (Atribuir a)</label>
                             <div className="relative group">
-                                <select className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10" value={assignee} onChange={e => setAssignee(e.target.value)}>
+                                <select 
+                                    className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10 disabled:opacity-50 disabled:cursor-not-allowed" 
+                                    value={assignee} 
+                                    onChange={e => setAssignee(e.target.value)}
+                                    disabled={profile && ['USER', 'FUNCIONARIO'].includes(profile.role) ? true : false}
+                                >
                                     <option value="" className="bg-surface-dark">Sem Responsável</option>
                                     {users.map(u => (<option key={u.id} value={u.id} className="bg-surface-dark">{u.email} {u.professional_title ? `(${u.professional_title})` : ''}</option>))}
                                 </select>

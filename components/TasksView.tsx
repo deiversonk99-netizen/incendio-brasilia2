@@ -61,12 +61,9 @@ const syncExpiredRenewals = async (supabase: SupabaseClient, userId: string): Pr
             }
         }
         
-        // Fallback: If no boards found for user, just find ANY pending group globally
-        const { data: globalGroups } = await supabase.from('task_groups').select('id').ilike('name', '%Pendente%').limit(1);
-        if (globalGroups && globalGroups.length > 0) {
-             userGroupCache[targetUserId] = globalGroups[0].id;
-             return globalGroups[0].id;
-        }
+        // Fallback removed as per plan: do not use a global group for other users.
+        userGroupCache[targetUserId] = null;
+        return null;
 
         userGroupCache[targetUserId] = null;
         return null;
@@ -103,6 +100,7 @@ const syncExpiredRenewals = async (supabase: SupabaseClient, userId: string): Pr
             description,
             group_id: groupId,
             user_id: targetUserId,
+            assignee: targetUserId,
             project_id: manual.project_id,
             status: 'PENDING',
             priority: 'HIGH',
@@ -149,6 +147,7 @@ const syncExpiredRenewals = async (supabase: SupabaseClient, userId: string): Pr
             description,
             group_id: groupId,
             user_id: targetUserId,
+            assignee: targetUserId,
             project_id: task.project_id,
             status: 'PENDING',
             priority: 'HIGH',
@@ -205,7 +204,7 @@ interface Task {
 }
 
 interface TasksViewProps {
-  isTeamMonitoring?: boolean;
+  viewMode?: 'minhas_tarefas' | 'monitoramento' | 'atribuidas';
 }
 
 // ============================================================
@@ -618,9 +617,13 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
 // MAIN TASKS VIEW COMPONENT
 // ============================================================
 
-const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
+const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minhas_tarefas' }) => {
   const { user, profile } = useAuth();
-  const [viewMode, setViewMode] = useState<'minhas_tarefas' | 'atribuidas' | 'monitoramento'>(isTeamMonitoring ? 'monitoramento' : 'minhas_tarefas');
+  const [viewMode, setViewMode] = useState<'minhas_tarefas' | 'atribuidas' | 'monitoramento'>(initialViewMode);
+
+  useEffect(() => {
+    setViewMode(initialViewMode);
+  }, [initialViewMode]);
   const [boards, setBoards] = useState<TaskBoard[]>([]);
   const [selectedBoardId, setSelectedBoardId] = useState<string>('');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -730,9 +733,9 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         });
         setTasks(enrichedSyncData);
 
-        // Group by User
-        const uniqueUserIds = Array.from(
-          new Set(enrichedSyncData.filter((t: any) => !!t.user_id).map((t: any) => t.user_id))
+        // Group by Assignee
+        const uniqueAssignees = Array.from(
+          new Set(enrichedSyncData.map((t: any) => t.assignee || 'UNASSIGNED'))
         );
 
         const colorPalette = [
@@ -740,13 +743,25 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
           'bg-sky-500', 'bg-rose-500', 'bg-indigo-500', 'bg-orange-500'
         ];
 
-        const userGroups = uniqueUserIds.map((uId, idx) => ({
-          id: `sync-user-${uId}`,
-          name: `Monitoramento - ${enrichedSyncData.find((t: any) => t.user_id === uId)?.user_profiles?.email?.split('@')[0] || 'Usuário'}`,
-          color: colorPalette[idx % colorPalette.length],
-          order_index: idx,
-          board_id: SYNC_BOARD_ID
-        }));
+        const userGroups = uniqueAssignees.map((assigneeId: any, idx) => {
+          if (assigneeId === 'UNASSIGNED') {
+            return {
+              id: 'sync-unassigned',
+              name: 'Sem Responsável',
+              color: 'bg-slate-500',
+              order_index: 999, // Fica no final
+              board_id: SYNC_BOARD_ID
+            };
+          }
+          const profile = profilesData?.find(p => p.id === assigneeId);
+          return {
+            id: `sync-user-${assigneeId}`,
+            name: `Monitoramento - ${profile?.email?.split('@')[0] || 'Usuário'}`,
+            color: colorPalette[idx % colorPalette.length],
+            order_index: idx,
+            board_id: SYNC_BOARD_ID
+          };
+        }).sort((a, b) => a.order_index - b.order_index);
 
         setGroups(userGroups);
       }
@@ -755,7 +770,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       const [{ data: tasksData }, { data: profilesData }, { data: checklistsData }] = await Promise.all([
         supabase
           .from('tasks')
-          .select('*, projects(name), task_groups(id, name, color, order_index, board_id, task_boards(id, name))')
+          .select('*, projects(name), task_groups(id, name, color, order_index, board_id, task_boards(id, name, user_id))')
           .eq('assignee', user.id)
           .order('created_at', { ascending: false }),
         supabase.from('user_profiles').select('id, email'),
@@ -788,18 +803,26 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
         setGroups(assignedGroups as any);
       }
     } else {
-      // GLOBAL TAREFAS MODE: Fetch all boards independently of user_id
+      // MINHAS TAREFAS MODE: Fetch visible boards for logged user
       const { data: boardsData } = await supabase
         .from('task_boards')
         .select('*')
+        .eq('user_id', user.id)
+        .or('is_visible.eq.true,is_visible.is.null')
         .order('name');
 
       if (boardsData) {
         setBoards(boardsData);
         let activeBoardId = selectedBoardId;
-        if (!activeBoardId && boardsData.length > 0) {
+        const activeBoardExists = boardsData.some(b => b.id === activeBoardId);
+        
+        if (!activeBoardExists && boardsData.length > 0) {
           activeBoardId = boardsData[0].id;
           setSelectedBoardId(activeBoardId);
+        } else if (boardsData.length === 0) {
+          setSelectedBoardId('');
+          setTasks([]);
+          setGroups([]);
         }
 
         if (activeBoardId) {
@@ -872,7 +895,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     fetchDataRef.current = fetchData;
 
     const init = async () => {
-      await syncExpiredRenewals(supabase, user.id);
+      // await syncExpiredRenewals(supabase, user.id); // Disabled as per RBAC plan (Step 1.3)
       await fetchData();
     };
 
@@ -903,7 +926,7 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
       if (error) throw error;
 
       // Mark as completed
-      await supabase.from('tasks').update({ status: 'COMPLETED' }).eq('id', task.id);
+      await supabase.from('tasks').update({ status: 'DONE', completed: true }).eq('id', task.id);
       
       alert('Projeto criado com sucesso! Status: Em Análise.');
       fetchData();
@@ -1065,36 +1088,19 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
     const selectedIsUUID = newBoardUserId ? isUUID(newBoardUserId) : false;
 
     try {
-      const insertPayload: any = { name: newBoardName };
+      const targetUserId = selectedIsUUID ? newBoardUserId : (newBoardUserId ? null : user?.id);
+      const targetUserEmail = selectedIsUUID 
+        ? users.find(u => u.id === newBoardUserId)?.email || null 
+        : (newBoardUserId ? newBoardUserId : user?.email);
 
-      if (!newBoardUserId) {
-        // No user selected → assign to current user
-        insertPayload.user_id = user?.id;
-        insertPayload.user_email = user?.email || null;
-      } else if (selectedIsUUID) {
-        insertPayload.user_id = newBoardUserId;
-        insertPayload.user_email = users.find(u => u.id === newBoardUserId)?.email || null;
-      } else {
-        // Email-only (pre-registered, no auth ID yet)
-        insertPayload.user_id = null;
-        insertPayload.user_email = newBoardUserId; // newBoardUserId holds the email in this case
-      }
-
-      const { data: boardData, error: boardError } = await supabase
-        .from('task_boards')
-        .insert(insertPayload)
-        .select()
-        .single();
+      const { data: boardData, error: boardError } = await supabase.rpc('create_task_board_with_default_group', {
+        p_name: newBoardName,
+        p_user_id: targetUserId,
+        p_user_email: targetUserEmail
+      });
 
       if (boardError) throw boardError;
       if (boardData) {
-        await supabase.from('task_groups').insert({
-          name: 'Pendentes',
-          color: 'bg-primary',
-          order_index: 0,
-          board_id: boardData.id,
-          user_id: selectedIsUUID ? newBoardUserId : (newBoardUserId ? null : user?.id)
-        });
         setBoards([...boards, boardData]);
         setSelectedBoardId(boardData.id);
         setIsAddBoardModalOpen(false);
@@ -1280,8 +1286,8 @@ const TasksView: React.FC<TasksViewProps> = ({ isTeamMonitoring = false }) => {
             {groups.map(group => {
               const groupTasks = filteredTasks.filter(t => {
                 if (viewMode === 'monitoramento') {
-                  if (!t.user_id) return false;
-                  return `sync-user-${t.user_id}` === group.id;
+                  const targetAssigneeId = t.assignee ? `sync-user-${t.assignee}` : 'sync-unassigned';
+                  return targetAssigneeId === group.id;
                 }
                 return t.group_id === group.id;
               });

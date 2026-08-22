@@ -1,88 +1,130 @@
 /**
  * Role-Based Access Control (RBAC) Configuration
+ * 
+ * Todas as permissões agora são derivadas exclusivamente do campo `role`
+ * no perfil do usuário. Listas de e-mail hardcoded foram removidas.
+ * 
+ * Hierarquia de papéis:
+ *   SUPERADMIN > ADMIN > MANAGER > FUNCIONARIO = USER
  */
 
-export const SUPER_ADMINS = [
-    'contato@incendiobrasilia.com.br',
-    'deiversonk99@gmail.com'
-];
+export type UserRole = 'SUPERADMIN' | 'ADMIN' | 'MANAGER' | 'USER' | 'FUNCIONARIO';
 
-export const STOCK_ADMINS = [
-    ...SUPER_ADMINS,
-    'preraldovasconcelos@gmail.com',
-    'cleodson.batata@gmail.com',
-    'cleodsonbatata@gmail.com',
-    'cleodsonbatata.eng@gmail.com',
-    'franciscoeudes7891@gmail.com'
-];
-
-export const FINANCE_ADMINS = [
-    ...SUPER_ADMINS,
-    'incendiobrasilia@gmail.com',
-    'cleodson.batata@gmail.com',
-    'cleodsonbatata@gmail.com',
-    'cleodsonbatata.eng@gmail.com'
-];
-
-export const PROPOSAL_ADMINS = [
-    ...SUPER_ADMINS,
-    'incendiobrasilia@gmail.com',
-    'cleodson.batata@gmail.com',
-    'cleodsonbatata@gmail.com',
-    'cleodsonbatata.eng@gmail.com'
-];
-
-export const TASK_CENTRAL_USERS = [
-    ...SUPER_ADMINS,
-    'incendiobrasilia@gmail.com'
-];
-
-export const isSuperAdmin = (email?: string, profile?: any) => {
-    if (!email) return false;
-    // Hardcoded master admins always have full access
-    if (SUPER_ADMINS.includes(email.toLowerCase())) return true;
-    if (profile?.role === 'ADMIN') return true;
-    return false;
+const ROLE_HIERARCHY: Record<UserRole, number> = {
+    SUPERADMIN: 100,
+    ADMIN: 80,
+    MANAGER: 60,
+    FUNCIONARIO: 20,
+    USER: 20,
 };
 
-export const canViewTab = (viewId: string, email?: string, profile?: any) => {
+/**
+ * Retorna o papel do perfil, com fallback seguro para 'USER'.
+ */
+const getRole = (profile?: any): UserRole => {
+    if (!profile?.role) return 'USER';
+    return profile.role as UserRole;
+};
+
+/**
+ * Verifica se o papel do usuário é >= ao papel mínimo exigido.
+ */
+export const hasMinRole = (profile?: any, minRole: UserRole = 'USER'): boolean => {
+    const userRole = getRole(profile);
+    return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[minRole];
+};
+
+/**
+ * Verifica se o usuário é SUPERADMIN.
+ * Mantém a assinatura antiga para compatibilidade, mas agora é puramente role-based.
+ */
+export const isSuperAdmin = (email?: string, profile?: any): boolean => {
+    return getRole(profile) === 'SUPERADMIN';
+};
+
+/**
+ * Verifica se o usuário pode acessar o módulo de Monitoramento de Equipe
+ * e funcionalidades centrais de tarefas.
+ * Requer MANAGER, ADMIN ou SUPERADMIN.
+ */
+export const isTaskCentralUser = (email?: string, profile?: any): boolean => {
+    return hasMinRole(profile, 'MANAGER');
+};
+
+/**
+ * Verifica se o usuário pode delegar tarefas a outros.
+ * USER/FUNCIONARIO só podem atribuir para si mesmos.
+ */
+export const canDelegateTask = (profile?: any): boolean => {
+    return hasMinRole(profile, 'MANAGER');
+};
+
+/**
+ * Verifica se o usuário pode gerenciar quadros (criar, editar, excluir).
+ * MANAGER tem acesso opcional; ADMIN/SUPERADMIN têm acesso total.
+ */
+export const canManageBoards = (profile?: any): boolean => {
+    return hasMinRole(profile, 'MANAGER');
+};
+
+/**
+ * Verifica se o usuário pode gerenciar outros usuários.
+ * Requer ADMIN ou SUPERADMIN.
+ */
+export const canManageUsers = (profile?: any): boolean => {
+    return hasMinRole(profile, 'ADMIN');
+};
+
+/**
+ * Verifica se o usuário pode promover/rebaixar outros para ADMIN.
+ * Exclusivo de SUPERADMIN.
+ */
+export const canPromoteToAdmin = (profile?: any): boolean => {
+    return getRole(profile) === 'SUPERADMIN';
+};
+
+/**
+ * Controle de visibilidade de abas/módulos.
+ * Respeita permissões dinâmicas (profile.permissions) como prioridade,
+ * com fallback para a matriz RBAC.
+ */
+export const canViewTab = (viewId: string, email?: string, profile?: any): boolean => {
     if (!email) return false;
 
-    // Hard override for TEAM_TASKS (always true for central users, regardless of profile permissions)
+    const role = getRole(profile);
+
+    // TEAM_TASKS requer ser pelo menos MANAGER
     if (viewId === 'TEAM_TASKS') {
         return isTaskCentralUser(email, profile);
     }
 
-    // 1. Check dynamic permissions (Top Priority)
+    // ADMIN_BOARDS requer ser pelo menos MANAGER
+    if (viewId === 'ADMIN_BOARDS') {
+        return hasMinRole(profile, 'MANAGER');
+    }
+
+    // SETTINGS requer ADMIN
+    if (viewId === 'SETTINGS') {
+        return hasMinRole(profile, 'ADMIN');
+    }
+
+    // 1. Permissões dinâmicas do perfil (configuradas no painel Settings)
     if (profile?.permissions && profile.permissions[viewId] !== undefined) {
-        // Prevent SuperAdmins from locking themselves out of vital areas
-        if (isSuperAdmin(email, profile) && (viewId === 'SETTINGS' || viewId === 'DASHBOARD' || viewId === 'ADMIN_BOARDS')) {
+        // SUPERADMIN e ADMIN não podem ser bloqueados de áreas vitais
+        if (hasMinRole(profile, 'ADMIN') && (viewId === 'SETTINGS' || viewId === 'DASHBOARD' || viewId === 'ADMIN_BOARDS')) {
             return true;
         }
         return profile.permissions[viewId] === true;
     }
 
-    // 2. Super admins see everything if not explicitly blocked above
-    if (isSuperAdmin(email, profile)) return true;
+    // 2. SUPERADMIN e ADMIN vêem tudo por padrão
+    if (hasMinRole(profile, 'ADMIN')) return true;
 
-    // 2. Default RBAC fallbacks (If not explicitly permitted/denied)
-    const role = profile?.role || 'USER';
-
-    // Tabs that are strictly for admins by default
-    if (viewId === 'SETTINGS' || viewId === 'ADMIN_BOARDS') {
-        return role === 'ADMIN';
-    }
-
-    // Default: visible to anyone (since the user requested all data to be open by default unless restricted in Settings)
+    // 3. Default: visível a todos (exceto os que foram bloqueados acima)
     return true;
 };
 
+// Aliases de compatibilidade (usados em imports existentes)
 export const isStockAdmin = (email?: string, profile?: any) => canViewTab('PLACAS', email, profile);
 export const isFinanceAdmin = (email?: string, profile?: any) => canViewTab('FINANCE', email, profile);
 export const isProposalAdmin = (email?: string, profile?: any) => canViewTab('ENG_A', email, profile);
-export const isTaskCentralUser = (email?: string, profile?: any) => {
-    if (!email) return false;
-    if (isSuperAdmin(email, profile)) return true;
-    if (TASK_CENTRAL_USERS.includes(email.toLowerCase())) return true;
-    return profile?.role === 'ADMIN' || profile?.role === 'MANAGER';
-};

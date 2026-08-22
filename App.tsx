@@ -75,9 +75,9 @@ const AppContent: React.FC = () => {
       case AppView.FINANCE:
         return <FinanceView />;
       case AppView.TASKS:
-        return <TasksView />;
+        return <TasksView viewMode="minhas_tarefas" />;
       case AppView.TEAM_TASKS:
-        return <TasksView isTeamMonitoring={true} />;
+        return <TasksView viewMode="monitoramento" />;
       case AppView.ADMIN_BOARDS:
         return <AdminBoardsView />;
       case AppView.CLIENTS:
@@ -120,7 +120,7 @@ const AppContent: React.FC = () => {
       default:
         return <DashboardView />;
     }
-  }, [currentView, engineeringProjectId, user]);
+  }, [currentView, engineeringProjectId, user, profile]);
 
   // Initial Redirection
   React.useEffect(() => {
@@ -155,6 +155,24 @@ const AppContent: React.FC = () => {
 
   if (!session || isRecoveryMode) {
     return <LoginView />;
+  }
+
+  if (session && !profile && !isLoading) {
+    return (
+        <div className="flex flex-col items-center justify-center h-screen bg-background-dark text-white p-8">
+          <span className="material-symbols-outlined text-red-500 text-6xl mb-4">block</span>
+          <h2 className="text-2xl font-bold mb-2">Acesso não autorizado</h2>
+          <p className="text-slate-400 text-center max-w-md mb-6">
+            Sua conta não possui um perfil ativo ou foi bloqueada.
+          </p>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="px-6 py-2 bg-primary hover:bg-primary-dark rounded-lg font-bold transition-all"
+          >
+            Sair
+          </button>
+        </div>
+    );
   }
 
   return (

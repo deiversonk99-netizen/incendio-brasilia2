@@ -270,10 +270,32 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
     e.preventDefault();
     if (!newTaskTitle.trim() || !user) return;
 
+    let targetGroupId = null;
+    const { data: group } = await supabase
+      .from('task_groups')
+      .select('id')
+      .eq('user_id', user.id)
+      .ilike('name', '%Pendentes%')
+      .limit(1)
+      .single();
+    
+    if (group) targetGroupId = group.id;
+    if (!targetGroupId) {
+      const { data: anyGroup } = await supabase.from('task_groups').select('id').eq('user_id', user.id).limit(1).single();
+      if (anyGroup) targetGroupId = anyGroup.id;
+    }
+
+    if (!targetGroupId) {
+       alert("Você precisa criar pelo menos um Quadro de Tarefas antes de criar tarefas rápidas.");
+       return;
+    }
+
     const { data } = await supabase.from('tasks').insert({
       title: newTaskTitle,
-      user_id: user.id
-      // group_id is null by default
+      user_id: user.id,
+      assignee: user.id,
+      group_id: targetGroupId,
+      status: 'PENDING'
     }).select();
 
     if (data) {
@@ -318,12 +340,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       return;
     }
 
-    // 2. Create the task
     const { error } = await supabase.from('tasks').insert({
       title: `Projeto: ${project.name}`,
       description: `Cliente: ${project.client}\nValor: R$ ${project.value}\nGerado a partir do Dashboard via "Enviar para Pendentes".`,
       group_id: groupIdToUse,
       user_id: user.id,
+      assignee: user.id,
       project_id: project.id,
       status: 'PENDING'
     });
@@ -404,6 +426,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
         description: `Cliente: ${projectForTask.client}\nValor: R$ ${projectForTask.value}\nGerado a partir do Dashboard.`,
         group_id: targetGroupId,
         user_id: selectedAssignee,
+        assignee: selectedAssignee,
         project_id: projectForTask.id,
         status: 'PENDING'
       });
@@ -817,18 +840,20 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
                                   {/* Send to Pending Button */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setProjectForTask(proj);
-                                      setIsTaskModalOpen(true);
-                                    }}
-                                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 hover:text-indigo-300 transition-all border border-indigo-500/30"
-                                    title="Transformar em Tarefa"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">assignment_turned_in</span>
-                                    <span className="text-[9px] font-black uppercase tracking-tight">Tarefa</span>
-                                  </button>
+                                  {profile && ['MANAGER', 'ADMIN', 'SUPERADMIN'].includes(profile.role) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setProjectForTask(proj);
+                                        setIsTaskModalOpen(true);
+                                      }}
+                                      className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 hover:text-indigo-300 transition-all border border-indigo-500/30"
+                                      title="Transformar em Tarefa"
+                                    >
+                                      <span className="material-symbols-outlined text-[14px]">assignment_turned_in</span>
+                                      <span className="text-[9px] font-black uppercase tracking-tight">Tarefa</span>
+                                    </button>
+                                  )}
 
                                   {/* Color Label Button */}
                                   <button

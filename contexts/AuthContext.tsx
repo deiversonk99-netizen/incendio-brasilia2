@@ -5,8 +5,9 @@ import { supabase } from '../lib/supabase';
 interface UserProfile {
     id: string | null;
     email: string;
-    role: 'ADMIN' | 'MANAGER' | 'USER' | 'FUNCIONARIO';
+    role: 'SUPERADMIN' | 'ADMIN' | 'MANAGER' | 'USER' | 'FUNCIONARIO';
     permissions: any;
+    status?: 'INVITED' | 'ACTIVE' | 'BLOCKED';
 }
 
 interface AuthContextType {
@@ -43,8 +44,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .ilike('email', email)
             .limit(1)
             .maybeSingle();
-        if (data) setProfile(data);
-        else console.error('fetchProfile failed:', error);
+            
+        // Se o perfil existe, verificamos se o status é válido. 
+        // Se não tiver a coluna status (ainda não migrado), assume ACTIVE.
+        const isActive = data && (data.status === 'ACTIVE' || !data.status);
+        
+        if (data && isActive) {
+            setProfile(data);
+        } else {
+            console.error('fetchProfile failed or user not ACTIVE:', error || data?.status);
+            setProfile(null);
+        }
     };
 
     useEffect(() => {
@@ -103,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(session?.user ?? null);
 
             if (session?.user?.email) {
-                fetchProfile(session.user.email).catch(e => console.error('fetchProfile err', e));
+                await fetchProfile(session.user.email).catch(e => console.error('fetchProfile err', e));
             } else {
                 setProfile(null);
             }
