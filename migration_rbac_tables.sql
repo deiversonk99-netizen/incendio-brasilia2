@@ -45,15 +45,25 @@ CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id);
 -- 4. Normalizar e-mails existentes para minúsculas
 UPDATE user_profiles SET email = lower(email) WHERE email != lower(email);
 
--- 5. Criar restrição única para e-mail (normalizado)
+-- Aceitar explicitamente todos os papéis usados pela aplicação.
 DO $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'unique_email_lower'
+    IF EXISTS (
+        SELECT 1 FROM user_profiles
+        WHERE role IS NULL OR role NOT IN ('SUPERADMIN', 'ADMIN', 'MANAGER', 'USER', 'FUNCIONARIO')
     ) THEN
-        CREATE UNIQUE INDEX unique_email_lower ON user_profiles (lower(email));
+        RAISE EXCEPTION 'Existem papéis de usuário desconhecidos; migration cancelada sem alterar esses perfis';
     END IF;
 END $$;
+
+ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS user_profiles_role_check;
+ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS check_user_role;
+ALTER TABLE user_profiles
+    ADD CONSTRAINT check_user_role
+    CHECK (role IN ('SUPERADMIN', 'ADMIN', 'MANAGER', 'USER', 'FUNCIONARIO'));
+
+-- 5. Criar restrição única para e-mail (normalizado)
+CREATE UNIQUE INDEX IF NOT EXISTS unique_email_lower ON user_profiles (lower(email));
 
 -- 6. Garantir que o papel SUPERADMIN exista para as contas principais
 -- (Substitui a lógica de e-mails hardcoded no código)
