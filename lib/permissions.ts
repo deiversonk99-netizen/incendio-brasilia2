@@ -61,10 +61,10 @@ export const canDelegateTask = (profile?: any): boolean => {
 
 /**
  * Verifica se o usuário pode gerenciar quadros (criar, editar, excluir).
- * MANAGER tem acesso opcional; ADMIN/SUPERADMIN têm acesso total.
+ * Requer ADMIN ou SUPERADMIN. MANAGER apenas monitora/delega tarefas.
  */
 export const canManageBoards = (profile?: any): boolean => {
-    return hasMinRole(profile, 'MANAGER');
+    return hasMinRole(profile, 'ADMIN');
 };
 
 /**
@@ -98,9 +98,9 @@ export const canViewTab = (viewId: string, email?: string, profile?: any): boole
         return isTaskCentralUser(email, profile);
     }
 
-    // ADMIN_BOARDS requer ser pelo menos MANAGER
+    // ADMIN_BOARDS requer ADMIN ou SUPERADMIN
     if (viewId === 'ADMIN_BOARDS') {
-        return hasMinRole(profile, 'MANAGER');
+        return canManageBoards(profile);
     }
 
     // SETTINGS requer ADMIN
