@@ -10,6 +10,7 @@ import { Project, AppView } from '../types';
 import { Button, Card } from './ui';
 import { useAuth } from '../contexts/AuthContext';
 import { getClientDisplayName } from '../lib/formatters';
+import { canDelegateTask } from '../lib/permissions';
 
 
 interface Task {
@@ -73,6 +74,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const [selectedAssignee, setSelectedAssignee] = useState<string>('');
 
   const { user, profile, session } = useAuth();
+  const canDelegate = canDelegateTask(profile);
 
   const highlightText = (text: string, highlight: string) => {
     if (!highlight.trim()) return <span>{text}</span>;
@@ -173,15 +175,20 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
         }
       }
 
-      // Fetch all profiles for task assignment
-      const { data: profilesData } = await supabase.from('user_profiles').select('id, email, role');
-      if (profilesData) setAllProfiles(profilesData);
+      // Somente gestores podem carregar a lista de pessoas para delegação.
+      if (canDelegate) {
+        const { data: profilesData } = await supabase.from('user_profiles').select('id, email, role, status');
+        if (profilesData) setAllProfiles(profilesData.filter(item => !item.status || item.status === 'ACTIVE'));
+      } else {
+        setAllProfiles(user ? [{ id: user.id, email: user.email || '', role: profile?.role || 'USER' }] : []);
+      }
 
-      // 7. Fetch Quick Tasks (group_id IS NULL) — global
+      // 7. Tarefas rápidas atribuídas ao usuário atual, independentemente da coluna.
       const { data: quickTasksData } = await supabase
         .from('tasks')
         .select('*')
-        .is('group_id', null)
+        .or(`assignee.eq.${user?.id || ''},and(assignee.is.null,user_id.eq.${user?.id || ''})`)
+        .eq('status', 'PENDING')
         .order('created_at', { ascending: false });
       if (quickTasksData) {
         setTasks(quickTasksData);
@@ -263,7 +270,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   const handleTaskToggle = async (id: string, currentStatus: boolean) => {
     // Optimistic
     setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !currentStatus } : t));
-    await supabase.from('tasks').update({ completed: !currentStatus }).eq('id', id);
+    const { error } = await supabase
+      .from('tasks')
+      .update({ completed: !currentStatus, status: currentStatus ? 'PENDING' : 'DONE' })
+      .eq('id', id);
+    if (error) {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: currentStatus } : t));
+      alert('Erro ao atualizar tarefa: ' + error.message);
+    }
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
@@ -290,7 +304,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
        return;
     }
 
-    const { data } = await supabase.from('tasks').insert({
+    const { data, error } = await supabase.from('tasks').insert({
       title: newTaskTitle,
       user_id: user.id,
       assignee: user.id,
@@ -298,6 +312,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
       status: 'PENDING'
     }).select();
 
+    if (error) {
+      alert('Erro ao criar tarefa: ' + error.message);
+      return;
+    }
     if (data) {
       setTasks(prev => [data[0], ...prev]);
       setNewTaskTitle('');
@@ -314,25 +332,24 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
     if (!confirm(`Deseja enviar o projeto "${project.name}" para a lista de tarefas pendentes?`)) return;
 
-    // 1. Find the "Pendentes" group ID. We try to find a group named 'Pendentes' in any board, 
-    // preferring the "central-sync" board if possible, or just the first one found.
-    // Since we don't have board context here, we'll search for a group named 'Pendentes'.
-
-    // Try to find the Sync Board first
-    const { data: syncBoard } = await supabase.from('task_boards').select('id').eq('id', 'central-sync').single();
-
-    let groupIdToUse = null;
-
-    if (syncBoard) {
-      // Find group in Sync Board
-      const { data: group } = await supabase.from('task_groups').select('id').eq('board_id', 'central-sync').ilike('name', '%Pendentes%').limit(1).single();
-      if (group) groupIdToUse = group.id;
-    }
+    // Nunca usa coluna de outro usuário como fallback.
+    const { data: pendingGroup } = await supabase
+      .from('task_groups')
+      .select('id')
+      .eq('user_id', user.id)
+      .ilike('name', '%Pendentes%')
+      .limit(1)
+      .maybeSingle();
+    let groupIdToUse = pendingGroup?.id || null;
 
     if (!groupIdToUse) {
-      // Fallback: Find ANY Pending group
-      const { data: group } = await supabase.from('task_groups').select('id').ilike('name', '%Pendentes%').limit(1).single();
-      if (group) groupIdToUse = group.id;
+      const { data: ownGroup } = await supabase
+        .from('task_groups')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+      groupIdToUse = ownGroup?.id || null;
     }
 
     if (!groupIdToUse) {
@@ -397,6 +414,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
   const handleCreateTaskForUser = async () => {
     if (!projectForTask || !selectedAssignee) return;
+    if (!canDelegate) {
+      alert('Seu perfil não pode delegar tarefas.');
+      return;
+    }
 
     try {
       // Find the "Pendentes" group ID for the selected user.
@@ -410,7 +431,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
       let targetGroupId = group?.id;
 
-      // Fallback: If no "Pendentes" group, look for ANY group of that user, or just no group
+      // Fallback: procurar outra coluna, sempre do mesmo usuário.
       if (!targetGroupId) {
         const { data: anyGroup } = await supabase
           .from('task_groups')
@@ -419,6 +440,11 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
           .limit(1)
           .single();
         targetGroupId = anyGroup?.id;
+      }
+
+      if (!targetGroupId) {
+        alert('O usuário selecionado ainda não possui um quadro com colunas.');
+        return;
       }
 
       const { error } = await supabase.from('tasks').insert({
@@ -840,7 +866,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
                                   {/* Send to Pending Button */}
-                                  {profile && ['MANAGER', 'ADMIN', 'SUPERADMIN'].includes(profile.role) && (
+                                  {canDelegate && (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -1099,7 +1125,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
             fetchData();
           }}
           availableLabels={labelDefinitions}
-          availableClients={Array.from(new Set(projects.map(p => p.client))).filter(Boolean).sort()}
+          availableClients={Array.from(new Set(projects.map(p => p.client))).filter((client): client is string => Boolean(client)).sort()}
         />
       )}
 

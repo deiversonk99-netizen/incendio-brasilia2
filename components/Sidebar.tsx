@@ -2,7 +2,7 @@
 import React from 'react';
 import { AppView } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { isSuperAdmin, canViewTab } from '../lib/permissions';
+import { canViewTab } from '../lib/permissions';
 
 interface SidebarProps {
   currentView: AppView;
@@ -38,11 +38,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, isOpen, on
   // Dynamic Permissions Filtering logic
   const navItems = allNavItems.filter(item => {
     const email = user?.email;
-
-    // Always show Settings to SuperAdmins
-    if (item.id === AppView.SETTINGS) {
-      return isSuperAdmin(email, profile);
-    }
 
     // Check dynamic tab visibility
     return canViewTab(item.id, email, profile);

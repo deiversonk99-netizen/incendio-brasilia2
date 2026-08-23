@@ -3,12 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import PageHeader from './PageHeader';
+import { canManageUsers, canPromoteToAdmin } from '../lib/permissions';
 
 interface UserProfile {
     id: string | null;
     email: string;
-    role: 'ADMIN' | 'MANAGER' | 'USER' | 'FUNCIONARIO';
+    role: 'SUPERADMIN' | 'ADMIN' | 'MANAGER' | 'USER' | 'FUNCIONARIO';
     permissions: any;
+    status?: 'INVITED' | 'ACTIVE' | 'BLOCKED';
 }
 
 interface TaskBoard {
@@ -103,12 +105,56 @@ const SettingsView: React.FC = () => {
     };
 
     const handleUpdateRole = async (email: string, newRole: string) => {
+        const target = profiles.find(item => item.email === email);
+        if (!canManageUsers(profile)) {
+            alert('Seu perfil não pode alterar funções de usuários.');
+            return;
+        }
+        if (target?.role === 'SUPERADMIN' || newRole === 'SUPERADMIN') {
+            alert('O perfil SUPERADMIN é protegido e não pode ser alterado por esta tela.');
+            return;
+        }
+        if ((target?.role === 'ADMIN' || newRole === 'ADMIN') && !canPromoteToAdmin(profile)) {
+            alert('Somente um SUPERADMIN pode promover ou rebaixar administradores.');
+            return;
+        }
         const { error } = await supabase.from('user_profiles').update({ role: newRole }).eq('email', email);
         if (!error) {
             setProfiles(prev => prev.map(p => p.email === email ? { ...p, role: newRole as any } : p));
         } else {
             alert('Erro ao atualizar papel: ' + error.message);
         }
+    };
+
+    const handleUpdateStatus = async (managedProfile: UserProfile, newStatus: string) => {
+        if (!canManageUsers(profile)) {
+            alert('Seu perfil não pode alterar o acesso de usuários.');
+            return;
+        }
+        if (managedProfile.role === 'SUPERADMIN') {
+            alert('O perfil SUPERADMIN é protegido.');
+            return;
+        }
+        if (managedProfile.role === 'ADMIN' && !canPromoteToAdmin(profile)) {
+            alert('Somente um SUPERADMIN pode bloquear ou liberar administradores.');
+            return;
+        }
+        if (managedProfile.id && managedProfile.id === user?.id && newStatus === 'BLOCKED') {
+            alert('Você não pode bloquear o próprio acesso.');
+            return;
+        }
+
+        const { error } = await supabase
+            .from('user_profiles')
+            .update({ status: newStatus })
+            .eq('email', managedProfile.email);
+        if (error) {
+            alert('Erro ao atualizar acesso: ' + error.message);
+            return;
+        }
+        setProfiles(prev => prev.map(item => item.email === managedProfile.email
+            ? { ...item, status: newStatus as UserProfile['status'] }
+            : item));
     };
 
     const handleSavePdfSettings = async () => {
@@ -121,6 +167,11 @@ const SettingsView: React.FC = () => {
     };
 
     const handleOpenPermissionModal = (user: UserProfile) => {
+        if (!canManageUsers(profile)) return;
+        if (user.role === 'SUPERADMIN' || (user.role === 'ADMIN' && !canPromoteToAdmin(profile))) {
+            alert('Somente um SUPERADMIN pode alterar as permissões deste perfil.');
+            return;
+        }
         setSelectedUser(user);
 
         // Populate tempPerms with explicit values to avoid 'undefined' fallback issues
@@ -168,10 +219,20 @@ const SettingsView: React.FC = () => {
 
     const handleAddUser = async () => {
         if (!newUserEmail) return;
+        const normalizedEmail = newUserEmail.trim().toLowerCase();
+        if (!canManageUsers(profile)) {
+            alert('Seu perfil não pode autorizar usuários.');
+            return;
+        }
+        if (newUserRole === 'ADMIN' && !canPromoteToAdmin(profile)) {
+            alert('Somente um SUPERADMIN pode criar administradores.');
+            return;
+        }
         const { error } = await supabase.from('user_profiles').insert([{
-            email: newUserEmail,
+            email: normalizedEmail,
             role: newUserRole,
-            permissions: {}
+            permissions: {},
+            status: 'INVITED'
         }]);
 
         if (!error) {
@@ -185,6 +246,19 @@ const SettingsView: React.FC = () => {
     };
 
     const handleDeleteUser = async (email: string) => {
+        const target = profiles.find(item => item.email === email);
+        if (!canManageUsers(profile)) {
+            alert('Seu perfil não pode remover usuários.');
+            return;
+        }
+        if (target?.role === 'SUPERADMIN') {
+            alert('O perfil SUPERADMIN é protegido e não pode ser removido.');
+            return;
+        }
+        if (target?.role === 'ADMIN' && !canPromoteToAdmin(profile)) {
+            alert('Somente um SUPERADMIN pode remover administradores.');
+            return;
+        }
         if (!confirm(`Deseja realmente remover o acesso de ${email}?`)) return;
         const { error } = await supabase.from('user_profiles').delete().eq('email', email);
         if (!error) {
@@ -196,6 +270,12 @@ const SettingsView: React.FC = () => {
 
     const handleSavePermissions = async () => {
         if (!selectedUser) return;
+        if (!canManageUsers(profile)
+            || selectedUser.role === 'SUPERADMIN'
+            || (selectedUser.role === 'ADMIN' && !canPromoteToAdmin(profile))) {
+            alert('Seu perfil não pode alterar estas permissões.');
+            return;
+        }
         const { error } = await supabase
             .from('user_profiles')
             .update({ permissions: tempPerms })
@@ -328,40 +408,57 @@ const SettingsView: React.FC = () => {
                                             <tr>
                                                 <th className="px-6 py-4">Usuário</th>
                                                 <th className="px-6 py-4 text-center">Nível de Acesso</th>
+                                                <th className="px-6 py-4 text-center">Situação</th>
                                                 <th className="px-6 py-4 text-right">Ações</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/5 text-white">
                                             {profiles.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={3} className="px-6 py-10 text-center text-slate-500 italic">Nenhum perfil de usuário configurado no banco de dados.</td>
+                                                    <td colSpan={4} className="px-6 py-10 text-center text-slate-500 italic">Nenhum perfil de usuário configurado no banco de dados.</td>
                                                 </tr>
                                             )}
-                                            {profiles.map(profile => (
-                                                <tr key={profile.email} className="hover:bg-white/2 transition-colors">
-                                                    <td className="px-6 py-4 font-medium">{profile.email}</td>
+                                            {profiles.map(managedProfile => (
+                                                <tr key={managedProfile.email} className="hover:bg-white/2 transition-colors">
+                                                    <td className="px-6 py-4 font-medium">{managedProfile.email}</td>
                                                     <td className="px-6 py-4">
                                                         <select
-                                                            value={profile.role}
-                                                            onChange={(e) => handleUpdateRole(profile.email, e.target.value)}
+                                                            value={managedProfile.role}
+                                                            onChange={(e) => handleUpdateRole(managedProfile.email, e.target.value)}
+                                                            disabled={managedProfile.role === 'SUPERADMIN' || (managedProfile.role === 'ADMIN' && !canPromoteToAdmin(profile))}
                                                             className="bg-background-dark border border-white/10 rounded px-2 py-1 text-xs outline-none focus:border-primary"
                                                         >
+                                                            <option value="SUPERADMIN" disabled>Superadministrador protegido</option>
                                                             <option value="USER">Usuário Comum</option>
                                                             <option value="FUNCIONARIO">Operação/Funcionário</option>
                                                             <option value="MANAGER">Gerente de Projetos</option>
-                                                            <option value="ADMIN">Administrador Central</option>
+                                                            <option value="ADMIN" disabled={!canPromoteToAdmin(profile)}>Administrador Central</option>
+                                                        </select>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <select
+                                                            value={managedProfile.status || 'ACTIVE'}
+                                                            onChange={(e) => handleUpdateStatus(managedProfile, e.target.value)}
+                                                            disabled={managedProfile.role === 'SUPERADMIN' || (managedProfile.role === 'ADMIN' && !canPromoteToAdmin(profile))}
+                                                            className="bg-background-dark border border-white/10 rounded px-2 py-1 text-xs outline-none focus:border-primary disabled:opacity-50"
+                                                        >
+                                                            <option value="INVITED">Convidado</option>
+                                                            <option value="ACTIVE">Ativo</option>
+                                                            <option value="BLOCKED">Bloqueado</option>
                                                         </select>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <div className="flex items-center justify-end gap-4">
                                                             <button
-                                                                onClick={() => handleOpenPermissionModal(profile)}
+                                                                onClick={() => handleOpenPermissionModal(managedProfile)}
+                                                                disabled={managedProfile.role === 'SUPERADMIN' || (managedProfile.role === 'ADMIN' && !canPromoteToAdmin(profile))}
                                                                 className="text-primary hover:bg-primary/10 px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all"
                                                             >
                                                                 Visibilidade
                                                             </button>
                                                             <button
-                                                                onClick={() => handleDeleteUser(profile.email)}
+                                                                onClick={() => handleDeleteUser(managedProfile.email)}
+                                                                disabled={managedProfile.role === 'SUPERADMIN' || (managedProfile.role === 'ADMIN' && !canPromoteToAdmin(profile))}
                                                                 className="text-rose-500 hover:bg-rose-500/10 p-1.5 rounded-lg transition-all"
                                                                 title="Remover Usuário"
                                                             >
@@ -651,7 +748,7 @@ const SettingsView: React.FC = () => {
                                     <option value="USER">Usuário Comum</option>
                                     <option value="FUNCIONARIO">Operação/Funcionário</option>
                                     <option value="MANAGER">Gerente de Projetos</option>
-                                    <option value="ADMIN">Administrador Central</option>
+                                    <option value="ADMIN" disabled={!canPromoteToAdmin(profile)}>Administrador Central</option>
                                 </select>
                             </div>
                         </div>

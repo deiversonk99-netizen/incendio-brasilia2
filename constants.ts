@@ -21,7 +21,7 @@ export const MOCK_TASKS: Task[] = [
 ];
 
 export const MOCK_TRANSACTIONS: Transaction[] = [
-  { date: '12 Ago 2023', description: 'Instalação Sprinklers', category: 'Serviços', entity: 'Condomínio Solar', status: 'PAID', value: 25000, type: 'INCOME' },
-  { date: '11 Ago 2023', description: 'Tubulação de Cobre', category: 'Material', entity: 'Aço Forte Ltda.', status: 'PENDING', value: 5000, type: 'EXPENSE' },
-  { date: '10 Ago 2023', description: 'Combustível Frota', category: 'Transporte', entity: 'Posto Shell', status: 'PAID', value: 400, type: 'EXPENSE' }
+  { id: 'TX-1', date: '12 Ago 2023', description: 'Instalação Sprinklers', category: 'Serviços', entity: 'Condomínio Solar', status: 'PAID', value: 25000, type: 'INCOME' },
+  { id: 'TX-2', date: '11 Ago 2023', description: 'Tubulação de Cobre', category: 'Material', entity: 'Aço Forte Ltda.', status: 'PENDING', value: 5000, type: 'EXPENSE' },
+  { id: 'TX-3', date: '10 Ago 2023', description: 'Combustível Frota', category: 'Transporte', entity: 'Posto Shell', status: 'PAID', value: 400, type: 'EXPENSE' }
 ];

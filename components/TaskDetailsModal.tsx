@@ -25,7 +25,7 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ isOpen, onClose, ta
         try {
             const { error } = await supabase
                 .from('tasks')
-                .update({ status: 'COMPLETED' })
+                .update({ status: 'DONE', completed: true })
                 .eq('id', task.id);
             if (error) throw error;
             if (onSuccess) onSuccess();
@@ -58,7 +58,7 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ isOpen, onClose, ta
             if (error) throw error;
             
             // Optional: Mark task as completed or linked
-            await supabase.from('tasks').update({ status: 'COMPLETED' }).eq('id', task.id);
+            await supabase.from('tasks').update({ status: 'DONE', completed: true }).eq('id', task.id);
             
             alert('Projeto criado com sucesso! Status: Em Análise.');
             if (onSuccess) onSuccess();
@@ -77,7 +77,7 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ isOpen, onClose, ta
                     <div className="flex flex-col">
                         <h2 className="text-xl font-black text-white leading-tight tracking-tight">{task.title}</h2>
                         <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mt-1">
-                            {task.category} • {task.status === 'COMPLETED' ? 'CONCLUÍDO' : 'PENDENTE'}
+                            {task.category} • {(task.status === 'DONE' || task.completed) ? 'CONCLUÍDO' : 'PENDENTE'}
                         </span>
                     </div>
                     <button onClick={onClose} className="size-10 flex items-center justify-center rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
@@ -146,7 +146,7 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ isOpen, onClose, ta
                     </div>
                     
                     <div className="flex gap-3">
-                        {task.status !== 'COMPLETED' && (
+                        {task.status !== 'DONE' && !task.completed && (
                             <>
                                 <button
                                     onClick={handleConvertToProject}

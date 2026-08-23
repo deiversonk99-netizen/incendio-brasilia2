@@ -1,5 +1,5 @@
-import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
+import { fileURLToPath } from 'node:url';
 // FORCE_RESTART_SERVER_1
 import react from '@vitejs/plugin-react';
 
@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, '.'),
+          '@': fileURLToPath(new URL('.', import.meta.url)),
         }
       }
     };

@@ -2,11 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { canManageBoards } from '../lib/permissions';
 
 interface UserProfile {
-    id: string;
+    id: string | null;
     email: string;
     professional_title?: string;
+    status?: 'INVITED' | 'ACTIVE' | 'BLOCKED';
 }
 
 interface Board {
@@ -24,7 +26,7 @@ interface TaskStats {
 }
 
 const AdminBoardsView: React.FC = () => {
-    const { user } = useAuth();
+    const { profile } = useAuth();
     const [boards, setBoards] = useState<Board[]>([]);
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
@@ -41,9 +43,9 @@ const AdminBoardsView: React.FC = () => {
         // Fetch all user profiles
         const { data: userData } = await supabase
             .from('user_profiles')
-            .select('id, email, professional_title');
+            .select('id, email, professional_title, status');
 
-        if (userData) setUsers(userData);
+        if (userData) setUsers(userData.filter(item => item.status !== 'BLOCKED'));
 
         // Fetch all boards
         const { data: boardsData } = await supabase
@@ -105,6 +107,7 @@ const AdminBoardsView: React.FC = () => {
     }, []);
 
     const toggleVisibility = async (boardId: string, currentVisibility: boolean) => {
+        if (!canManageBoards(profile)) return;
         const { error } = await supabase
             .from('task_boards')
             .update({ is_visible: !currentVisibility })
@@ -118,17 +121,10 @@ const AdminBoardsView: React.FC = () => {
     };
 
     const deleteBoard = async (boardId: string) => {
+        if (!canManageBoards(profile)) return;
         if (!confirm('Tem certeza que deseja excluir este quadro permanentemente?')) return;
 
-        // We should probably delete tasks and groups first if the DB doesn't handle cascade
-        const { data: groups } = await supabase.from('task_groups').select('id').eq('board_id', boardId);
-        if (groups && groups.length > 0) {
-            const groupIds = groups.map(g => g.id);
-            await supabase.from('tasks').delete().in('group_id', groupIds);
-            await supabase.from('task_groups').delete().eq('board_id', boardId);
-        }
-
-        const { error } = await supabase.from('task_boards').delete().eq('id', boardId);
+        const { error } = await supabase.rpc('delete_task_board', { p_board_id: boardId });
         if (error) {
             alert('Erro ao excluir quadro: ' + error.message);
         } else {
@@ -137,6 +133,7 @@ const AdminBoardsView: React.FC = () => {
     };
 
     const renameBoard = async (boardId: string, currentName: string) => {
+        if (!canManageBoards(profile)) return;
         const newName = prompt('Novo nome para o quadro:', currentName);
         if (!newName || newName === currentName) return;
 
@@ -158,41 +155,23 @@ const AdminBoardsView: React.FC = () => {
     const createBoard = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newBoardName || !selectedUserValue) return;
-
-        // Determine if selectedUserValue is a UUID (auth user) or an email (pre-registered only)
-        const selectedIsUUID = isUUID(selectedUserValue);
+        if (!canManageBoards(profile)) {
+            alert('Seu perfil não pode gerenciar quadros.');
+            return;
+        }
+        if (!isUUID(selectedUserValue)) {
+            alert('Este usuário precisa concluir o primeiro acesso antes de receber um quadro.');
+            return;
+        }
 
         try {
-            const insertPayload: any = {
-                name: newBoardName,
-                is_visible: true
-            };
-
-            if (selectedIsUUID) {
-                insertPayload.user_id = selectedUserValue;
-                insertPayload.user_email = users.find(u => u.id === selectedUserValue)?.email || null;
-            } else {
-                // User only has email (hasn't logged in yet) — store email, leave user_id null
-                insertPayload.user_id = null;
-                insertPayload.user_email = selectedUserValue;
-            }
-
-            const { data: board, error } = await supabase
-                .from('task_boards')
-                .insert(insertPayload)
-                .select()
-                .single();
-
-            if (error) throw error;
-
-            // Add default column — user_id may be null for pre-registered users
-            await supabase.from('task_groups').insert({
-                name: 'Pendentes',
-                color: 'bg-primary',
-                order_index: 0,
-                board_id: board.id,
-                user_id: selectedIsUUID ? selectedUserValue : null
+            const selectedProfile = users.find(item => item.id === selectedUserValue);
+            const { error } = await supabase.rpc('create_task_board_with_default_group', {
+                p_name: newBoardName.trim(),
+                p_user_id: selectedUserValue,
+                p_user_email: selectedProfile?.email || null
             });
+            if (error) throw error;
 
             setIsModalOpen(false);
             setNewBoardName('');
@@ -316,14 +295,13 @@ const AdminBoardsView: React.FC = () => {
                                 >
                                     <option value="">Selecione um usuário...</option>
                                     {users.map(u => (
-                                        // Use UUID if available, otherwise use email as identifier
-                                        <option key={u.id || u.email} value={u.id && u.id.length > 5 ? u.id : u.email}>
-                                            {u.email}{!u.id ? ' (aguardando 1º acesso)' : ''}
+                                        <option key={u.id || u.email} value={u.id || ''} disabled={!u.id || !isUUID(u.id)}>
+                                            {u.email}{!u.id || !isUUID(u.id) ? ' (aguardando 1º acesso)' : ''}
                                         </option>
                                     ))}
                                 </select>
                                 <p className="text-[10px] text-slate-500 mt-1">
-                                    Usuários marcados como "aguardando 1º acesso" ainda não fizeram login. O quadro será vinculado automaticamente quando eles entrarem.
+                                    Usuários marcados como "aguardando 1º acesso" precisam entrar no sistema antes que o quadro seja criado.
                                 </p>
                             </div>
 

@@ -77,6 +77,7 @@ export interface Transaction {
   type: 'INCOME' | 'EXPENSE';
   installment_number?: number;
   total_installments?: number;
+  installment_group_id?: string;
 }
 
 export interface Product {

@@ -29,16 +29,7 @@ const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [engineeringProjectId, setEngineeringProjectId] = useState<string>('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { session, user, profile, loading, isRecoveryMode } = useAuth();
-  const [safetyLoading, setSafetyLoading] = React.useState(true);
-
-  // Safety net: never show the spinner for more than 3 seconds
-  React.useEffect(() => {
-    const timer = setTimeout(() => setSafetyLoading(false), 3000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const isLoading = loading && safetyLoading;
+  const { session, user, profile, loading, isRecoveryMode, signOut } = useAuth();
 
 
   const renderContent = useCallback(() => {
@@ -145,7 +136,7 @@ const AppContent: React.FC = () => {
     }
   }, [session, profile, currentView, user?.email]);
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background-dark">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
@@ -157,7 +148,7 @@ const AppContent: React.FC = () => {
     return <LoginView />;
   }
 
-  if (session && !profile && !isLoading) {
+  if (session && !profile) {
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-background-dark text-white p-8">
           <span className="material-symbols-outlined text-red-500 text-6xl mb-4">block</span>
@@ -166,7 +157,7 @@ const AppContent: React.FC = () => {
             Sua conta não possui um perfil ativo ou foi bloqueada.
           </p>
           <button
-            onClick={() => supabase.auth.signOut()}
+            onClick={() => signOut()}
             className="px-6 py-2 bg-primary hover:bg-primary-dark rounded-lg font-bold transition-all"
           >
             Sair

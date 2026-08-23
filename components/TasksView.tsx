@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { isTaskCentralUser } from '../lib/permissions';
+import { canDelegateTask, isTaskCentralUser } from '../lib/permissions';
 import { Project } from '../types';
 
 const SYNC_BOARD_ID = 'central-sync';
@@ -236,6 +236,7 @@ interface ChecklistItem {
 
 const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess, defaultGroupId, boardId, taskToEdit }) => {
     const { user, profile } = useAuth();
+    const canDelegate = canDelegateTask(profile);
     const [loading, setLoading] = useState(false);
     const [projects, setProjects] = useState<Project[]>([]);
     const [groups, setGroups] = useState<ModalTaskGroup[]>([]);
@@ -276,7 +277,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                 setProjectId('');
                 setIsAnnual(false);
                 setExpirationDate('');
-                setAssignee('');
+                setAssignee(canDelegate ? '' : (user?.id || ''));
                 setChecklistItems([]);
                 setNewChecklistItem('');
             }
@@ -305,6 +306,12 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
         if (boardId && boardId !== 'central-sync') {
             groupsQuery = groupsQuery.eq('board_id', boardId);
         }
+        const usersRequest = canDelegate
+            ? supabase.from('user_profiles').select('id, email, professional_title, status')
+            : Promise.resolve({
+                data: user ? [{ id: user.id, email: user.email, professional_title: profile?.professional_title }] : [],
+                error: null
+            });
         const [
             { data: pData },
             { data: gData },
@@ -318,9 +325,9 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             supabase.from('floors').select('project_id'),
             supabase.from('budget_items').select('project_id'),
             supabase.from('proposals').select('project_id'),
-            supabase.from('user_profiles').select('id, email, professional_title')
+            usersRequest
         ]);
-        if (uData) setUsers(uData);
+        if (uData) setUsers(uData.filter((item: any) => !item.status || item.status === 'ACTIVE'));
         if (pData) {
             const linkedProjectIds = new Set([
                 ...(fData || []).map(f => f.project_id),
@@ -339,20 +346,17 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
             setProjects(uniqueProjects);
         }
         if (gData) {
-            const isCentral = isTaskCentralUser(user?.email, profile);
             const accessibleGroups = (gData as any[]).filter(g => {
-                if (isCentral) return true;
-                if (!profile) return true;
+                if (canDelegate) return true;
+                if (!user) return false;
                 if (g.task_boards) {
                     const boardOwnerId = Array.isArray(g.task_boards)
                         ? g.task_boards[0]?.user_id
                         : g.task_boards?.user_id;
-                    // Relaxed validation: Allow assigning tasks to any board since we are loosening restrictions
-                    // if (boardOwnerId && boardOwnerId !== user?.id) return false;
+                    if (boardOwnerId && boardOwnerId !== user.id) return false;
                 }
-                if (profile.role === 'ADMIN' || profile.role === 'MANAGER') return true;
                 const key = `GROUP_${g.id}`;
-                if (profile.permissions && profile.permissions[key] !== undefined) {
+                if (profile?.permissions && profile.permissions[key] !== undefined) {
                     return profile.permissions[key];
                 }
                 return true;
@@ -401,13 +405,16 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                     if (boardOwnerId) targetUserId = boardOwnerId;
                 }
             }
+            const effectiveAssignee = canDelegate
+                ? (assignee || null)
+                : (taskToEdit?.assignee || user?.id || null);
             const payload = {
                 title, description, group_id: groupId, label_color: labelColor,
                 category, project_id: projectId || null,
                 file_url: fileUrl || (taskToEdit?.file_url || ''),
                 user_id: taskToEdit ? taskToEdit.user_id : targetUserId,
                 is_annual: isAnnual, expiration_date: expirationDate || null,
-                assignee: assignee || null,
+                assignee: effectiveAssignee,
                 order_index: taskToEdit ? (taskToEdit.order_index || 0) : 0,
                 status: taskToEdit ? (taskToEdit.status || 'PENDING') : 'PENDING'
             };
@@ -535,8 +542,8 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onSuccess,
                         <div>
                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-2 block">Responsável (Atribuir a)</label>
                             <div className="relative group">
-                                <select className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10" value={assignee} onChange={e => setAssignee(e.target.value)}>
-                                    <option value="" className="bg-surface-dark">Sem Responsável</option>
+                                <select disabled={!canDelegate} className="appearance-none w-full bg-white/5 border border-white/5 rounded-xl px-5 py-3 text-white focus:border-primary/50 focus:bg-white/10 outline-none transition-all text-sm font-medium pr-10 disabled:opacity-60 disabled:cursor-not-allowed" value={assignee} onChange={e => setAssignee(e.target.value)}>
+                                    {canDelegate && <option value="" className="bg-surface-dark">Sem Responsável</option>}
                                     {users.map(u => (<option key={u.id} value={u.id} className="bg-surface-dark">{u.email} {u.professional_title ? `(${u.professional_title})` : ''}</option>))}
                                 </select>
                                 <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-500 pointer-events-none group-focus-within:text-primary transition-colors">person</span>
@@ -664,7 +671,7 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
   useEffect(() => {
     setTasks([]);
     setGroups([]);
-    if (fetchDataRef.current) fetchDataRef.current();
+    setLoading(true);
   }, [viewMode]);
 
   // FIX Bug 1 & 2: fetchData como useCallback com dependências corretas, sem depender do state `users`
@@ -677,10 +684,10 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
     if (isCentral) {
       const { data: uData } = await supabase
         .from('user_profiles')
-        .select('id, email, professional_title');
+        .select('id, email, professional_title, status');
       if (uData) {
-        currentUsers = uData;
-        setUsers(uData);
+        currentUsers = uData.filter((item: any) => !item.status || item.status === 'ACTIVE');
+        setUsers(currentUsers);
       }
     }
 
@@ -1074,8 +1081,8 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
     if (isCentral) {
       const { data } = await supabase
         .from('user_profiles')
-        .select('id, email, professional_title');
-      if (data) setUsers(data);
+        .select('id, email, professional_title, status');
+      if (data) setUsers(data.filter((item: any) => !item.status || item.status === 'ACTIVE'));
     }
   };
 
@@ -1281,6 +1288,16 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
               <p className="text-slate-400 max-w-xs mx-auto">Você não possui nenhuma tarefa atribuída no momento.</p>
             </div>
           </div>
+        ) : viewMode === 'monitoramento' && groups.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-4 py-20">
+            <div className="size-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
+              <span className="material-symbols-outlined text-primary text-[32px]">groups</span>
+            </div>
+            <div className="text-center">
+              <h3 className="text-lg font-bold text-white mb-1">Nenhuma tarefa pendente</h3>
+              <p className="text-slate-400 max-w-xs mx-auto">Não há tarefas pendentes para monitorar neste momento.</p>
+            </div>
+          </div>
         ) : (
           <div className="flex h-full gap-6 min-w-max pb-3 px-4">
             {groups.map(group => {
@@ -1378,18 +1395,19 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
                               (window as any)._draggedTaskId = null;
                             }}
                             onClick={() => {
+                              if (viewMode === 'monitoramento') return;
                               setEditingTask(task);
                               setIsModalOpen(true);
                             }}
-                            className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative cursor-pointer active:scale-[0.98] hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 hover:z-10 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''} ${isCompleted ? 'opacity-40 grayscale-[0.8] blur-[0.2px]' : ''}`}
+                            className={`bg-white/[0.03] rounded-xl border border-white/5 group shadow-lg transition-all relative ${viewMode === 'monitoramento' ? 'cursor-default' : 'cursor-pointer active:scale-[0.98]'} hover:border-primary/30 hover:bg-white/[0.05] hover:-translate-y-0.5 hover:z-10 ${isCompact ? 'p-3' : 'p-4'} ${isExpired ? 'border-red-500/30' : ''} ${isCompleted ? 'opacity-40 grayscale-[0.8] blur-[0.2px]' : ''}`}
                           >
-                            <button
+                            {viewMode !== 'monitoramento' && <button
                               onClick={(e) => { e.stopPropagation(); handleToggleComplete(task); }}
                               className={`absolute -left-2 -top-2 size-6 rounded-lg border flex items-center justify-center transition-all z-20 shadow-xl ${isCompleted ? 'bg-green-500 border-green-400 text-white shadow-green-500/20' : 'bg-surface-dark border-white/10 text-transparent hover:border-green-500/50 hover:text-green-500 group-hover:scale-110'}`}
                               title={isCompleted ? "Reabrir tarefa" : "Concluir tarefa"}
                             >
                               <span className="material-symbols-outlined text-[14px] font-bold">check</span>
-                            </button>
+                            </button>}
 
                             {task.label_color && task.label_color !== 'transparent' && (
                               <div className={`absolute top-0 right-0 w-1.5 h-full ${task.label_color} rounded-tr-xl rounded-br-xl`}></div>
@@ -1412,7 +1430,7 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
                                   </div>
                                 )}
                               </div>
-                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all -mr-1">
+                              {viewMode !== 'monitoramento' && <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all -mr-1">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setEditingTask(task); setIsModalOpen(true); }}
                                   className="size-7 flex items-center justify-center hover:bg-primary/10 rounded-lg text-slate-500 hover:text-primary transition-all bg-white/5 border border-white/10 shadow-sm"
@@ -1420,7 +1438,7 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
                                 >
                                   <span className="material-symbols-outlined text-[16px]">edit</span>
                                 </button>
-                              </div>
+                              </div>}
                             </div>
 
                             <h4 className={`text-white font-bold leading-relaxed tracking-tight ${isCompact ? 'text-[12px]' : 'text-[13px] mb-2'}`}>{task.title}</h4>
@@ -1484,7 +1502,7 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
                                   </a>
                                 )}
 
-                                <div className="flex gap-1.5">
+                                {viewMode !== 'monitoramento' && <div className="flex gap-1.5">
                                   {['bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'].map(c => (
                                     <button
                                       key={c}
@@ -1493,9 +1511,9 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
                                       title={`Trocar cor para ${c.replace('bg-', '').replace('-500', '')}`}
                                     />
                                   ))}
-                                </div>
+                                </div>}
 
-                                <div className="relative ml-1">
+                                {viewMode !== 'monitoramento' && <div className="relative ml-1">
                                   <button
                                     onClick={(e: React.MouseEvent) => {
                                       e.stopPropagation();
@@ -1536,19 +1554,21 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
                                         </button>
                                       ))
                                     ) : (
-                                      <span className="text-[9px] px-3 py-2 text-slate-500 text-center italic">Apenas leitura no Monitoramento</span>
+                                      <span className="text-[9px] px-3 py-2 text-slate-500 text-center italic">Movimentação indisponível nesta aba</span>
                                     )}
 
-                                    <div className="h-px bg-white/5 my-0.5"></div>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleDelete(task.id); setOpenMenuTaskId(null); }}
-                                      className="flex items-center gap-2 w-full px-3 py-2 hover:bg-red-500/10 rounded-lg text-[10px] font-bold text-red-400 hover:text-red-300 text-left uppercase tracking-wider"
-                                    >
-                                      <span className="material-symbols-outlined text-[14px]">delete</span>
-                                      Excluir Tarefa
-                                    </button>
+                                    {viewMode === 'minhas_tarefas' && <>
+                                      <div className="h-px bg-white/5 my-0.5"></div>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleDelete(task.id); setOpenMenuTaskId(null); }}
+                                        className="flex items-center gap-2 w-full px-3 py-2 hover:bg-red-500/10 rounded-lg text-[10px] font-bold text-red-400 hover:text-red-300 text-left uppercase tracking-wider"
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">delete</span>
+                                        Excluir Tarefa
+                                      </button>
+                                    </>}
                                   </div>
-                                </div>
+                                </div>}
                               </div>
                             </div>
                           </div>

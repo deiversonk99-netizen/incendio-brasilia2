@@ -37,42 +37,94 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
     const [isRecoveryMode, setIsRecoveryMode] = useState(false);
 
-    const fetchProfile = async (email: string) => {
-        const { data, error } = await supabase
+    const fetchProfile = async (email: string, userId: string): Promise<UserProfile | null> => {
+        let { data, error } = await supabase
             .from('user_profiles')
             .select('*')
-            .ilike('email', email)
+            .eq('email', email.toLowerCase())
             .limit(1)
             .maybeSingle();
+
+        // Perfis pré-cadastrados são vinculados ao auth.uid somente depois
+        // que o e-mail foi autenticado. A função no banco nunca reativa BLOCKED.
+        if (data && data.status !== 'BLOCKED' && (data.status === 'INVITED' || data.id !== userId)) {
+            const { data: claimedProfile, error: claimError } = await supabase.rpc('activate_current_user_profile');
+            if (!claimError && claimedProfile) {
+                data = claimedProfile as UserProfile;
+                error = null;
+            } else if (claimError) {
+                console.error('Unable to activate/link current profile:', claimError.message);
+            }
+        }
             
         // Se o perfil existe, verificamos se o status é válido. 
         // Se não tiver a coluna status (ainda não migrado), assume ACTIVE.
         const isActive = data && (data.status === 'ACTIVE' || !data.status);
         
         if (data && isActive) {
-            setProfile(data);
-        } else {
-            console.error('fetchProfile failed or user not ACTIVE:', error || data?.status);
-            setProfile(null);
+            return data as UserProfile;
         }
+        console.error('fetchProfile failed or user not ACTIVE:', error || data?.status);
+        return null;
     };
 
     useEffect(() => {
         let isMounted = true;
         let profileSubscription: any = null;
+        let subscribedUserId: string | null = null;
+        let authRequestId = 0;
 
         const setupProfileListener = (userId: string) => {
-            if (profileSubscription) return;
+            if (profileSubscription && subscribedUserId === userId) return;
+            if (profileSubscription) supabase.removeChannel(profileSubscription);
+            subscribedUserId = userId;
             profileSubscription = supabase
                 .channel('custom-user-profile')
                 .on(
                     'postgres_changes',
-                    { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `id=eq.${userId}` },
+                    { event: '*', schema: 'public', table: 'user_profiles', filter: `id=eq.${userId}` },
                     (payload) => {
-                        if (isMounted) setProfile(payload.new as UserProfile);
+                        if (!isMounted) return;
+                        if (payload.eventType === 'DELETE') {
+                            setProfile(null);
+                            return;
+                        }
+                        const nextProfile = payload.new as UserProfile;
+                        const isActive = nextProfile.status === 'ACTIVE' || !nextProfile.status;
+                        setProfile(isActive ? nextProfile : null);
                     }
                 )
                 .subscribe();
+        };
+
+        const resolveSession = async (nextSession: Session | null) => {
+            const requestId = ++authRequestId;
+            if (!isMounted) return;
+
+            setLoading(true);
+            setSession(nextSession);
+            setUser(nextSession?.user ?? null);
+
+            if (!nextSession?.user?.email) {
+                setProfile(null);
+                if (profileSubscription) {
+                    supabase.removeChannel(profileSubscription);
+                    profileSubscription = null;
+                    subscribedUserId = null;
+                }
+                if (isMounted && requestId === authRequestId) setLoading(false);
+                return;
+            }
+
+            const resolvedProfile = await fetchProfile(nextSession.user.email, nextSession.user.id).catch(e => {
+                console.error('fetchProfile err', e);
+                return null;
+            });
+
+            if (!isMounted || requestId !== authRequestId) return;
+            setProfile(resolvedProfile);
+            setupProfileListener(nextSession.user.id);
+            setLoading(false);
         };
 
         const initAuth = async () => {
@@ -80,50 +132,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Try to get session — Supabase reads from localStorage, usually instant
                 const { data: { session } } = await supabase.auth.getSession();
 
-                if (isMounted) {
-                    setSession(session);
-                    setUser(session?.user ?? null);
-                    if (session?.user?.email) {
-                        await fetchProfile(session.user.email).catch(e => console.error('fetchProfile err', e));
-                    }
-                    if (session?.user?.id) {
-                        setupProfileListener(session.user.id);
-                    }
-                }
+                await resolveSession(session);
             } catch (err) {
                 console.error('Auth init error:', err);
-            } finally {
-                if (isMounted) {
-                    setLoading(false);
-                }
+                if (isMounted) setLoading(false);
             }
         };
 
         initAuth();
 
         // Listen for auth state changes (login, logout, token refresh, etc.)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
             if (!isMounted) return;
 
             if (event === 'PASSWORD_RECOVERY') {
                 setIsRecoveryMode(true);
             }
 
-            setSession(session);
-            setUser(session?.user ?? null);
-
-            if (session?.user?.email) {
-                await fetchProfile(session.user.email).catch(e => console.error('fetchProfile err', e));
-            } else {
-                setProfile(null);
-            }
-
-            if (session?.user?.id) {
-                setupProfileListener(session.user.id);
-            }
-
-            // Always clear loading on any auth event
-            if (isMounted) setLoading(false);
+            // Avoid issuing another Supabase request from inside the auth callback.
+            // Scheduling it also prevents auth-lock deadlocks on INITIAL_SESSION/SIGNED_IN.
+            setTimeout(() => {
+                if (isMounted) void resolveSession(nextSession);
+            }, 0);
         });
 
         return () => {
