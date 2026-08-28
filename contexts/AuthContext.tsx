@@ -73,6 +73,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let profileSubscription: any = null;
         let subscribedUserId: string | null = null;
         let authRequestId = 0;
+        let resolvedUserId: string | null = null;
+        let resolvingUserId: string | null = null;
+        let hasResolvedInitialSession = false;
+        const authTimers = new Set<ReturnType<typeof setTimeout>>();
 
         const setupProfileListener = (userId: string) => {
             if (profileSubscription && subscribedUserId === userId) return;
@@ -97,15 +101,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .subscribe();
         };
 
-        const resolveSession = async (nextSession: Session | null) => {
+        const resolveSession = async (
+            nextSession: Session | null,
+            options: { forceProfile?: boolean; showLoading?: boolean } = {}
+        ) => {
+            const nextUser = nextSession?.user ?? null;
+            const nextUserId = nextUser?.id ?? null;
+
+            // SIGNED_IN can be emitted again when a browser tab regains focus.
+            // Keep the refreshed session, but do not reload the profile or block the UI.
+            if (
+                nextUserId
+                && !options.forceProfile
+                && (resolvedUserId === nextUserId || resolvingUserId === nextUserId)
+            ) {
+                if (isMounted) {
+                    setSession(nextSession);
+                    setUser(nextUser);
+                }
+                return;
+            }
+
             const requestId = ++authRequestId;
             if (!isMounted) return;
 
-            setLoading(true);
+            if (options.showLoading) setLoading(true);
             setSession(nextSession);
-            setUser(nextSession?.user ?? null);
+            setUser(nextUser);
 
-            if (!nextSession?.user?.email) {
+            if (!nextUser?.email) {
+                resolvedUserId = null;
+                resolvingUserId = null;
+                hasResolvedInitialSession = true;
                 setProfile(null);
                 if (profileSubscription) {
                     supabase.removeChannel(profileSubscription);
@@ -116,14 +143,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return;
             }
 
-            const resolvedProfile = await fetchProfile(nextSession.user.email, nextSession.user.id).catch(e => {
+            resolvingUserId = nextUser.id;
+            const resolvedProfile = await fetchProfile(nextUser.email, nextUser.id).catch(e => {
                 console.error('fetchProfile err', e);
                 return null;
             });
 
             if (!isMounted || requestId !== authRequestId) return;
+            resolvingUserId = null;
+            resolvedUserId = nextUser.id;
+            hasResolvedInitialSession = true;
             setProfile(resolvedProfile);
-            setupProfileListener(nextSession.user.id);
+            setupProfileListener(nextUser.id);
             setLoading(false);
         };
 
@@ -132,7 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Try to get session — Supabase reads from localStorage, usually instant
                 const { data: { session } } = await supabase.auth.getSession();
 
-                await resolveSession(session);
+                await resolveSession(session, { showLoading: true });
             } catch (err) {
                 console.error('Auth init error:', err);
                 if (isMounted) setLoading(false);
@@ -149,15 +180,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setIsRecoveryMode(true);
             }
 
+            const nextUserId = nextSession?.user?.id ?? null;
+            const isRepeatedSessionEvent = event === 'INITIAL_SESSION'
+                || event === 'SIGNED_IN'
+                || event === 'TOKEN_REFRESHED';
+
+            if (
+                isRepeatedSessionEvent
+                && nextUserId
+                && (resolvedUserId === nextUserId || resolvingUserId === nextUserId)
+            ) {
+                setSession(nextSession);
+                setUser(nextSession?.user ?? null);
+                return;
+            }
+
             // Avoid issuing another Supabase request from inside the auth callback.
             // Scheduling it also prevents auth-lock deadlocks on INITIAL_SESSION/SIGNED_IN.
-            setTimeout(() => {
-                if (isMounted) void resolveSession(nextSession);
+            const timer = setTimeout(() => {
+                authTimers.delete(timer);
+                if (!isMounted) return;
+
+                const userChanged = resolvedUserId !== nextUserId;
+                void resolveSession(nextSession, {
+                    forceProfile: event === 'USER_UPDATED',
+                    showLoading: !hasResolvedInitialSession || userChanged
+                });
             }, 0);
+            authTimers.add(timer);
         });
 
         return () => {
             isMounted = false;
+            authTimers.forEach(timer => clearTimeout(timer));
+            authTimers.clear();
             subscription.unsubscribe();
             if (profileSubscription) supabase.removeChannel(profileSubscription);
         };

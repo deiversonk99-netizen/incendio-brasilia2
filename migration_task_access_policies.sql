@@ -277,10 +277,13 @@ WITH CHECK (
     public.current_user_role() IN ('ADMIN', 'SUPERADMIN')
     OR (
         public.current_user_role() = 'MANAGER'
-        AND EXISTS (
-            SELECT 1 FROM public.task_groups tg
-            WHERE tg.id = group_id
-              AND public.can_access_task_board(tg.board_id, false)
+        AND (
+            (group_id IS NULL AND user_id = auth.uid() AND COALESCE(assignee, auth.uid()) = auth.uid())
+            OR EXISTS (
+                SELECT 1 FROM public.task_groups tg
+                WHERE tg.id = group_id
+                  AND public.can_access_task_board(tg.board_id, false)
+            )
         )
     )
     OR (
@@ -288,10 +291,13 @@ WITH CHECK (
         AND
         user_id = auth.uid()
         AND COALESCE(assignee, auth.uid()) = auth.uid()
-        AND EXISTS (
-            SELECT 1 FROM public.task_groups tg
-            WHERE tg.id = group_id
-              AND public.can_access_task_board(tg.board_id, true)
+        AND (
+            group_id IS NULL
+            OR EXISTS (
+                SELECT 1 FROM public.task_groups tg
+                WHERE tg.id = group_id
+                  AND public.can_access_task_board(tg.board_id, true)
+            )
         )
     )
 );

@@ -54,6 +54,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   // Real Data States
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [isAddingQuickTask, setIsAddingQuickTask] = useState(false);
   const [chartData, setChartData] = useState<{ name: string, real: number }[]>([]);
   const [projectsWithProposals, setProjectsWithProposals] = useState<Set<string>>(new Set());
   const [projectsWithFloors, setProjectsWithFloors] = useState<Set<string>>(new Set());
@@ -282,43 +283,28 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTaskTitle.trim() || !user) return;
+    const title = newTaskTitle.trim();
+    if (!title || !user || isAddingQuickTask) return;
 
-    let targetGroupId = null;
-    const { data: group } = await supabase
-      .from('task_groups')
-      .select('id')
-      .eq('user_id', user.id)
-      .ilike('name', '%Pendentes%')
-      .limit(1)
-      .single();
-    
-    if (group) targetGroupId = group.id;
-    if (!targetGroupId) {
-      const { data: anyGroup } = await supabase.from('task_groups').select('id').eq('user_id', user.id).limit(1).single();
-      if (anyGroup) targetGroupId = anyGroup.id;
-    }
+    setIsAddingQuickTask(true);
+    try {
+      // Tarefas rápidas são pessoais e não dependem da existência de um quadro.
+      const { data, error } = await supabase.from('tasks').insert({
+        title,
+        user_id: user.id,
+        assignee: user.id,
+        group_id: null,
+        status: 'PENDING',
+        completed: false
+      }).select('*').single();
 
-    if (!targetGroupId) {
-       alert("Você precisa criar pelo menos um Quadro de Tarefas antes de criar tarefas rápidas.");
-       return;
-    }
-
-    const { data, error } = await supabase.from('tasks').insert({
-      title: newTaskTitle,
-      user_id: user.id,
-      assignee: user.id,
-      group_id: targetGroupId,
-      status: 'PENDING'
-    }).select();
-
-    if (error) {
-      alert('Erro ao criar tarefa: ' + error.message);
-      return;
-    }
-    if (data) {
-      setTasks(prev => [data[0], ...prev]);
+      if (error) throw error;
+      setTasks(prev => [data as Task, ...prev]);
       setNewTaskTitle('');
+    } catch (error: any) {
+      alert('Erro ao criar tarefa rápida: ' + error.message);
+    } finally {
+      setIsAddingQuickTask(false);
     }
   };
 
@@ -596,9 +582,17 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                   placeholder="Adicionar tarefa..."
                   value={newTaskTitle}
                   onChange={e => setNewTaskTitle(e.target.value)}
+                  disabled={isAddingQuickTask}
                 />
-                <Button type="submit" size="sm" className="px-3">
-                  <span className="material-symbols-outlined">add</span>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="px-3"
+                  disabled={isAddingQuickTask || !newTaskTitle.trim()}
+                >
+                  <span className={`material-symbols-outlined ${isAddingQuickTask ? 'animate-spin' : ''}`}>
+                    {isAddingQuickTask ? 'progress_activity' : 'add'}
+                  </span>
                 </Button>
               </form>
 
