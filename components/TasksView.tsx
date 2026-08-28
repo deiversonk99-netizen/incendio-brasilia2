@@ -641,7 +641,7 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
   const [searchTerm, setSearchTerm] = useState('');
   const [isCompact, setIsCompact] = useState(false);
   const [openMenuTaskId, setOpenMenuTaskId] = useState<string | null>(null);
-  const fetchDataRef = useRef<() => Promise<void>>(null as any);
+  const fetchDataRef = useRef<(showLoading?: boolean) => Promise<void>>(null as any);
 
   const [isAddBoardModalOpen, setIsAddBoardModalOpen] = useState(false);
   const [newBoardName, setNewBoardName] = useState('');
@@ -675,9 +675,9 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
   }, [viewMode]);
 
   // FIX Bug 1 & 2: fetchData como useCallback com dependências corretas, sem depender do state `users`
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (showLoading = true) => {
     if (!user) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
 
     // 1. Fetch Board/User Info
     let currentUsers: any[] = [];
@@ -710,7 +710,7 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
       if (visibleGroupIds.length === 0) {
         setTasks([]);
         setGroups([]);
-        setLoading(false);
+        if (showLoading) setLoading(false);
         return;
       }
 
@@ -869,27 +869,37 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
       }
     }
 
-    setLoading(false);
-  }, [user?.id, selectedBoardId, isCentral, profile, viewMode]);
+    if (showLoading) setLoading(false);
+  }, [user?.id, selectedBoardId, isCentral, viewMode]);
 
   // FIX Bug 6: Separar o real-time subscription do effect de dados
   // Effect 1: Real-time — monta uma única vez, nunca recria o canal
   useEffect(() => {
     if (!user) return;
 
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshInBackground = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void fetchDataRef.current?.(false);
+      }, 150);
+    };
+
     const channel = supabase.channel('tasks-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        fetchDataRef.current?.();
+        refreshInBackground();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_groups' }, () => {
-        fetchDataRef.current?.();
+        refreshInBackground();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_boards' }, () => {
-        fetchDataRef.current?.();
+        refreshInBackground();
       })
       .subscribe();
 
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
   }, [user?.id]); // ← apenas user.id, não selectedBoardId
@@ -907,7 +917,7 @@ const TasksView: React.FC<TasksViewProps> = ({ viewMode: initialViewMode = 'minh
     };
 
     init();
-  }, [user?.id, selectedBoardId, fetchData]);
+  }, [fetchData]);
 
   const handleConvertToProject = async (task: Task) => {
     if (!confirm(`Deseja converter a tarefa "${task.title}" em um novo Projeto?`)) return;
