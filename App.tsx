@@ -70,7 +70,7 @@ const AppContent: React.FC = () => {
       case AppView.TEAM_TASKS:
         return <TasksView viewMode="monitoramento" />;
       case AppView.ADMIN_BOARDS:
-        return <AdminBoardsView />;
+        return <AdminBoardsView onOpenMonitoring={() => setCurrentView(AppView.TEAM_TASKS)} />;
       case AppView.CLIENTS:
         return <ClientsView />;
       case AppView.ENGINEERING_PHASE_A:
