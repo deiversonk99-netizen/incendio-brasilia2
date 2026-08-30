@@ -42,6 +42,68 @@ CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON public.tasks(created_by);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_by ON public.tasks(assigned_by);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee_status ON public.tasks(assignee, status);
 
+-- Repara vínculos legados sem apagar ou recriar tarefas.
+UPDATE public.task_boards tb
+SET user_id = up.id
+FROM public.user_profiles up
+WHERE tb.user_id IS NULL
+  AND up.id IS NOT NULL
+  AND lower(tb.user_email) = lower(up.email);
+
+UPDATE public.task_groups tg
+SET user_id = tb.user_id
+FROM public.task_boards tb
+WHERE tg.board_id = tb.id
+  AND tb.user_id IS NOT NULL
+  AND tg.user_id IS DISTINCT FROM tb.user_id;
+
+INSERT INTO public.board_members (board_id, user_id, access_level)
+SELECT tb.id, tb.user_id, 'OWNER'
+FROM public.task_boards tb
+WHERE tb.user_id IS NOT NULL
+ON CONFLICT (board_id, user_id) DO UPDATE SET access_level = 'OWNER';
+
+-- Quando um perfil convidado conclui o primeiro acesso, qualquer quadro
+-- legado identificado pelo e-mail passa a ser vinculado automaticamente.
+CREATE OR REPLACE FUNCTION public.link_task_boards_after_profile_activation()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+BEGIN
+    IF NEW.id IS NULL OR NEW.email IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    UPDATE public.task_boards
+    SET user_id = NEW.id,
+        user_email = lower(NEW.email)
+    WHERE user_id IS NULL
+      AND lower(user_email) = lower(NEW.email);
+
+    UPDATE public.task_groups tg
+    SET user_id = NEW.id
+    FROM public.task_boards tb
+    WHERE tg.board_id = tb.id
+      AND tb.user_id = NEW.id
+      AND tg.user_id IS DISTINCT FROM NEW.id;
+
+    INSERT INTO public.board_members (board_id, user_id, access_level)
+    SELECT tb.id, NEW.id, 'OWNER'
+    FROM public.task_boards tb
+    WHERE tb.user_id = NEW.id
+    ON CONFLICT (board_id, user_id) DO UPDATE SET access_level = 'OWNER';
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS link_task_boards_after_profile_activation_trigger ON public.user_profiles;
+CREATE TRIGGER link_task_boards_after_profile_activation_trigger
+AFTER INSERT OR UPDATE OF id, email ON public.user_profiles
+FOR EACH ROW EXECUTE FUNCTION public.link_task_boards_after_profile_activation();
+
 CREATE OR REPLACE FUNCTION public.current_user_role()
 RETURNS text
 LANGUAGE sql
@@ -101,6 +163,16 @@ BEGIN
               tb.user_id = auth.uid()
               OR bm.access_level IN ('OWNER', 'EDITOR')
               OR (NOT p_write AND bm.access_level = 'VIEWER')
+              OR (NOT p_write AND EXISTS (
+                  SELECT 1
+                  FROM public.task_groups tg
+                  JOIN public.tasks t ON t.group_id = tg.id
+                  WHERE tg.board_id = tb.id
+                    AND (
+                        t.assignee = auth.uid()
+                        OR (t.assignee IS NULL AND t.user_id = auth.uid())
+                    )
+              ))
           )
     );
 END;
@@ -120,9 +192,8 @@ AS $$
         WHERE t.id = p_task_id
           AND (
               public.current_user_role() IN ('MANAGER', 'ADMIN', 'SUPERADMIN')
-              OR t.user_id = auth.uid()
               OR t.assignee = auth.uid()
-              OR public.can_access_task_board(tg.board_id, false)
+              OR (t.assignee IS NULL AND t.user_id = auth.uid())
           )
     );
 $$;
@@ -150,6 +221,23 @@ BEGIN
        AND (NEW.assignee IS DISTINCT FROM OLD.assignee
             OR NEW.user_id IS DISTINCT FROM OLD.user_id) THEN
         RAISE EXCEPTION 'Seu perfil não pode reatribuir a tarefa';
+    END IF;
+
+    IF v_role NOT IN ('MANAGER', 'ADMIN', 'SUPERADMIN')
+       AND NEW.group_id IS DISTINCT FROM OLD.group_id
+       AND NOT (
+           OLD.user_id = auth.uid()
+           AND (
+               NEW.group_id IS NULL
+               OR EXISTS (
+                   SELECT 1
+                   FROM public.task_groups tg
+                   WHERE tg.id = NEW.group_id
+                     AND public.can_access_task_board(tg.board_id, true)
+               )
+           )
+       ) THEN
+        RAISE EXCEPTION 'Seu perfil não pode mover esta tarefa para outro quadro';
     END IF;
 
     IF NEW.assignee IS DISTINCT FROM OLD.assignee THEN
@@ -309,7 +397,10 @@ WITH CHECK (
     public.current_user_role() IN ('MANAGER', 'ADMIN', 'SUPERADMIN')
     OR (
         public.current_user_role() IN ('USER', 'FUNCIONARIO')
-        AND (user_id = auth.uid() OR assignee = auth.uid())
+        AND (
+            assignee = auth.uid()
+            OR (assignee IS NULL AND user_id = auth.uid())
+        )
     )
 );
 
@@ -317,7 +408,11 @@ CREATE POLICY tasks_delete_policy ON public.tasks
 FOR DELETE TO authenticated
 USING (
     public.current_user_role() IN ('MANAGER', 'ADMIN', 'SUPERADMIN')
-    OR (public.current_user_role() IN ('USER', 'FUNCIONARIO') AND user_id = auth.uid())
+    OR (
+        public.current_user_role() IN ('USER', 'FUNCIONARIO')
+        AND user_id = auth.uid()
+        AND COALESCE(assignee, auth.uid()) = auth.uid()
+    )
 );
 
 CREATE POLICY task_checklist_select_policy ON public.task_checklist_items
@@ -379,6 +474,8 @@ WITH CHECK (public.current_user_role() IN ('ADMIN', 'SUPERADMIN'));
 REVOKE ALL ON FUNCTION public.current_user_role() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.can_access_task_board(uuid, boolean) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.can_access_task(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.link_task_boards_after_profile_activation() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.protect_task_assignment_fields() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.current_user_role() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_access_task_board(uuid, boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_access_task(uuid) TO authenticated;

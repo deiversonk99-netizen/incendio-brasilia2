@@ -14,22 +14,22 @@ interface UserProfile {
 interface Board {
     id: string;
     name: string;
-    user_id: string;
+    user_id: string | null;
     is_visible: boolean;
     created_at: string;
     user_email?: string;
 }
 
-interface TaskStats {
-    board_id: string;
-    count: number;
+interface AdminBoardsViewProps {
+    onOpenMonitoring?: () => void;
 }
 
-const AdminBoardsView: React.FC = () => {
+const AdminBoardsView: React.FC<AdminBoardsViewProps> = ({ onOpenMonitoring }) => {
     const { profile } = useAuth();
     const [boards, setBoards] = useState<Board[]>([]);
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
+    const [errorMessage, setErrorMessage] = useState('');
     const [taskStats, setTaskStats] = useState<Record<string, number>>({});
 
     // Create Board Modal State
@@ -37,59 +37,55 @@ const AdminBoardsView: React.FC = () => {
     const [newBoardName, setNewBoardName] = useState('');
     const [selectedUserValue, setSelectedUserValue] = useState(''); // Can be UUID or email
 
-    const fetchData = async () => {
-        setLoading(true);
+    const fetchData = async (showLoading = true) => {
+        if (showLoading) setLoading(true);
+        setErrorMessage('');
 
-        // Fetch all user profiles
-        const { data: userData } = await supabase
-            .from('user_profiles')
-            .select('id, email, professional_title, status');
+        try {
+            const { data: userData, error: usersError } = await supabase
+                .from('user_profiles')
+                .select('id, email, professional_title, status');
+            if (usersError) throw new Error('Usuários: ' + usersError.message);
+            setUsers((userData || []).filter(item => item.status !== 'BLOCKED'));
 
-        if (userData) setUsers(userData.filter(item => item.status !== 'BLOCKED'));
+            const { data: boardsData, error: boardsError } = await supabase
+                .from('task_boards')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (boardsError) throw new Error('Quadros: ' + boardsError.message);
 
-        // Fetch all boards
-        const { data: boardsData } = await supabase
-            .from('task_boards')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (boardsData) {
-            const enrichedBoards = boardsData.map((b: any) => ({
-                ...b,
-                // Priority: matched profile email > user_email column > 'Unknown'
-                user_email: userData?.find(u => u.id === b.user_id)?.email || b.user_email || 'Unknown'
+            const enrichedBoards = (boardsData || []).map((board: any) => ({
+                ...board,
+                is_visible: board.is_visible !== false,
+                user_email: (userData || []).find(user => user.id === board.user_id)?.email || board.user_email || 'Unknown'
             }));
             setBoards(enrichedBoards);
 
-            // Fetch task counts for these boards
-            // We need to fetch groups first to get tasks
-            const { data: groupsData } = await supabase
-                .from('task_groups')
-                .select('id, board_id');
+            const [{ data: groupsData, error: groupsError }, { data: tasksData, error: tasksError }] = await Promise.all([
+                supabase.from('task_groups').select('id, board_id'),
+                supabase.from('tasks').select('group_id')
+            ]);
+            if (groupsError) throw new Error('Colunas: ' + groupsError.message);
+            if (tasksError) throw new Error('Tarefas: ' + tasksError.message);
 
-            if (groupsData) {
-                const boardToGroups: Record<string, string[]> = {};
-                groupsData.forEach(g => {
-                    if (!boardToGroups[g.board_id]) boardToGroups[g.board_id] = [];
-                    boardToGroups[g.board_id].push(g.id);
-                });
+            const boardToGroups: Record<string, string[]> = {};
+            (groupsData || []).forEach(group => {
+                if (!boardToGroups[group.board_id]) boardToGroups[group.board_id] = [];
+                boardToGroups[group.board_id].push(group.id);
+            });
 
-                const { data: tasksData } = await supabase
-                    .from('tasks')
-                    .select('group_id');
-
-                if (tasksData) {
-                    const stats: Record<string, number> = {};
-                    boardsData.forEach(b => {
-                        const groupsForBoard = boardToGroups[b.id] || [];
-                        stats[b.id] = tasksData.filter(t => groupsForBoard.includes(t.group_id)).length;
-                    });
-                    setTaskStats(stats);
-                }
-            }
+            const stats: Record<string, number> = {};
+            (boardsData || []).forEach(board => {
+                const groupsForBoard = boardToGroups[board.id] || [];
+                stats[board.id] = (tasksData || []).filter(task => task.group_id && groupsForBoard.includes(task.group_id)).length;
+            });
+            setTaskStats(stats);
+        } catch (error: any) {
+            console.error('Error loading board management:', error);
+            setErrorMessage(error.message || 'Não foi possível carregar os quadros.');
+        } finally {
+            if (showLoading) setLoading(false);
         }
-
-        setLoading(false);
     };
 
     useEffect(() => {
@@ -97,8 +93,9 @@ const AdminBoardsView: React.FC = () => {
 
         // Set up real-time subscriptions
         const boardsChannel = supabase.channel('admin-boards-all')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'task_boards' }, () => fetchData())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => fetchData())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'task_boards' }, () => fetchData(false))
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'task_groups' }, () => fetchData(false))
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => fetchData(false))
             .subscribe();
 
         return () => {
@@ -195,17 +192,37 @@ const AdminBoardsView: React.FC = () => {
                         </h2>
                         <p className="text-sm md:text-base text-slate-400 mt-2 font-medium">Controle total sobre os espaços de trabalho de todos os usuários</p>
                     </div>
-                    <button
-                        onClick={() => setIsModalOpen(true)}
-                        className="w-full md:w-auto px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-black uppercase tracking-widest transition-all shadow-xl shadow-primary/20 flex items-center justify-center md:justify-start gap-2"
-                    >
-                        <span className="material-symbols-outlined">add_circle</span>
-                        Criar Quadro para Usuário
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                        {onOpenMonitoring && (
+                            <button
+                                onClick={onOpenMonitoring}
+                                className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                            >
+                                <span className="material-symbols-outlined">groups</span>
+                                Monitorar Tarefas
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            className="px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-black uppercase tracking-widest transition-all shadow-xl shadow-primary/20 flex items-center justify-center gap-2"
+                        >
+                            <span className="material-symbols-outlined">add_circle</span>
+                            Criar Quadro para Usuário
+                        </button>
+                    </div>
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                {errorMessage && (
+                    <div role="alert" className="mb-6 bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3 text-sm text-red-300">
+                        <span className="material-symbols-outlined text-red-400">error</span>
+                        <div>
+                            <p className="font-bold text-red-400">Não foi possível carregar o gerenciamento de quadros</p>
+                            <p className="text-xs mt-1">{errorMessage}</p>
+                        </div>
+                    </div>
+                )}
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-64 gap-4">
                         <div className="size-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>

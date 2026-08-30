@@ -17,6 +17,7 @@ interface Task {
   id: string;
   title: string;
   completed: boolean;
+  user_id?: string;
 }
 
 export interface StatusColumn {
@@ -184,11 +185,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
         setAllProfiles(user ? [{ id: user.id, email: user.email || '', role: profile?.role || 'USER' }] : []);
       }
 
-      // 7. Tarefas rápidas atribuídas ao usuário atual, independentemente da coluna.
+      // 7. Tarefas rápidas pessoais (sem quadro/coluna).
       const { data: quickTasksData } = await supabase
         .from('tasks')
         .select('*')
         .or(`assignee.eq.${user?.id || ''},and(assignee.is.null,user_id.eq.${user?.id || ''})`)
+        .is('group_id', null)
         .eq('status', 'PENDING')
         .order('created_at', { ascending: false });
       if (quickTasksData) {
@@ -309,8 +311,13 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   };
 
   const handleDeleteTask = async (id: string) => {
+    const deletedTask = tasks.find(task => task.id === id);
     setTasks(prev => prev.filter(t => t.id !== id));
-    await supabase.from('tasks').delete().eq('id', id);
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) {
+      if (deletedTask) setTasks(prev => [deletedTask, ...prev]);
+      alert('Erro ao excluir tarefa rápida: ' + error.message);
+    }
   }
 
   const handleSendToPending = async (project: Project) => {
@@ -611,12 +618,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
                         {task.title}
                       </p>
                     </div>
-                    <button
-                      onClick={() => handleDeleteTask(task.id)}
-                      className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-500 transition-all"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">delete</span>
-                    </button>
+                    {(canDelegate || task.user_id === user?.id) && (
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-500 transition-all"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
