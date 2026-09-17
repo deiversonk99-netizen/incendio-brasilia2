@@ -126,7 +126,7 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
           ...data.variables,
           // Fallback individual fields if missing in variables but present in profile
           assinatura: data.variables.assinatura || profile?.assinatura || '',
-          crq: data.variables.crq || profile?.crq || '',
+          crq: profile?.crq || data.variables.crq || '',
           credentials: data.variables.credentials || profile?.credentials || '',
           credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
           carimbo: data.variables.carimbo || profile?.carimbo || '',
@@ -167,19 +167,12 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
     if (!selectedProjectId) return;
 
     try {
-      await supabase
-        .from('pdf_settings')
-        .upsert({
-          project_id: selectedProjectId,
-          phase: 'ENG_A',
-          variables: newSettings,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'project_id, phase' });
-
-      // Save global defaults to user profile
+      // Save professional defaults first so the CRQ is shared by all phases
+      // and projects. Keep it in the project only if the profile update fails.
       const user = (await supabase.auth.getUser()).data.user;
+      let profileSaveFailed = !user;
       if (user) {
-        await supabase
+        const { error: profileError } = await supabase
           .from('user_profiles')
           .update({
             assinatura: newSettings.assinatura,
@@ -191,7 +184,23 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
             updated_at: new Date().toISOString()
           })
           .eq('id', user.id);
+        profileSaveFailed = Boolean(profileError);
+        if (profileError) console.error('Error saving PDF profile defaults:', profileError);
       }
+
+      const projectSettings = { ...newSettings };
+      if (!profileSaveFailed) delete projectSettings.crq;
+
+      const { error: pdfError } = await supabase
+        .from('pdf_settings')
+        .upsert({
+          project_id: selectedProjectId,
+          phase: 'ENG_A',
+          variables: projectSettings,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'project_id, phase' });
+
+      if (pdfError) console.error('Error saving project PDF settings:', pdfError);
     } catch (e) {
       console.error('Error saving PDF settings:', e);
     }
@@ -809,9 +818,11 @@ const EngineeringSurvey: React.FC<EngineeringSurveyProps> = ({ onNext, selectedP
                       disabled={!pdfSettings.show_crq}
                       className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none disabled:opacity-50"
                       value={pdfSettings.crq}
-                      onChange={(e) => savePdfSettings({ ...pdfSettings, crq: e.target.value })}
+                      onChange={(e) => setPdfSettings({ ...pdfSettings, crq: e.target.value })}
+                      onBlur={() => savePdfSettings(pdfSettings)}
                       placeholder="Ex: 000.000-D/DF"
                     />
+                    <p className="text-[10px] text-slate-500">Salvo no perfil e reutilizado nas outras propostas.</p>
                   </div>
 
                   <div className="flex flex-col gap-3">

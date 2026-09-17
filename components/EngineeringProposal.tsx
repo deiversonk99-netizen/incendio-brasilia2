@@ -9,6 +9,11 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
 import { getClientDisplayName } from '../lib/formatters';
+import {
+  isPdfFile,
+  MAX_PDF_ASSET_SIZE_BYTES,
+  PDF_ASSETS_BUCKET
+} from '../lib/pdfAssets';
 
 
 // Add PaymentMethod interface
@@ -75,6 +80,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     group_products_name: '', // New: Custom name for the grouped service
     warranty_text: '01 (um) ano contra defeitos de fabricação e instalação' // New: Default warranty info
   });
+  const [globalPdfConfig, setGlobalPdfConfig] = useState<any>({});
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [showVisibilityModal, setShowVisibilityModal] = useState(false);
   const [candidateItems, setCandidateItems] = useState<any[]>([]);
@@ -108,6 +114,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         .single();
       
       const globalAppConfig = appData?.value || {};
+      setGlobalPdfConfig(globalAppConfig);
 
       if (data) {
         setPdfSettings({
@@ -129,7 +136,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           ...data.variables,
           // Fallback individual fields if they are missing/empty in variables
           assinatura: data.variables.assinatura || profile?.assinatura || '',
-          crq: data.variables.crq || profile?.crq || '',
+          // CRQ is a professional default. The profile value must propagate to
+          // every proposal; the project value remains only as a legacy fallback.
+          crq: profile?.crq || data.variables.crq || '',
           credentials: data.variables.credentials || profile?.credentials || '',
           credentials_img: data.variables.credentials_img || profile?.credentials_img || '',
           carimbo: data.variables.carimbo || profile?.carimbo || '',
@@ -184,6 +193,17 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   };
 
   const handleImageUpload = (field: string, file: File) => {
+    if (field.startsWith('cert_')) {
+      if (!isPdfFile(file)) {
+        alert('Selecione um arquivo PDF válido.');
+        return;
+      }
+      if (file.size > MAX_PDF_ASSET_SIZE_BYTES) {
+        alert('O arquivo deve ter no máximo 10 MB.');
+        return;
+      }
+    }
+
     const reader = new FileReader();
     reader.onloadend = () => {
       savePdfSettings({ ...pdfSettings, [field]: reader.result as string });
@@ -196,22 +216,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     if (!selectedProjectId || !user) return;
 
     try {
-      // 1. Save to project-specific settings
-      const { error: pdfError } = await supabase
-        .from('pdf_settings')
-        .upsert({
-          project_id: selectedProjectId,
-          phase: 'ENG_C',
-          variables: newSettings,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'project_id, phase' });
-
-      if (pdfError) {
-        console.error('Error saving PDF settings:', pdfError);
-        alert('Erro ao salvar as configurações do PDF. O arquivo pode ser muito grande.');
-      }
-
-      // 2. Save global defaults to user profile (signature, CRQ, credentials, stamps)
+      // 1. Save professional defaults first. If this update fails, keep the
+      // CRQ in the project payload as a compatibility fallback.
       const globalFields = {
         assinatura: newSettings.assinatura,
         crq: newSettings.crq,
@@ -230,6 +236,25 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       if (profileError) {
         console.error('Error saving user profile:', profileError);
       }
+
+      const projectSettings = { ...newSettings };
+      if (!profileError) delete projectSettings.crq;
+
+      // 2. Save project-specific settings without duplicating the profile CRQ.
+      const { error: pdfError } = await supabase
+        .from('pdf_settings')
+        .upsert({
+          project_id: selectedProjectId,
+          phase: 'ENG_C',
+          variables: projectSettings,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'project_id, phase' });
+
+      if (pdfError) {
+        console.error('Error saving PDF settings:', pdfError);
+        alert('Erro ao salvar as configurações do PDF. O arquivo pode ser muito grande.');
+      }
+
     } catch (e) {
       console.error('Error saving PDF settings:', e);
     }
@@ -1922,7 +1947,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       }
 
       // 2. Helper to merge External PDF
-      const mergeExternalPdf = async (source: string | ArrayBuffer) => {
+      const mergeExternalPdf = async (source: string | ArrayBuffer, showWarning = true): Promise<boolean> => {
         try {
           let buffer: ArrayBuffer;
           if (typeof source === 'string') {
@@ -1942,10 +1967,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           const extPdf = await PDFDocument.load(buffer);
           const extPages = await pdfDoc.copyPages(extPdf, extPdf.getPageIndices());
           extPages.forEach((page) => pdfDoc.addPage(page));
+          return true;
         } catch (err) {
           console.error('Error merging PDF:', err);
-          // Don't block whole process, just warn
-          alert('Aviso: Não foi possível anexar um dos certificados. Verifique se o arquivo existe.');
+          if (showWarning) {
+            // Don't block whole process, just warn
+            alert('Aviso: Não foi possível anexar um dos certificados. Verifique se o arquivo existe.');
+          }
+          return false;
         }
       };
 
@@ -1953,6 +1982,29 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       if (pdfSettings.show_cert_crq) {
         if (pdfSettings.cert_crq_file) {
           await mergeExternalPdf(pdfSettings.cert_crq_file);
+        } else if (globalPdfConfig.cert_crq_storage_path) {
+          let globalCertificateMerged = false;
+          try {
+            const { data: certificateBlob, error: certificateError } = await supabase.storage
+              .from(PDF_ASSETS_BUCKET)
+              .download(globalPdfConfig.cert_crq_storage_path);
+
+            if (certificateError) throw certificateError;
+            if (certificateBlob) {
+              globalCertificateMerged = await mergeExternalPdf(
+                await certificateBlob.arrayBuffer(),
+                false
+              );
+            }
+          } catch (error) {
+            console.error('Error loading global CRQ certificate:', error);
+          }
+
+          // Keep the bundled file as a safe fallback during migration or if
+          // Storage is temporarily unavailable.
+          if (!globalCertificateMerged) {
+            await mergeExternalPdf('/CRQ PJ CREA.pdf');
+          }
         } else {
           // Default
           await mergeExternalPdf('/CRQ PJ CREA.pdf');
@@ -2142,9 +2194,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       disabled={!pdfSettings.show_crq}
                       className="w-full bg-background-dark border border-white/10 rounded-lg px-3 py-2 text-white focus:border-primary outline-none disabled:opacity-50"
                       value={pdfSettings.crq}
-                      onChange={(e) => savePdfSettings({ ...pdfSettings, crq: e.target.value })}
+                      onChange={(e) => setPdfSettings({ ...pdfSettings, crq: e.target.value })}
+                      onBlur={() => savePdfSettings(pdfSettings)}
                       placeholder="Ex: 000.000-D/DF"
                     />
+                    <p className="text-[10px] text-slate-500">
+                      Salvo no perfil do responsável e reutilizado automaticamente nas outras propostas.
+                    </p>
                   </div>
 
                   <div className="flex flex-col gap-3">
@@ -2339,27 +2395,43 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         </div>
                         <p className="text-xs text-slate-400 mb-3">
                           Anexa o certificado CRQ ao final da proposta.
-                          {pdfSettings.cert_crq_file ? ' (Arquivo Personalizado)' : ' (Arquivo Padrão)'}
+                          {pdfSettings.cert_crq_file
+                            ? ' (Arquivo exclusivo desta proposta)'
+                            : globalPdfConfig.cert_crq_storage_path
+                              ? ' (Padrão global da empresa)'
+                              : ' (Arquivo padrão do aplicativo)'}
                         </p>
                         <label className="flex items-center gap-2 px-3 py-2 bg-background-dark border border-white/10 rounded cursor-pointer hover:bg-white/5 transition-colors">
                           <span className="material-symbols-outlined text-slate-400 text-sm">upload_file</span>
-                          <span className="text-xs text-slate-300">Substituir Arquivo (PDF)</span>
+                          <span className="text-xs text-slate-300">Usar arquivo somente nesta proposta</span>
                           <input
                             type="file"
                             className="hidden"
-                            accept="application/pdf"
-                            onChange={(e) => e.target.files?.[0] && handleImageUpload('cert_crq_file', e.target.files[0])}
+                            accept="application/pdf,.pdf"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleImageUpload('cert_crq_file', file);
+                              e.target.value = '';
+                            }}
                           />
                         </label>
+                        {!pdfSettings.cert_crq_file && globalPdfConfig.cert_crq_file_name && (
+                          <p className="text-[10px] text-emerald-400 mt-2 truncate">
+                            Padrão atual: {globalPdfConfig.cert_crq_file_name}
+                          </p>
+                        )}
                         {pdfSettings.cert_crq_file && (
                           <button
                             onClick={() => savePdfSettings({ ...pdfSettings, cert_crq_file: null })}
                             className="text-xs text-red-400 hover:text-red-300 mt-2 flex items-center gap-1"
                           >
                             <span className="material-symbols-outlined text-[14px]">close</span>
-                            Restaurar Padrão
+                            Usar padrão da empresa
                           </button>
                         )}
+                        <p className="text-[10px] text-slate-500 mt-2">
+                          O certificado padrão pode ser atualizado em Configurações &gt; Configurações de PDF.
+                        </p>
                       </div>
 
                       {/* Regularity Certificate */}
