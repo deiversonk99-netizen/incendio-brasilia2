@@ -14,6 +14,11 @@ import {
   MAX_PDF_ASSET_SIZE_BYTES,
   PDF_ASSETS_BUCKET
 } from '../lib/pdfAssets';
+import {
+  CatalogPriceProduct,
+  normalizeCatalogProductName,
+  syncBudgetItemsWithCatalog
+} from '../lib/catalogPriceSync';
 
 
 // Add PaymentMethod interface
@@ -403,7 +408,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   const [modalTab, setModalTab] = useState<'product' | 'service' | 'custom'>('product');
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
-  const [newItem, setNewItem] = useState({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '' });
+  const [newItem, setNewItem] = useState({
+    name: '',
+    quantity: 1,
+    price: 0,
+    cost_price: 0,
+    observation: '',
+    product_id: null as string | null,
+    sync_with_catalog: false
+  });
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [showSearchList, setShowSearchList] = useState(false);
   const [saveToCatalog, setSaveToCatalog] = useState(false);
@@ -420,7 +433,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   }, []);
 
   const fetchCatalogs = async () => {
-    const { data: products } = await supabase.from('product_catalog').select('name, price, cost_price, observation').order('name');
+    const { data: products } = await supabase.from('product_catalog').select('id, name, price, cost_price, observation').order('name');
     const { data: services } = await supabase.from('services_catalog').select('name, description').order('name');
 
     if (products) setCatalogItems(products);
@@ -546,7 +559,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   // Auto-recalculate prices when BDI or Profit changes
   useEffect(() => {
-    if (!budgetItems.length) return;
+    // Loading a proposal changes these state values too. Do not interpret that
+    // as a user edit and overwrite the catalog sale price during hydration.
+    if (loading || !budgetItems.length) return;
 
     // We only auto-recalculate if explicitly enabled or if standard behavior
     // User requested: "must recalculate automatically"
@@ -753,18 +768,37 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
     }
 
-    // 2. Fetch Items Cost from Phase B
-    const { data: budgetItemsData } = await supabase
-      .from('budget_items')
-      .select('id, name, quantity_final, unit_price, cost_price, origin, item_type, apply_bdi, apply_profit')
-      .eq('project_id', projectId);
+    // 2. Fetch items and a fresh catalog together. The catalog state loaded on
+    // mount can be stale when this page stays mounted during navigation.
+    const [{ data: budgetItemsData }, { data: latestCatalog }] = await Promise.all([
+      supabase
+        .from('budget_items')
+        .select('id, project_id, name, quantity_calculated, quantity_final, unit_price, cost_price, origin, item_type, apply_bdi, apply_profit, observation, product_id, sync_with_catalog')
+        .eq('project_id', projectId),
+      supabase
+        .from('product_catalog')
+        .select('id, name, price, cost_price, observation')
+        .order('name')
+    ]);
+
+    if (latestCatalog) setCatalogItems(latestCatalog);
 
     let processedItems: any[] = [];
     if (budgetItemsData) {
+      const syncResult = syncBudgetItemsWithCatalog(
+        budgetItemsData,
+        (latestCatalog || []) as CatalogPriceProduct[],
+        {
+          bdiPercent: Number(existingProposal?.bdi_percent) || 0,
+          profitPercent: Number(existingProposal?.profit_percent) || 0,
+          applyProposalMarkup: false
+        }
+      );
+
       // Heal items with missing cost_price (e.g. Services or Manual items where cost wasn't set)
       // To prevent already marked-up prices from being adopted as the base cost on refresh, 
       // we must reverse-calculate it using the combined factor.
-      processedItems = budgetItemsData.map(item => {
+      processedItems = syncResult.items.map(item => {
         if ((!item.cost_price || item.cost_price <= 0) && item.unit_price > 0) {
           const backCalculatedCost = Number(item.unit_price) / (combinedFactor || 1);
           return { ...item, cost_price: backCalculatedCost };
@@ -772,6 +806,28 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         return item;
       });
       setBudgetItems(processedItems);
+
+      if (syncResult.changedItems.length > 0) {
+        const { error } = await supabase.from('budget_items').upsert(
+          syncResult.changedItems.map((item: any) => ({
+            id: item.id,
+            project_id: item.project_id,
+            name: item.name,
+            quantity_calculated: item.quantity_calculated,
+            quantity_final: item.quantity_final,
+            unit_price: item.unit_price,
+            cost_price: item.cost_price,
+            origin: item.origin,
+            item_type: item.item_type,
+            apply_bdi: item.apply_bdi !== false,
+            apply_profit: item.apply_profit !== false,
+            observation: item.observation,
+            product_id: item.product_id,
+            sync_with_catalog: true
+          }))
+        );
+        if (error) console.error('Error persisting proposal catalog synchronization:', error);
+      }
     }
 
     // Correct totalCost to use COST_PRICE for base material cost
@@ -1050,7 +1106,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       cost_price: newItem.cost_price || newItem.price, // Default Cost to Price if 0 (Manual Entry)
       observation: newItem.observation,
       origin: 'MANUAL' as const,
-      item_type: modalTab === 'service' ? 'SERVICE' : (modalTab === 'custom' ? 'CUSTOM' : 'PRODUCT')
+      item_type: modalTab === 'service' ? 'SERVICE' : (modalTab === 'custom' ? 'CUSTOM' : 'PRODUCT'),
+      product_id: modalTab === 'product' ? newItem.product_id : null,
+      sync_with_catalog: modalTab === 'product' && newItem.sync_with_catalog
     };
 
     // If we have markups, we should probably reverse-calculate the Cost so the Price matches what was typed
@@ -1089,7 +1147,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         setBudgetItems(prev => prev.map(item => item.id === activeId ? data?.[0] : item));
         setIsAddItemModalOpen(false);
-        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '' });
+        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '', product_id: null, sync_with_catalog: false });
         setSaveToCatalog(false);
         setItemToReplace(null);
         setItemToEdit(null);
@@ -1112,7 +1170,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
         setBudgetItems(prev => [...prev, data?.[0]]);
         setIsAddItemModalOpen(false);
-        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '' });
+        setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '', product_id: null, sync_with_catalog: false });
         setSaveToCatalog(false);
       }
     }
@@ -1135,11 +1193,21 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     let finalUpdates = { ...updates };
 
+    if (updates.name !== undefined) {
+      finalUpdates.product_id = null;
+      finalUpdates.sync_with_catalog = false;
+    }
+    if (updates.item_type !== undefined && updates.item_type !== 'PRODUCT') {
+      finalUpdates.product_id = null;
+      finalUpdates.sync_with_catalog = false;
+    }
+
     // If we are toggling BDI or Profit, OR updating cost_price, we should recalculate the unit_price
     if (updates.apply_bdi !== undefined || updates.apply_profit !== undefined || updates.cost_price !== undefined) {
       const recalculated = recalcItemPrice({ ...currentItem, ...updates });
       finalUpdates.unit_price = recalculated.unit_price;
       if (recalculated.cost_price !== undefined) finalUpdates.cost_price = recalculated.cost_price;
+      if (updates.cost_price !== undefined) finalUpdates.sync_with_catalog = false;
     } 
     // If manually updating unit_price, back-calculate cost_price
     else if (updates.unit_price !== undefined) {
@@ -1154,6 +1222,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       const newCost = Number(updates.unit_price) / (combinedFactor || 1);
       finalUpdates.cost_price = newCost;
+      finalUpdates.sync_with_catalog = false;
     }
 
     // Optimistic update
@@ -1167,6 +1236,60 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     if (error) {
       console.error('Error updating item:', error);
       alert('Erro ao atualizar item: ' + error.message);
+    }
+  };
+
+  const handleCatalogSyncToggle = async (item: any) => {
+    if (loading || item.item_type !== 'PRODUCT') return;
+
+    if (item.sync_with_catalog === true) {
+      setBudgetItems(prev => prev.map(current => current.id === item.id
+        ? { ...current, sync_with_catalog: false }
+        : current));
+      const { error } = await supabase
+        .from('budget_items')
+        .update({ sync_with_catalog: false })
+        .eq('id', item.id);
+      if (error) loadProposalData(selectedProjectId);
+      return;
+    }
+
+    const catalogProduct = (item.product_id
+      ? catalogItems.find(product => product.id === item.product_id)
+      : undefined)
+      || catalogItems.find(product =>
+        normalizeCatalogProductName(product.name) === normalizeCatalogProductName(item.name)
+      );
+
+    if (!catalogProduct) {
+      alert('Este item não foi encontrado no catálogo. Use “Substituir” para vinculá-lo a um produto.');
+      return;
+    }
+
+    const syncResult = syncBudgetItemsWithCatalog(
+      [{ ...item, product_id: catalogProduct.id, sync_with_catalog: true }],
+      [catalogProduct],
+      {
+        bdiPercent: Number(proposal.bdi_percent) || 0,
+        profitPercent: Number(proposal.profit_percent) || 0,
+        applyProposalMarkup: false
+      }
+    );
+    const syncedItem = syncResult.items[0];
+    setBudgetItems(prev => prev.map(current => current.id === item.id ? syncedItem : current));
+
+    const { error } = await supabase
+      .from('budget_items')
+      .update({
+        product_id: syncedItem.product_id,
+        sync_with_catalog: true,
+        cost_price: syncedItem.cost_price,
+        unit_price: syncedItem.unit_price
+      })
+      .eq('id', item.id);
+    if (error) {
+      alert('Não foi possível ativar a sincronização com o catálogo.');
+      loadProposalData(selectedProjectId);
     }
   };
 
@@ -2892,9 +3015,25 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                     </button>
                                   )}
                                 </div>
-                                <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
-                                  {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
-                                </div>
+                                 <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5 ml-0">
+                                   {item.origin === 'CALCULATED' ? 'Extraído da Engenharia' : 'Adicionado na Proposta'}
+                                   {item.item_type === 'PRODUCT' && (
+                                     <button
+                                       type="button"
+                                       onClick={() => handleCatalogSyncToggle(item)}
+                                       className={`ml-2 normal-case transition-colors ${item.sync_with_catalog === true
+                                         ? 'text-emerald-400 hover:text-emerald-300'
+                                         : 'text-slate-600 hover:text-amber-400'
+                                         }`}
+                                       title={item.sync_with_catalog === true
+                                         ? 'Preço sincronizado com o catálogo. Clique para manter um preço personalizado.'
+                                         : 'Preço personalizado. Clique para usar e acompanhar o preço do catálogo.'
+                                       }
+                                     >
+                                       {item.sync_with_catalog === true ? '• Catálogo sincronizado' : '• Preço personalizado'}
+                                     </button>
+                                   )}
+                                 </div>
                                 {expandedNames[item.id] && (
                                   <div className="animate-in slide-in-from-top-1 duration-200">
                                     {itemDescriptions[item.name] && (
@@ -2987,7 +3126,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 <button
                                   onClick={() => {
                                     setItemToEdit(item);
-                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0, observation: item.observation || '' });
+                                    setNewItem({
+                                      name: item.name,
+                                      quantity: item.quantity_final,
+                                      price: item.unit_price,
+                                      cost_price: item.cost_price || 0,
+                                      observation: item.observation || '',
+                                      product_id: item.product_id || null,
+                                      sync_with_catalog: item.sync_with_catalog === true
+                                    });
                                     // Determine tab
                                     if (item.item_type === 'CUSTOM') setModalTab('custom');
                                     else if (item.item_type === 'SERVICE') setModalTab('service');
@@ -3005,7 +3152,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                                 <button
                                   onClick={() => {
                                     setItemToReplace(item);
-                                    setNewItem({ name: item.name, quantity: item.quantity_final, price: item.unit_price, cost_price: item.cost_price || 0, observation: item.observation || '' });
+                                    setNewItem({
+                                      name: item.name,
+                                      quantity: item.quantity_final,
+                                      price: item.unit_price,
+                                      cost_price: item.cost_price || 0,
+                                      observation: item.observation || '',
+                                      product_id: item.product_id || null,
+                                      sync_with_catalog: item.sync_with_catalog === true
+                                    });
                                     setModalTab(item.item_type === 'SERVICE' ? 'service' : item.item_type === 'CUSTOM' ? 'custom' : 'product');
                                     setModalSearchTerm('');
                                     setShowSearchList(false);
@@ -3451,7 +3606,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     key={tab}
                     onClick={() => {
                       setModalTab(tab);
-                      setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '' });
+                      setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '', product_id: null, sync_with_catalog: false });
                       setModalSearchTerm('');
                       setShowSearchList(false);
                     }}
@@ -3489,7 +3644,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             <button
                               key={p.name}
                               onClick={() => {
-                                setNewItem({ ...newItem, name: p.name, price: p.price, cost_price: p.cost_price || 0, observation: p.observation || '' });
+                                setNewItem({
+                                  ...newItem,
+                                  name: p.name,
+                                  price: p.price,
+                                  cost_price: p.cost_price || 0,
+                                  observation: p.observation || '',
+                                  product_id: p.id,
+                                  sync_with_catalog: true
+                                });
                                 setModalSearchTerm(p.name);
                                 setShowSearchList(false);
                               }}
@@ -3536,7 +3699,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             <button
                               key={s.name}
                               onClick={() => {
-                                setNewItem({ ...newItem, name: s.name, price: 0, observation: s.description || '' });
+                                setNewItem({ ...newItem, name: s.name, price: 0, observation: s.description || '', product_id: null, sync_with_catalog: false });
                                 setModalSearchTerm(s.name);
                                 setShowSearchList(false);
                               }}
@@ -3564,7 +3727,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 min-h-[120px] resize-y"
                       placeholder="Ex: Fornecimento de uma ampliação de uma tubulação enterrada..."
                       value={newItem.name}
-                      onChange={e => setNewItem({ ...newItem, name: e.target.value })}
+                      onChange={e => setNewItem({ ...newItem, name: e.target.value, product_id: null, sync_with_catalog: false })}
                     />
                     <div className="mt-3 flex gap-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
                       <span className="material-symbols-outlined text-amber-400 text-[20px] mt-0.5 shrink-0">info</span>
@@ -3593,7 +3756,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       step="0.01"
                       className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
                       value={newItem.price}
-                      onChange={e => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
+                      onChange={e => setNewItem({ ...newItem, price: parseFloat(e.target.value), sync_with_catalog: false })}
                     />
                   </div>
                 </div>
@@ -3606,7 +3769,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                     className="w-full bg-background-dark border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
                     placeholder="Opcional - Valor de custo do item"
                     value={newItem.cost_price}
-                    onChange={e => setNewItem({ ...newItem, cost_price: parseFloat(e.target.value) })}
+                    onChange={e => setNewItem({ ...newItem, cost_price: parseFloat(e.target.value), sync_with_catalog: false })}
                   />
                   <p className="text-[10px] text-slate-500 mt-1 italic">Este valor é usado para calcular o lucro real da proposta.</p>
                 </div>

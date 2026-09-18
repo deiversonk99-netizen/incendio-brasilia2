@@ -6,6 +6,7 @@ import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getClientDisplayName } from '../lib/formatters';
+import { CatalogPriceProduct, syncBudgetItemsWithCatalog } from '../lib/catalogPriceSync';
 
 
 interface EngineeringCompositionProps {
@@ -24,6 +25,8 @@ interface BudgetItem {
   item_type: 'PRODUCT' | 'SERVICE';
   project_id: string;
   cost_price?: number;
+  product_id?: string | null;
+  sync_with_catalog?: boolean;
 }
 
 const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext, selectedProjectId, onSelectProject }) => {
@@ -42,6 +45,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState(0);
+  const [newItemSyncWithCatalog, setNewItemSyncWithCatalog] = useState(false);
   const [addItemSearch, setAddItemSearch] = useState('');
   const [replicationSummary, setReplicationSummary] = useState<{ name: string, factor: number, type: string }[]>([]);
 
@@ -194,10 +198,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   // Load catalog for the add modal
   useEffect(() => {
     const loadCatalog = async () => {
-      const { data } = await supabase.from('product_catalog').select('name, price').order('name');
+      const { data } = await supabase.from('product_catalog').select('id, name, price, cost_price').order('name');
       if (data) setCatalogProducts(data);
     };
-    loadCatalog();
     loadCatalog();
   }, []);
 
@@ -309,19 +312,51 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
   const loadBudgetItems = async () => {
     setLoading(true);
-    // Try to load existing items first
-    const { data: existingItems } = await supabase
-      .from('budget_items')
-      .select('*')
-      .eq('project_id', selectedProjectId)
-      .order('name');
+    // Always fetch a fresh catalog together with the proposal snapshot. Catalog
+    // linked items are healed before being displayed after a page refresh.
+    const [{ data: existingItems }, { data: latestCatalog }] = await Promise.all([
+      supabase
+        .from('budget_items')
+        .select('*')
+        .eq('project_id', selectedProjectId)
+        .order('name'),
+      supabase
+        .from('product_catalog')
+        .select('id, name, price, cost_price')
+        .order('name')
+    ]);
+
+    if (latestCatalog) setCatalogProducts(latestCatalog);
 
     if (existingItems && existingItems.length > 0) {
-      setItems(existingItems);
+      const syncResult = syncBudgetItemsWithCatalog(
+        existingItems as BudgetItem[],
+        (latestCatalog || []) as CatalogPriceProduct[]
+      );
+      setItems(syncResult.items);
+
+      if (syncResult.changedItems.length > 0) {
+        const { error } = await supabase.from('budget_items').upsert(
+          syncResult.changedItems.map(item => ({
+            id: item.id,
+            project_id: item.project_id,
+            name: item.name,
+            quantity_calculated: item.quantity_calculated,
+            quantity_final: item.quantity_final,
+            unit_price: item.unit_price,
+            cost_price: item.cost_price,
+            origin: item.origin,
+            item_type: item.item_type,
+            product_id: item.product_id,
+            sync_with_catalog: true
+          }))
+        );
+        if (error) console.error('Error persisting catalog price synchronization:', error);
+      }
       
       // If no items with origin 'CALCULATED' exist, it might be a new project with only manual/model items,
       // or we just haven't pulled from Phase A yet.
-      const hasCalculated = existingItems.some(i => i.origin === 'CALCULATED');
+      const hasCalculated = syncResult.items.some(i => i.origin === 'CALCULATED');
       if (!hasCalculated) {
         console.log('No calculated items found, triggering calculateFromPhaseA');
         await calculateFromPhaseA();
@@ -357,13 +392,14 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     // 2.1 Fetch Catalog Logic for Pricing
     const { data: catalogProducts } = await supabase
       .from('product_catalog')
-      .select('name, price, cost_price');
+      .select('id, name, price, cost_price');
 
-    const priceMap: Record<string, { price: number, cost: number }> = {};
+    const priceMap: Record<string, { id: string, price: number, cost: number }> = {};
     if (catalogProducts) {
       // Normalize to lowercase for matching
       catalogProducts.forEach(p => {
         priceMap[p.name.trim().toLowerCase()] = {
+          id: p.id,
           price: p.price,
           cost: p.cost_price || 0
         };
@@ -451,7 +487,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       // Fix: strip the [INFRA:...] part before checking price catalog
       // Example: "TUBO 1/2 [INFRA:Infra Alarme]" -> "TUBO 1/2"
       const cleanName = name.includes('[INFRA:') ? name.split('[INFRA:')[0].trim() : name.trim();
-      const productInfo = priceMap[cleanName.toLowerCase()] || { price: 0, cost: 0 };
+      const productInfo = priceMap[cleanName.toLowerCase()] || { id: null, price: 0, cost: 0 };
 
       return {
         project_id: selectedProjectId,
@@ -460,6 +496,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
         quantity_final: qty,
         unit_price: productInfo.price,
         cost_price: productInfo.cost,
+        product_id: productInfo.id,
+        sync_with_catalog: Boolean(productInfo.id),
         origin: 'CALCULATED' as const,
         item_type: 'PRODUCT' as const
       };
@@ -491,46 +529,33 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
   const handleUpdateItem = async (id: string, field: keyof BudgetItem, value: string | number) => {
     if (loading) return;
-    // Optimistic update
-    setItems(prev => prev.map(item => {
-      if (item.id === id) {
-        let updatedItem = { ...item, [field]: value };
+    const currentItem = items.find(item => item.id === id);
+    if (!currentItem) return;
 
-        // Auto-update price if name matches a catalog product
-        if (field === 'name') {
-          const catalogProd = catalogProducts.find(p => p.name === value);
-          if (catalogProd) {
-            updatedItem.unit_price = catalogProd.price;
-            updatedItem.cost_price = catalogProd.cost_price; // Also update cost
-            // Also sync price to DB immediately for the item
-            supabase.from('budget_items').update({ unit_price: catalogProd.price, cost_price: catalogProd.cost_price }).eq('id', id).then(({ error }) => {
-              if (error) console.error('Error auto-updating price field:', error);
-            });
-          }
-        }
-
-        // SYNC LOGIC: If updating cost_price, also update the product catalog
-        if (field === 'cost_price') {
-          // Find the product name (strip tags like [INFRA:...] or [MODELO:...])
-          const rawName = item.name;
-          let cleanName = rawName;
-          if (rawName.includes('[INFRA:')) cleanName = rawName.split('[INFRA:')[0].trim();
-          if (rawName.includes('[MODELO:')) cleanName = rawName.includes('] ') ? rawName.split('] ')[1].trim() : rawName;
-
-          // Update in catalog
-          supabase.from('product_catalog').update({ cost_price: value }).eq('name', cleanName).then(({ error }) => {
-            if (error) console.error('Error syncing cost price to catalog:', error);
-            else console.log('Cost price synced to catalog for:', cleanName);
-          });
-        }
-
-        return updatedItem;
+    const updates: Partial<BudgetItem> = { [field]: value };
+    if (field === 'name') {
+      const catalogProduct = catalogProducts.find(product => product.name === value);
+      if (catalogProduct) {
+        updates.unit_price = Number(catalogProduct.price) || 0;
+        updates.cost_price = Number(catalogProduct.cost_price) || 0;
+        updates.product_id = catalogProduct.id;
+        updates.sync_with_catalog = true;
+      } else {
+        updates.product_id = null;
+        updates.sync_with_catalog = false;
       }
-      return item;
-    }));
+    } else if (field === 'unit_price' || field === 'cost_price') {
+      // A price edited inside the proposal is intentional and must not be
+      // overwritten by a later catalog refresh.
+      updates.sync_with_catalog = false;
+    }
 
-    // DB Update for the primary field
-    await supabase.from('budget_items').update({ [field]: value }).eq('id', id);
+    setItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+    const { error } = await supabase.from('budget_items').update(updates).eq('id', id);
+    if (error) {
+      console.error('Error updating budget item:', error);
+      loadBudgetItems();
+    }
   };
 
   const handleDeleteItem = async (id: string) => {
@@ -554,7 +579,10 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     const updatedItem = {
       ...itemToExchange,
       name: catalogProduct.name,
-      unit_price: catalogProduct.price
+      unit_price: catalogProduct.price,
+      cost_price: catalogProduct.cost_price || 0,
+      product_id: catalogProduct.id,
+      sync_with_catalog: true
     };
 
     // Optimistic update
@@ -565,7 +593,10 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       .from('budget_items')
       .update({
         name: catalogProduct.name,
-        unit_price: catalogProduct.price
+        unit_price: catalogProduct.price,
+        cost_price: catalogProduct.cost_price || 0,
+        product_id: catalogProduct.id,
+        sync_with_catalog: true
       })
       .eq('id', itemToExchange.id);
 
@@ -587,13 +618,16 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
   const handleAddItem = async () => {
     if (loading || !selectedProjectId || !newItemName) return;
 
+    const selectedCatalogProduct = catalogProducts.find(p => p.name === newItemName);
     const newItem = {
       project_id: selectedProjectId,
       name: newItemName,
       quantity_calculated: 0,
       quantity_final: 1, // Default to 1
       unit_price: newItemPrice,
-      cost_price: catalogProducts.find(p => p.name === newItemName)?.cost_price || 0,
+      cost_price: selectedCatalogProduct?.cost_price || 0,
+      product_id: selectedCatalogProduct?.id || null,
+      sync_with_catalog: Boolean(selectedCatalogProduct) && newItemSyncWithCatalog,
       origin: 'MANUAL',
       item_type: 'PRODUCT' as const
     };
@@ -604,6 +638,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
       setIsAddModalOpen(false);
       setNewItemName('');
       setNewItemPrice(0);
+      setNewItemSyncWithCatalog(false);
     }
     if (error) {
       console.error(error);
@@ -674,6 +709,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
               quantity_final: agg.quantity,
               unit_price: agg.product.price,
               cost_price: agg.product.cost_price || 0,
+              product_id: agg.product.id,
+              sync_with_catalog: true,
               origin: 'MANUAL',
               item_type: 'PRODUCT' as const
             });
@@ -1841,6 +1878,7 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                         onClick={() => {
                           setNewItemName(p.name);
                           setNewItemPrice(p.price);
+                          setNewItemSyncWithCatalog(true);
                           setAddItemSearch(''); // Clear search on select
                         }}
                         className={`w-full flex items-center justify-between p-3 transition-colors text-left group ${
@@ -1865,8 +1903,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                     </div>
                     <button 
                       onClick={() => {
-                        setNewItemName('');
-                        setNewItemPrice(0);
+                         setNewItemName('');
+                         setNewItemPrice(0);
+                         setNewItemSyncWithCatalog(false);
                       }}
                       className="text-slate-500 hover:text-white"
                     >
@@ -1883,7 +1922,10 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
                     type="number"
                     className="w-full bg-background-dark border border-white/10 rounded-lg py-2.5 px-4 text-white focus:border-primary outline-none"
                     value={newItemPrice}
-                    onChange={(e) => setNewItemPrice(Number(e.target.value))}
+                    onChange={(e) => {
+                      setNewItemPrice(Number(e.target.value));
+                      setNewItemSyncWithCatalog(false);
+                    }}
                   />
                 </div>
               </div>

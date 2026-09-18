@@ -154,6 +154,8 @@ export interface BudgetItem {
   apply_bdi?: boolean;
   apply_profit?: boolean;
   observation?: string;
+  product_id?: string | null;
+  sync_with_catalog?: boolean;
   created_at?: string;
 }
 
