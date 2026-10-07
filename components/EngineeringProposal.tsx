@@ -504,6 +504,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           .from('proposals')
           .select('id')
           .eq('project_id', selectedProjectId)
+          .order('updated_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false, nullsFirst: false })
+          .limit(1)
           .maybeSingle();
 
         if (findError) {
@@ -801,7 +804,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       .from('proposals')
       .select('*')
       .eq('project_id', projectId)
-      .single();
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
 
     let combinedFactor = 1;
     if (existingProposal) {
@@ -1057,7 +1063,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         .from('proposals')
         .select('id')
         .eq('project_id', selectedProjectId)
-        .single();
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
 
       const proposalPayload = {
         bdi_percent: bdiPct,
@@ -1093,7 +1102,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // Upsert based on project_id? No, proposal ID logic requires check first or UPSERT on conflict
       // Supabase upsert requires valid ID or constraint. We'll search by project_id for simplicity (1 proposal per project)
-      const { data: existing } = await supabase.from('proposals').select('id').eq('project_id', selectedProjectId).single();
+      const { data: existing } = await supabase
+        .from('proposals')
+        .select('id')
+        .eq('project_id', selectedProjectId)
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
 
       if (existing) {
         await supabase.from('proposals').update(payload).eq('id', existing.id);
