@@ -561,7 +561,12 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
   useEffect(() => {
     // Loading a proposal changes these state values too. Do not interpret that
     // as a user edit and overwrite the catalog sale price during hydration.
-    if (loading || !budgetItems.length) return;
+    if (
+      loading ||
+      !selectedProjectId ||
+      proposal.project_id !== selectedProjectId ||
+      !budgetItems.length
+    ) return;
 
     // We only auto-recalculate if explicitly enabled or if standard behavior
     // User requested: "must recalculate automatically"
@@ -570,7 +575,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const bdiFactor = 1 + (bdiPct / 100);
     const profitFactor = 1 + (profitPct / 100);
 
-    setBudgetItems(prev => prev.map(item => {
+    const projectId = selectedProjectId;
+    const updatedItems = budgetItems.map(item => {
       if (item.cost_price > 0) {
         // Respect per-item flags (default true for backwards compat)
         const itemBdiFactor = (item.apply_bdi !== false) ? bdiFactor : 1;
@@ -581,8 +587,44 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         };
       }
       return item;
-    }));
-  }, [proposal.bdi_percent, proposal.profit_percent]);
+    });
+
+    setBudgetItems(updatedItems);
+
+    // Persist the recalculated prices. The database trigger then updates
+    // projects.value, so the Dashboard receives the same total in real time.
+    const timer = setTimeout(async () => {
+      setIsAutoSaving(true);
+      try {
+        const { error } = await supabase.from('budget_items').upsert(
+          updatedItems.map(item => ({
+            id: item.id,
+            project_id: projectId,
+            name: item.name,
+            quantity_calculated: item.quantity_calculated,
+            quantity_final: item.quantity_final,
+            unit_price: item.unit_price,
+            cost_price: item.cost_price,
+            origin: item.origin,
+            item_type: item.item_type,
+            apply_bdi: item.apply_bdi !== false,
+            apply_profit: item.apply_profit !== false,
+            observation: item.observation,
+            product_id: item.product_id || null,
+            sync_with_catalog: item.sync_with_catalog === true
+          }))
+        );
+
+        if (error) throw error;
+      } catch (error) {
+        console.error('Erro ao sincronizar preços recalculados da proposta:', error);
+      } finally {
+        setTimeout(() => setIsAutoSaving(false), 500);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [proposal.bdi_percent, proposal.profit_percent, selectedProjectId]);
 
   // Helper: recalculate a single item's unit_price based on its flags
   const recalcItemPrice = (item: any, overrides: Partial<{ apply_bdi: boolean; apply_profit: boolean }> = {}) => {

@@ -109,27 +109,6 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
 
       if (projData) {
         setProjects(projData as Project[]);
-
-        // Calculate Chart Data
-        const monthlyData: Record<string, number> = {};
-        const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-
-        // Initialize months
-        months.forEach(m => monthlyData[m] = 0);
-
-        projData.forEach((p: any) => {
-          if (p.created_at) {
-            const date = new Date(p.created_at);
-            const monthName = months[date.getMonth()];
-            monthlyData[monthName] += Number(p.value || 0);
-          }
-        });
-
-        const formattedChartData = months.map(m => ({
-          name: m,
-          real: monthlyData[m]
-        }));
-        setChartData(formattedChartData);
       }
 
       // 2. Clients (for fantasy name mapping)
@@ -268,7 +247,53 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onViewChange, onSelectPro
   useEffect(() => {
     // Load all data on mount — data is global (RLS disabled)
     fetchData();
+
+    // Keep project cards and totals synchronized without reloading the whole
+    // dashboard whenever a proposal changes.
+    const projectsChannel = supabase
+      .channel('dashboard-project-values')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        payload => {
+          if (payload.eventType === 'DELETE') {
+            const deletedProject = payload.old as Pick<Project, 'id'>;
+            setProjects(current => current.filter(project => project.id !== deletedProject.id));
+            return;
+          }
+
+          const changedProject = payload.new as Project;
+          setProjects(current => {
+            const exists = current.some(project => project.id === changedProject.id);
+            if (!exists) return [changedProject, ...current];
+
+            return current.map(project =>
+              project.id === changedProject.id
+                ? { ...project, ...changedProject }
+                : project
+            );
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(projectsChannel);
+    };
   }, []);
+
+  useEffect(() => {
+    const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const monthlyData = Object.fromEntries(months.map(month => [month, 0])) as Record<string, number>;
+
+    projects.forEach(project => {
+      if (!project.created_at) return;
+      const monthName = months[new Date(project.created_at).getMonth()];
+      monthlyData[monthName] += Number(project.value || 0);
+    });
+
+    setChartData(months.map(month => ({ name: month, real: monthlyData[month] })));
+  }, [projects]);
 
   const handleTaskToggle = async (id: string, currentStatus: boolean) => {
     // Optimistic
