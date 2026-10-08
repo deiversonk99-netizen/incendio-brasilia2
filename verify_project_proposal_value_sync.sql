@@ -11,7 +11,9 @@ with latest_proposal as (
 gross_values as (
   select
     project_id,
-    coalesce(sum(coalesce(quantity_final, 0) * coalesce(unit_price, 0)), 0) as gross_value
+    coalesce(sum(
+      coalesce(quantity_final, 0) * coalesce(proposal_unit_price, unit_price, 0)
+    ), 0) as gross_value
   from public.budget_items
   group by project_id
 ),
@@ -54,7 +56,9 @@ with latest_proposal as (
 gross_values as (
   select
     project_id,
-    coalesce(sum(coalesce(quantity_final, 0) * coalesce(unit_price, 0)), 0) as gross_value
+    coalesce(sum(
+      coalesce(quantity_final, 0) * coalesce(proposal_unit_price, unit_price, 0)
+    ), 0) as gross_value
   from public.budget_items
   group by project_id
 )

@@ -147,7 +147,10 @@ export interface BudgetItem {
   name: string;
   quantity_calculated: number;
   quantity_final: number;
+  /** Base/reference sale price used by the engineering composition. */
   unit_price: number;
+  /** Final sale price used exclusively by the commercial proposal. */
+  proposal_unit_price?: number | null;
   cost_price?: number;
   origin: 'CALCULATED' | 'MANUAL';
   item_type: 'PRODUCT' | 'SERVICE' | 'CUSTOM';

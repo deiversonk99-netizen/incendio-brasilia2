@@ -15,9 +15,7 @@ import {
   PDF_ASSETS_BUCKET
 } from '../lib/pdfAssets';
 import {
-  CatalogPriceProduct,
-  normalizeCatalogProductName,
-  syncBudgetItemsWithCatalog
+  normalizeCatalogProductName
 } from '../lib/catalogPriceSync';
 
 
@@ -43,6 +41,36 @@ interface EngineeringProposalProps {
   selectedProjectId: string;
   onSelectProject: (id: string) => void;
 }
+
+const money = (value: number) => Number((Number(value) || 0).toFixed(2));
+
+// The proposal keeps using `unit_price` in its local view model so the PDF and
+// financial calculations remain stable. In the database, however, the value is
+// stored in `proposal_unit_price`; `unit_price` belongs exclusively to the
+// engineering composition from now on.
+const toProposalBudgetItem = (item: any) => {
+  const compositionUnitPrice = Number(item.unit_price) || 0;
+  const proposalUnitPrice = item.proposal_unit_price == null
+    ? compositionUnitPrice
+    : Number(item.proposal_unit_price) || 0;
+
+  return {
+    ...item,
+    composition_unit_price: compositionUnitPrice,
+    proposal_unit_price: proposalUnitPrice,
+    unit_price: proposalUnitPrice
+  };
+};
+
+const toBudgetItemDatabaseUpdates = (updates: Record<string, any>) => {
+  const databaseUpdates = { ...updates };
+  if (databaseUpdates.unit_price !== undefined) {
+    databaseUpdates.proposal_unit_price = money(databaseUpdates.unit_price);
+    delete databaseUpdates.unit_price;
+  }
+  delete databaseUpdates.composition_unit_price;
+  return databaseUpdates;
+};
 
 const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProjectId, onSelectProject }) => {
   const { user } = useAuth();
@@ -586,7 +614,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         const itemProfitFactor = (item.apply_profit !== false) ? profitFactor : 1;
         return {
           ...item,
-          unit_price: item.cost_price * itemBdiFactor * itemProfitFactor
+          unit_price: money(item.cost_price * itemBdiFactor * itemProfitFactor)
         };
       }
       return item;
@@ -603,18 +631,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           updatedItems.map(item => ({
             id: item.id,
             project_id: projectId,
-            name: item.name,
-            quantity_calculated: item.quantity_calculated,
-            quantity_final: item.quantity_final,
-            unit_price: item.unit_price,
-            cost_price: item.cost_price,
-            origin: item.origin,
-            item_type: item.item_type,
-            apply_bdi: item.apply_bdi !== false,
-            apply_profit: item.apply_profit !== false,
-            observation: item.observation,
-            product_id: item.product_id || null,
-            sync_with_catalog: item.sync_with_catalog === true
+            proposal_unit_price: item.unit_price
           }))
         );
 
@@ -639,7 +656,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const itemProfitFactor = applyProfit ? (1 + profitPct / 100) : 1;
     const cost = Number(item.cost_price || 0);
     if (cost > 0) {
-      return { ...item, ...overrides, unit_price: cost * itemBdiFactor * itemProfitFactor };
+      return { ...item, ...overrides, unit_price: money(cost * itemBdiFactor * itemProfitFactor) };
     }
     return { ...item, ...overrides };
   };
@@ -667,15 +684,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         const payload = itemsToPersist.map(i => ({
           id: i.id,
           project_id: selectedProjectId,
-          unit_price: i.unit_price,
-          name: i.name,
-          quantity_final: i.quantity_final,
-          cost_price: i.cost_price,
-          item_type: i.item_type,
-          origin: i.origin,
+          proposal_unit_price: i.unit_price,
           apply_bdi: i.apply_bdi !== false,
-          apply_profit: i.apply_profit !== false,
-          observation: i.observation
+          apply_profit: i.apply_profit !== false
         }));
         
         const { error } = await supabase.from('budget_items').upsert(payload);
@@ -809,19 +820,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       .limit(1)
       .maybeSingle();
 
-    let combinedFactor = 1;
-    if (existingProposal) {
-      const bdiPct = Number(existingProposal.bdi_percent) || 0;
-      const profitPct = Number(existingProposal.profit_percent) || 0;
-      combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
-    }
-
-    // 2. Fetch items and a fresh catalog together. The catalog state loaded on
-    // mount can be stale when this page stays mounted during navigation.
+    // 2. Fetch items and a fresh catalog together. Loading is intentionally
+    // read-only: opening a proposal must not change composition or proposal
+    // prices in the database.
     const [{ data: budgetItemsData }, { data: latestCatalog }] = await Promise.all([
       supabase
         .from('budget_items')
-        .select('id, project_id, name, quantity_calculated, quantity_final, unit_price, cost_price, origin, item_type, apply_bdi, apply_profit, observation, product_id, sync_with_catalog')
+        .select('id, project_id, name, quantity_calculated, quantity_final, unit_price, proposal_unit_price, cost_price, origin, item_type, apply_bdi, apply_profit, observation, product_id, sync_with_catalog')
         .eq('project_id', projectId),
       supabase
         .from('product_catalog')
@@ -833,49 +838,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     let processedItems: any[] = [];
     if (budgetItemsData) {
-      const syncResult = syncBudgetItemsWithCatalog(
-        budgetItemsData,
-        (latestCatalog || []) as CatalogPriceProduct[],
-        {
-          bdiPercent: Number(existingProposal?.bdi_percent) || 0,
-          profitPercent: Number(existingProposal?.profit_percent) || 0,
-          applyProposalMarkup: false
-        }
-      );
-
-      // Heal items with missing cost_price (e.g. Services or Manual items where cost wasn't set)
-      // To prevent already marked-up prices from being adopted as the base cost on refresh, 
-      // we must reverse-calculate it using the combined factor.
-      processedItems = syncResult.items.map(item => {
-        if ((!item.cost_price || item.cost_price <= 0) && item.unit_price > 0) {
-          const backCalculatedCost = Number(item.unit_price) / (combinedFactor || 1);
-          return { ...item, cost_price: backCalculatedCost };
-        }
-        return item;
-      });
+      processedItems = budgetItemsData.map(toProposalBudgetItem);
       setBudgetItems(processedItems);
-
-      if (syncResult.changedItems.length > 0) {
-        const { error } = await supabase.from('budget_items').upsert(
-          syncResult.changedItems.map((item: any) => ({
-            id: item.id,
-            project_id: item.project_id,
-            name: item.name,
-            quantity_calculated: item.quantity_calculated,
-            quantity_final: item.quantity_final,
-            unit_price: item.unit_price,
-            cost_price: item.cost_price,
-            origin: item.origin,
-            item_type: item.item_type,
-            apply_bdi: item.apply_bdi !== false,
-            apply_profit: item.apply_profit !== false,
-            observation: item.observation,
-            product_id: item.product_id,
-            sync_with_catalog: true
-          }))
-        );
-        if (error) console.error('Error persisting proposal catalog synchronization:', error);
-      }
     }
 
     // Correct totalCost to use COST_PRICE for base material cost
@@ -1002,41 +966,25 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   const handleRecalculatePrices = async () => {
     if (loading || !selectedProjectId || !budgetItems.length) return;
-    if (!confirm('Deseja recalcular todos os preços de venda com base no Custo Unitário, BDI e Margem de Lucro atuais? Itens com custo zero que forem encontrados no catálogo serão restaurados.')) return;
+    if (!confirm('Deseja recalcular os preços da proposta com base no Custo Unitário, BDI e Margem de Lucro atuais? Os valores da Composição não serão alterados e itens sem custo serão mantidos.')) return;
 
     setLoading(true);
     const bdiPct = Number(proposal.bdi_percent) || 0;
     const profitPct = Number(proposal.profit_percent) || 0;
-    const combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
-
     const updatedItems = budgetItems.map((item: any) => {
-      let cost = Number(item.cost_price || 0);
+      const cost = Number(item.cost_price || 0);
 
       // Per-item markup factors (default true for backwards compat)
       const itemBdiFactor = (item.apply_bdi !== false) ? (1 + (bdiPct / 100)) : 1;
       const itemProfitFactor = (item.apply_profit !== false) ? (1 + (profitPct / 100)) : 1;
       const itemCombinedFactor = itemBdiFactor * itemProfitFactor;
 
-      // Healing / Fallback from Catalog
-      if (cost <= 0) {
-        const cleanName = item.name.includes('[') && item.name.includes(']')
-          ? item.name.split(']')[1]?.trim() || item.name
-          : item.name.trim();
+      // A proposal recalculation must never repair or overwrite Composition
+      // costs. Items without a base cost keep their current proposal price.
+      if (cost <= 0) return item;
 
-        const catalogProd = catalogItems.find(p => p.name.trim().toLowerCase() === cleanName.toLowerCase());
-        if (catalogProd && catalogProd.cost_price > 0) {
-          cost = catalogProd.cost_price;
-        } else {
-          // If still 0, we use current unit_price but with a STATIC assumption (e.g. current combined factor)
-          // to break the circular reduction. Or we keep it 0 if combinedFactor is 0.
-          if (item.unit_price > 0 && itemCombinedFactor > 0) {
-            cost = Number(item.unit_price) / itemCombinedFactor;
-          }
-        }
-      }
-
-      const newUnitPrice = cost * itemCombinedFactor;
-      return { ...item, cost_price: cost, unit_price: newUnitPrice };
+      const newUnitPrice = money(cost * itemCombinedFactor);
+      return { ...item, unit_price: newUnitPrice };
     });
 
     try {
@@ -1046,12 +994,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         .upsert(updatedItems.map((i: any) => ({
           id: i.id,
           project_id: selectedProjectId,
-          unit_price: i.unit_price,
-          name: i.name,
-          quantity_final: i.quantity_final,
-          cost_price: i.cost_price,
-          item_type: i.item_type,
-          origin: i.origin,
+          proposal_unit_price: i.unit_price,
           apply_bdi: i.apply_bdi !== false,
           apply_profit: i.apply_profit !== false
         })));
@@ -1082,7 +1025,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       }
 
       setBudgetItems(updatedItems);
-      alert('Preços recalculados e taxas salvas com sucesso! Todos os itens foram sincronizados.');
+      const skippedItems = updatedItems.filter(item => Number(item.cost_price || 0) <= 0).length;
+      alert(skippedItems > 0
+        ? `Preços da proposta recalculados. ${skippedItems} item(ns) sem custo foram mantidos sem alteração.`
+        : 'Preços da proposta recalculados sem alterar os valores da Composição.');
     } catch (e: any) {
       console.error('Error recalculating prices:', e);
       alert('Erro ao recalcular preços: ' + e.message);
@@ -1117,18 +1063,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         await supabase.from('proposals').insert({ ...payload, project_id: selectedProjectId });
       }
 
-      // Sync budget_items unit prices dynamically so they persist across reloads
-      // We do an upsert on budgetItems to make sure marked-up prices are saved firmly
+      // Persist proposal prices in their dedicated column. Composition prices
+      // (`unit_price`) and costs remain untouched.
       if (budgetItems.length > 0) {
         const itemsPayload = budgetItems.map(item => ({
           id: item.id,
           project_id: selectedProjectId,
-          unit_price: item.unit_price,
-          cost_price: item.cost_price,
-          name: item.name,
-          quantity_final: item.quantity_final,
-          item_type: item.item_type,
-          origin: item.origin,
+          proposal_unit_price: item.unit_price,
           apply_bdi: item.apply_bdi !== false,
           apply_profit: item.apply_profit !== false
         }));
@@ -1161,6 +1102,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       quantity_calculated: 0,
       quantity_final: newItem.quantity,
       unit_price: newItem.price,
+      proposal_unit_price: newItem.price,
       cost_price: newItem.cost_price || newItem.price, // Default Cost to Price if 0 (Manual Entry)
       observation: newItem.observation,
       origin: 'MANUAL' as const,
@@ -1185,9 +1127,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     if (itemToReplace || itemToEdit) {
       // Update existing item
       const activeId = itemToReplace?.id || itemToEdit?.id;
+      const { unit_price: _compositionPrice, ...proposalItemUpdates } = newItemData;
       const { data, error } = await supabase
         .from('budget_items')
-        .update(newItemData)
+        .update(proposalItemUpdates)
         .eq('id', activeId)
         .select();
 
@@ -1203,7 +1146,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           fetchCatalogs();
         }
 
-        setBudgetItems(prev => prev.map(item => item.id === activeId ? data?.[0] : item));
+        setBudgetItems(prev => prev.map(item => item.id === activeId ? toProposalBudgetItem(data?.[0]) : item));
         setIsAddItemModalOpen(false);
         setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '', product_id: null, sync_with_catalog: false });
         setSaveToCatalog(false);
@@ -1226,7 +1169,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           fetchCatalogs();
         }
 
-        setBudgetItems(prev => [...prev, data?.[0]]);
+        setBudgetItems(prev => [...prev, toProposalBudgetItem(data?.[0])]);
         setIsAddItemModalOpen(false);
         setNewItem({ name: '', quantity: 1, price: 0, cost_price: 0, observation: '', product_id: null, sync_with_catalog: false });
         setSaveToCatalog(false);
@@ -1260,27 +1203,18 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       finalUpdates.sync_with_catalog = false;
     }
 
-    // If we are toggling BDI or Profit, OR updating cost_price, we should recalculate the unit_price
+    // If we are toggling BDI or Profit, OR explicitly updating the shared
+    // composition cost, recalculate only the proposal price.
     if (updates.apply_bdi !== undefined || updates.apply_profit !== undefined || updates.cost_price !== undefined) {
       const recalculated = recalcItemPrice({ ...currentItem, ...updates });
       finalUpdates.unit_price = recalculated.unit_price;
       if (recalculated.cost_price !== undefined) finalUpdates.cost_price = recalculated.cost_price;
       if (updates.cost_price !== undefined) finalUpdates.sync_with_catalog = false;
     } 
-    // If manually updating unit_price, back-calculate cost_price
+    // A manual proposal price must not back-calculate or overwrite the
+    // Composition cost.
     else if (updates.unit_price !== undefined) {
-      const bdiPct = Number(proposal.bdi_percent) || 0;
-      const profitPct = Number(proposal.profit_percent) || 0;
-      const applyBdi = currentItem.apply_bdi !== false;
-      const applyProfit = currentItem.apply_profit !== false;
-      
-      const itemBdiFactor = applyBdi ? (1 + bdiPct / 100) : 1;
-      const itemProfitFactor = applyProfit ? (1 + profitPct / 100) : 1;
-      const combinedFactor = itemBdiFactor * itemProfitFactor;
-
-      const newCost = Number(updates.unit_price) / (combinedFactor || 1);
-      finalUpdates.cost_price = newCost;
-      finalUpdates.sync_with_catalog = false;
+      finalUpdates.unit_price = money(Number(updates.unit_price));
     }
 
     // Optimistic update
@@ -1288,7 +1222,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     const { error } = await supabase
       .from('budget_items')
-      .update(finalUpdates)
+      .update(toBudgetItemDatabaseUpdates(finalUpdates))
       .eq('id', id);
 
     if (error) {
@@ -1324,16 +1258,22 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       return;
     }
 
-    const syncResult = syncBudgetItemsWithCatalog(
-      [{ ...item, product_id: catalogProduct.id, sync_with_catalog: true }],
-      [catalogProduct],
-      {
-        bdiPercent: Number(proposal.bdi_percent) || 0,
-        profitPercent: Number(proposal.profit_percent) || 0,
-        applyProposalMarkup: false
-      }
-    );
-    const syncedItem = syncResult.items[0];
+    // Catalog synchronization updates only the Composition reference values.
+    // Zero catalog values never replace an existing positive value, and the
+    // proposal price remains unchanged.
+    const catalogCost = Number(catalogProduct.cost_price) || 0;
+    const catalogSale = Number(catalogProduct.price) || 0;
+    const syncedCost = catalogCost > 0 ? money(catalogCost) : Number(item.cost_price) || 0;
+    const syncedCompositionPrice = catalogSale > 0
+      ? money(catalogSale)
+      : Number(item.composition_unit_price) || 0;
+    const syncedItem = {
+      ...item,
+      product_id: catalogProduct.id,
+      sync_with_catalog: true,
+      cost_price: syncedCost,
+      composition_unit_price: syncedCompositionPrice
+    };
     setBudgetItems(prev => prev.map(current => current.id === item.id ? syncedItem : current));
 
     const { error } = await supabase
@@ -1342,7 +1282,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         product_id: syncedItem.product_id,
         sync_with_catalog: true,
         cost_price: syncedItem.cost_price,
-        unit_price: syncedItem.unit_price
+        unit_price: syncedItem.composition_unit_price
       })
       .eq('id', item.id);
     if (error) {

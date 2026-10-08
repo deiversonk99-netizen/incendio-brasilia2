@@ -6,7 +6,6 @@ import NewProjectModal from './NewProjectModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getClientDisplayName } from '../lib/formatters';
-import { CatalogPriceProduct, syncBudgetItemsWithCatalog } from '../lib/catalogPriceSync';
 
 
 interface EngineeringCompositionProps {
@@ -312,8 +311,8 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
 
   const loadBudgetItems = async () => {
     setLoading(true);
-    // Always fetch a fresh catalog together with the proposal snapshot. Catalog
-    // linked items are healed before being displayed after a page refresh.
+    // Loading the composition must be read-only. In particular, proposal
+    // markups must never be replaced (or persisted) merely by opening a page.
     const [{ data: existingItems }, { data: latestCatalog }] = await Promise.all([
       supabase
         .from('budget_items')
@@ -329,41 +328,9 @@ const EngineeringComposition: React.FC<EngineeringCompositionProps> = ({ onNext,
     if (latestCatalog) setCatalogProducts(latestCatalog);
 
     if (existingItems && existingItems.length > 0) {
-      const syncResult = syncBudgetItemsWithCatalog(
-        existingItems as BudgetItem[],
-        (latestCatalog || []) as CatalogPriceProduct[]
-      );
-      setItems(syncResult.items);
-
-      if (syncResult.changedItems.length > 0) {
-        const { error } = await supabase.from('budget_items').upsert(
-          syncResult.changedItems.map(item => ({
-            id: item.id,
-            project_id: item.project_id,
-            name: item.name,
-            quantity_calculated: item.quantity_calculated,
-            quantity_final: item.quantity_final,
-            unit_price: item.unit_price,
-            cost_price: item.cost_price,
-            origin: item.origin,
-            item_type: item.item_type,
-            product_id: item.product_id,
-            sync_with_catalog: true
-          }))
-        );
-        if (error) console.error('Error persisting catalog price synchronization:', error);
-      }
-      
-      // If no items with origin 'CALCULATED' exist, it might be a new project with only manual/model items,
-      // or we just haven't pulled from Phase A yet.
-      const hasCalculated = syncResult.items.some(i => i.origin === 'CALCULATED');
-      if (!hasCalculated) {
-        console.log('No calculated items found, triggering calculateFromPhaseA');
-        await calculateFromPhaseA();
-      }
+      setItems(existingItems as BudgetItem[]);
     } else {
-      // If no items at all, calculate from Phase A
-      await calculateFromPhaseA();
+      setItems([]);
     }
     setLoading(false);
   };
