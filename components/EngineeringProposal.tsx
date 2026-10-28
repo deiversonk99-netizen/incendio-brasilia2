@@ -382,6 +382,27 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     }
   };
 
+  const promoteLegacyRegularityCertificate = async () => {
+    const legacyCertificate = pdfSettings.cert_regularity_file;
+    if (!legacyCertificate || typeof legacyCertificate !== 'string') return;
+
+    try {
+      const response = await fetch(legacyCertificate);
+      if (!response.ok) throw new Error('Não foi possível ler o arquivo já anexado.');
+      const certificateBlob = await response.blob();
+      const certificateFile = new File(
+        [certificateBlob],
+        `credenciamento-migrado-${Date.now()}.pdf`,
+        { type: 'application/pdf' }
+      );
+
+      await handleGlobalRegularityCertificateUpload(certificateFile);
+    } catch (error: any) {
+      console.error('Error promoting legacy regularity certificate:', error);
+      alert('Não foi possível reutilizar o arquivo desta proposta: ' + (error?.message || 'erro desconhecido'));
+    }
+  };
+
   const handleHideProductsToggle = (checked: boolean) => {
     if (!checked) {
       setProposal({ ...proposal, hide_products_pdf: false });
@@ -2718,13 +2739,27 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                           </p>
                         )}
                         {!globalPdfConfig.cert_regularity_storage_path && pdfSettings.cert_regularity_file && (
-                          <button
-                            onClick={() => savePdfSettings({ ...pdfSettings, cert_regularity_file: null })}
-                            className="text-xs text-red-400 hover:text-red-300 mt-2 flex items-center gap-1"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">close</span>
-                            Descartar arquivo legado e usar padrão
-                          </button>
+                          <div className="flex flex-wrap gap-3 mt-3">
+                            {canManageUsers(profile) && (
+                              <button
+                                type="button"
+                                onClick={() => void promoteLegacyRegularityCertificate()}
+                                disabled={uploadingRegularityCertificate}
+                                className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">public</span>
+                                Usar este arquivo em todas as propostas
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => savePdfSettings({ ...pdfSettings, cert_regularity_file: null })}
+                              className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">close</span>
+                              Descartar arquivo legado
+                            </button>
+                          </div>
                         )}
                         <p className="text-[10px] text-slate-500 mt-2">
                           Administradores cadastram uma vez; atualizações passam a valer automaticamente nas demais propostas.
