@@ -10,10 +10,12 @@ import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
 import { getClientDisplayName } from '../lib/formatters';
 import {
+  createGlobalRegularityCertificatePath,
   isPdfFile,
   MAX_PDF_ASSET_SIZE_BYTES,
   PDF_ASSETS_BUCKET
 } from '../lib/pdfAssets';
+import { canManageUsers } from '../lib/permissions';
 import {
   normalizeCatalogProductName
 } from '../lib/catalogPriceSync';
@@ -73,7 +75,7 @@ const toBudgetItemDatabaseUpdates = (updates: Record<string, any>) => {
 };
 
 const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProjectId, onSelectProject }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   // selectedProjectId is now a prop
@@ -114,6 +116,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     warranty_text: '01 (um) ano contra defeitos de fabricação e instalação' // New: Default warranty info
   });
   const [globalPdfConfig, setGlobalPdfConfig] = useState<any>({});
+  const [uploadingRegularityCertificate, setUploadingRegularityCertificate] = useState(false);
   const [showPdfSettings, setShowPdfSettings] = useState(false);
   const [showVisibilityModal, setShowVisibilityModal] = useState(false);
   const [candidateItems, setCandidateItems] = useState<any[]>([]);
@@ -290,6 +293,92 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
     } catch (e) {
       console.error('Error saving PDF settings:', e);
+    }
+  };
+
+  const handleGlobalRegularityCertificateUpload = async (file: File) => {
+    if (!canManageUsers(profile)) {
+      alert('Somente administradores podem alterar o credenciamento padrão da empresa.');
+      return;
+    }
+    if (!isPdfFile(file)) {
+      alert('Selecione um arquivo PDF válido.');
+      return;
+    }
+    if (file.size > MAX_PDF_ASSET_SIZE_BYTES) {
+      alert('O certificado deve ter no máximo 10 MB.');
+      return;
+    }
+
+    setUploadingRegularityCertificate(true);
+    let pendingCertificatePath = '';
+    try {
+      const certificatePath = createGlobalRegularityCertificatePath();
+      pendingCertificatePath = certificatePath;
+      const { data: latestSettings, error: latestSettingsError } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'pdf_global_config')
+        .maybeSingle();
+
+      if (latestSettingsError) throw latestSettingsError;
+
+      const currentGlobalConfig = latestSettings?.value || globalPdfConfig;
+      const previousCertificatePath = currentGlobalConfig.cert_regularity_storage_path;
+
+      const { error: uploadError } = await supabase.storage
+        .from(PDF_ASSETS_BUCKET)
+        .upload(certificatePath, file, {
+          upsert: false,
+          contentType: 'application/pdf',
+          cacheControl: '3600'
+        });
+
+      if (uploadError) throw uploadError;
+
+      const nextGlobalConfig = {
+        ...currentGlobalConfig,
+        cert_regularity_storage_path: certificatePath,
+        cert_regularity_file_name: file.name,
+        cert_regularity_updated_at: new Date().toISOString()
+      };
+
+      const { error: settingsError } = await supabase.from('app_settings').upsert({
+        key: 'pdf_global_config',
+        value: nextGlobalConfig
+      }, { onConflict: 'key' });
+
+      if (settingsError) throw settingsError;
+
+      setGlobalPdfConfig(nextGlobalConfig);
+      pendingCertificatePath = '';
+
+      // Remove the legacy project copy only from the proposal used for this
+      // upload. Other old proposals keep their file as a fallback, but the
+      // global certificate has priority for every proposal from now on.
+      if (pdfSettings.cert_regularity_file) {
+        await savePdfSettings({ ...pdfSettings, cert_regularity_file: null });
+      }
+
+      if (previousCertificatePath && previousCertificatePath !== certificatePath) {
+        const { error: cleanupError } = await supabase.storage
+          .from(PDF_ASSETS_BUCKET)
+          .remove([previousCertificatePath]);
+        if (cleanupError) console.warn('Could not remove previous regularity certificate:', cleanupError);
+      }
+
+      alert('Credenciamento atualizado. Este arquivo será usado automaticamente em todas as propostas.');
+    } catch (error: any) {
+      console.error('Error uploading global regularity certificate:', error);
+      if (pendingCertificatePath) {
+        const { error: cleanupError } = await supabase.storage
+          .from(PDF_ASSETS_BUCKET)
+          .remove([pendingCertificatePath]);
+        if (cleanupError) console.warn('Could not remove unused regularity certificate:', cleanupError);
+      }
+      alert('Não foi possível salvar o credenciamento padrão: ' + (error?.message || 'erro desconhecido'));
+    } finally {
+      setUploadingRegularityCertificate(false);
     }
   };
 
@@ -2134,9 +2223,34 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       // 4. Merge Regularity
       if (pdfSettings.show_cert_regularity) {
-        if (pdfSettings.cert_regularity_file) {
-          await mergeExternalPdf(pdfSettings.cert_regularity_file);
-        } else {
+        let regularityCertificateMerged = false;
+
+        // The company-wide credential always has priority so an update made
+        // from any proposal is reflected in every proposal. Legacy project
+        // files remain as a compatibility fallback until a global file exists.
+        if (globalPdfConfig.cert_regularity_storage_path) {
+          try {
+            const { data: certificateBlob, error: certificateError } = await supabase.storage
+              .from(PDF_ASSETS_BUCKET)
+              .download(globalPdfConfig.cert_regularity_storage_path);
+
+            if (certificateError) throw certificateError;
+            if (certificateBlob) {
+              regularityCertificateMerged = await mergeExternalPdf(
+                await certificateBlob.arrayBuffer(),
+                false
+              );
+            }
+          } catch (error) {
+            console.error('Error loading global regularity certificate:', error);
+          }
+        }
+
+        if (!regularityCertificateMerged && pdfSettings.cert_regularity_file) {
+          regularityCertificateMerged = await mergeExternalPdf(pdfSettings.cert_regularity_file);
+        }
+
+        if (!regularityCertificateMerged) {
           await mergeExternalPdf('/CRD Certificado de Credencimento até 10.7.26.pdf');
         }
       }
@@ -2568,27 +2682,53 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         </div>
                         <p className="text-xs text-slate-400 mb-3">
                           Anexa o certificado de Regularidade/Credenciamento.
-                          {pdfSettings.cert_regularity_file ? ' (Arquivo Personalizado)' : ' (Arquivo Padrão)'}
+                          {globalPdfConfig.cert_regularity_storage_path
+                            ? ' (Padrão global da empresa)'
+                            : pdfSettings.cert_regularity_file
+                              ? ' (Arquivo legado desta proposta)'
+                              : ' (Arquivo padrão do aplicativo)'}
                         </p>
-                        <label className="flex items-center gap-2 px-3 py-2 bg-background-dark border border-white/10 rounded cursor-pointer hover:bg-white/5 transition-colors">
+                        <label className={`flex items-center gap-2 px-3 py-2 bg-background-dark border border-white/10 rounded transition-colors ${uploadingRegularityCertificate || !canManageUsers(profile)
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer hover:bg-white/5'
+                          }`}>
                           <span className="material-symbols-outlined text-slate-400 text-sm">upload_file</span>
-                          <span className="text-xs text-slate-300">Substituir Arquivo (PDF)</span>
+                          <span className="text-xs text-slate-300">
+                            {uploadingRegularityCertificate
+                              ? 'Enviando credenciamento...'
+                              : globalPdfConfig.cert_regularity_storage_path
+                                ? 'Atualizar credenciamento para todas as propostas'
+                                : 'Cadastrar credenciamento para todas as propostas'}
+                          </span>
                           <input
                             type="file"
                             className="hidden"
-                            accept="application/pdf"
-                            onChange={(e) => e.target.files?.[0] && handleImageUpload('cert_regularity_file', e.target.files[0])}
+                            accept="application/pdf,.pdf"
+                            disabled={uploadingRegularityCertificate || !canManageUsers(profile)}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) void handleGlobalRegularityCertificateUpload(file);
+                              event.target.value = '';
+                            }}
                           />
                         </label>
-                        {pdfSettings.cert_regularity_file && (
+                        {globalPdfConfig.cert_regularity_file_name && (
+                          <p className="text-[10px] text-emerald-400 mt-2 truncate">
+                            Padrão atual: {globalPdfConfig.cert_regularity_file_name}
+                          </p>
+                        )}
+                        {!globalPdfConfig.cert_regularity_storage_path && pdfSettings.cert_regularity_file && (
                           <button
                             onClick={() => savePdfSettings({ ...pdfSettings, cert_regularity_file: null })}
                             className="text-xs text-red-400 hover:text-red-300 mt-2 flex items-center gap-1"
                           >
                             <span className="material-symbols-outlined text-[14px]">close</span>
-                            Restaurar Padrão
+                            Descartar arquivo legado e usar padrão
                           </button>
                         )}
+                        <p className="text-[10px] text-slate-500 mt-2">
+                          Administradores cadastram uma vez; atualizações passam a valer automaticamente nas demais propostas.
+                        </p>
                       </div>
                     </div>
                   </div>

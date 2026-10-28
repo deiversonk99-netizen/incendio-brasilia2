@@ -6,6 +6,7 @@ import PageHeader from './PageHeader';
 import { canManageUsers, canPromoteToAdmin } from '../lib/permissions';
 import {
     createGlobalCrqCertificatePath,
+    createGlobalRegularityCertificatePath,
     isPdfFile,
     MAX_PDF_ASSET_SIZE_BYTES,
     PDF_ASSETS_BUCKET
@@ -44,9 +45,13 @@ const SettingsView: React.FC = () => {
         show_logo: true,
         cert_crq_storage_path: '',
         cert_crq_file_name: '',
-        cert_crq_updated_at: ''
+        cert_crq_updated_at: '',
+        cert_regularity_storage_path: '',
+        cert_regularity_file_name: '',
+        cert_regularity_updated_at: ''
     });
     const [uploadingCrqCertificate, setUploadingCrqCertificate] = useState(false);
+    const [uploadingRegularityCertificate, setUploadingRegularityCertificate] = useState(false);
     const [loading, setLoading] = useState(true);
     const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
     const [isPermModalOpen, setIsPermModalOpen] = useState(false);
@@ -280,6 +285,116 @@ const SettingsView: React.FC = () => {
         }
 
         alert('O certificado padrão do aplicativo voltou a ser utilizado.');
+    };
+
+    const handleGlobalRegularityCertificateUpload = async (file: File) => {
+        if (!canManageUsers(profile)) {
+            alert('Somente administradores podem alterar o credenciamento padrão da empresa.');
+            return;
+        }
+        if (!isPdfFile(file)) {
+            alert('Selecione um arquivo PDF válido.');
+            return;
+        }
+        if (file.size > MAX_PDF_ASSET_SIZE_BYTES) {
+            alert('O certificado deve ter no máximo 10 MB.');
+            return;
+        }
+
+        setUploadingRegularityCertificate(true);
+        let pendingCertificatePath = '';
+        try {
+            const certificatePath = createGlobalRegularityCertificatePath();
+            pendingCertificatePath = certificatePath;
+            const { data: latestSettings, error: latestSettingsError } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', 'pdf_global_config')
+                .maybeSingle();
+
+            if (latestSettingsError) throw latestSettingsError;
+
+            const currentSettings = latestSettings?.value || pdfSettings;
+            const previousCertificatePath = currentSettings.cert_regularity_storage_path;
+            const { error: uploadError } = await supabase.storage
+                .from(PDF_ASSETS_BUCKET)
+                .upload(certificatePath, file, {
+                    upsert: false,
+                    contentType: 'application/pdf',
+                    cacheControl: '3600'
+                });
+
+            if (uploadError) throw uploadError;
+
+            const nextSettings = {
+                ...currentSettings,
+                cert_regularity_storage_path: certificatePath,
+                cert_regularity_file_name: file.name,
+                cert_regularity_updated_at: new Date().toISOString()
+            };
+
+            const { error: settingsError } = await supabase.from('app_settings').upsert({
+                key: 'pdf_global_config',
+                value: nextSettings
+            }, { onConflict: 'key' });
+
+            if (settingsError) throw settingsError;
+
+            setPdfSettings(nextSettings);
+            pendingCertificatePath = '';
+
+            if (previousCertificatePath && previousCertificatePath !== certificatePath) {
+                const { error: cleanupError } = await supabase.storage
+                    .from(PDF_ASSETS_BUCKET)
+                    .remove([previousCertificatePath]);
+                if (cleanupError) console.warn('Could not remove previous regularity certificate:', cleanupError);
+            }
+
+            alert('Credenciamento atualizado. Ele será usado automaticamente em todas as propostas.');
+        } catch (error: any) {
+            console.error('Error uploading global regularity certificate:', error);
+            if (pendingCertificatePath) {
+                const { error: cleanupError } = await supabase.storage
+                    .from(PDF_ASSETS_BUCKET)
+                    .remove([pendingCertificatePath]);
+                if (cleanupError) console.warn('Could not remove unused regularity certificate:', cleanupError);
+            }
+            alert('Não foi possível salvar o credenciamento padrão: ' + (error?.message || 'erro desconhecido'));
+        } finally {
+            setUploadingRegularityCertificate(false);
+        }
+    };
+
+    const handleRestoreBundledRegularityCertificate = async () => {
+        if (!canManageUsers(profile)) return;
+        if (!confirm('Restaurar o credenciamento que acompanha o aplicativo como padrão?')) return;
+
+        const previousCertificatePath = pdfSettings.cert_regularity_storage_path;
+        const nextSettings = { ...pdfSettings };
+        delete nextSettings.cert_regularity_storage_path;
+        delete nextSettings.cert_regularity_file_name;
+        delete nextSettings.cert_regularity_updated_at;
+
+        const { error } = await supabase.from('app_settings').upsert({
+            key: 'pdf_global_config',
+            value: nextSettings
+        }, { onConflict: 'key' });
+
+        if (error) {
+            alert('Erro ao restaurar o credenciamento padrão: ' + error.message);
+            return;
+        }
+
+        setPdfSettings(nextSettings);
+
+        if (previousCertificatePath) {
+            const { error: cleanupError } = await supabase.storage
+                .from(PDF_ASSETS_BUCKET)
+                .remove([previousCertificatePath]);
+            if (cleanupError) console.warn('Could not remove previous regularity certificate:', cleanupError);
+        }
+
+        alert('O credenciamento padrão do aplicativo voltou a ser utilizado.');
     };
 
     const handleOpenPermissionModal = (user: UserProfile) => {
@@ -729,6 +844,76 @@ const SettingsView: React.FC = () => {
 
                                     <p className="text-[10px] text-slate-500">
                                         Somente PDF, com tamanho máximo de 10 MB. O arquivo é armazenado no Supabase e não é duplicado em cada proposta.
+                                    </p>
+                                </div>
+
+                                <div className="md:col-span-2 bg-surface-dark border border-white/5 p-8 rounded-xl flex flex-col gap-6 shadow-xl">
+                                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                                        <div>
+                                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-primary">workspace_premium</span>
+                                                Certificado de Regularidade / Credenciamento padrão
+                                            </h3>
+                                            <p className="text-xs text-slate-400 mt-2 max-w-2xl">
+                                                Cadastre uma vez para preencher e anexar automaticamente o credenciamento em todas as propostas de Engenharia de Segurança.
+                                                Uma atualização substitui o padrão para as propostas existentes e futuras.
+                                            </p>
+                                        </div>
+                                        <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border ${pdfSettings.cert_regularity_storage_path
+                                            ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
+                                            : 'text-amber-300 bg-amber-500/10 border-amber-500/20'
+                                            }`}>
+                                            {pdfSettings.cert_regularity_storage_path ? 'Padrão global cadastrado' : 'Usando arquivo do aplicativo'}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex flex-col md:flex-row md:items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-xl">
+                                        <div className="size-11 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                                            <span className="material-symbols-outlined">picture_as_pdf</span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-bold text-white truncate">
+                                                {pdfSettings.cert_regularity_file_name || 'CRD Certificado de Credenciamento.pdf'}
+                                            </p>
+                                            <p className="text-[10px] text-slate-500 mt-1">
+                                                {pdfSettings.cert_regularity_updated_at
+                                                    ? `Atualizado em ${new Date(pdfSettings.cert_regularity_updated_at).toLocaleString('pt-BR')}`
+                                                    : 'Arquivo padrão incluído na implantação atual'}
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold transition-all ${uploadingRegularityCertificate
+                                                ? 'bg-slate-700 text-slate-400 pointer-events-none'
+                                                : 'bg-primary hover:bg-primary-dark text-white'
+                                                }`}>
+                                                {uploadingRegularityCertificate ? 'Enviando...' : 'Substituir credenciamento'}
+                                                <input
+                                                    type="file"
+                                                    accept="application/pdf,.pdf"
+                                                    className="hidden"
+                                                    disabled={uploadingRegularityCertificate}
+                                                    onChange={(event) => {
+                                                        const file = event.target.files?.[0];
+                                                        if (file) void handleGlobalRegularityCertificateUpload(file);
+                                                        event.target.value = '';
+                                                    }}
+                                                />
+                                            </label>
+                                            {pdfSettings.cert_regularity_storage_path && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleRestoreBundledRegularityCertificate}
+                                                    disabled={uploadingRegularityCertificate}
+                                                    className="px-4 py-2 rounded-lg border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/5 disabled:opacity-50"
+                                                >
+                                                    Restaurar arquivo do aplicativo
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <p className="text-[10px] text-slate-500">
+                                        Somente PDF, com tamanho máximo de 10 MB. O arquivo é armazenado uma única vez no Supabase e reutilizado por todas as propostas.
                                     </p>
                                 </div>
                             </div>

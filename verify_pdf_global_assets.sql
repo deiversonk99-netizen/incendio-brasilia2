@@ -29,6 +29,9 @@ SELECT
     key,
     value ->> 'cert_crq_storage_path' AS cert_crq_storage_path,
     value ->> 'cert_crq_file_name' AS cert_crq_file_name,
-    value ->> 'cert_crq_updated_at' AS cert_crq_updated_at
+    value ->> 'cert_crq_updated_at' AS cert_crq_updated_at,
+    value ->> 'cert_regularity_storage_path' AS cert_regularity_storage_path,
+    value ->> 'cert_regularity_file_name' AS cert_regularity_file_name,
+    value ->> 'cert_regularity_updated_at' AS cert_regularity_updated_at
 FROM public.app_settings
 WHERE key = 'pdf_global_config';
