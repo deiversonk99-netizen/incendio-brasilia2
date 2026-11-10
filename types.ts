@@ -135,6 +135,10 @@ export interface Proposal {
   observations?: string;
   hide_services_pdf?: boolean;
   hide_products_pdf?: boolean;
+  /** Optional commercial target total, independent from item prices and markups. */
+  manual_total_enabled?: boolean;
+  manual_total_value?: number | null;
+  manual_total_reason?: string | null;
   status: 'DRAFT' | 'SENT' | 'APPROVED';
   created_at?: string;
   proposal_number?: number;
@@ -182,3 +186,4 @@ export interface ServiceModel {
   total_products_price?: number;
   total_price?: number;
 }
+

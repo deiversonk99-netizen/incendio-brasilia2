@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PageHeader from './PageHeader';
 import ProposalSections from './ProposalSections';
 import { supabase } from '../lib/supabase';
@@ -512,6 +512,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   const [saving, setSaving] = useState(false);
   const [budgetItems, setBudgetItems] = useState<any[]>([]);
+  const markupEditedByUserRef = useRef(false);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [executionSchedules, setExecutionSchedules] = useState<ExecutionSchedule[]>([]);
   const [warrantyTerms, setWarrantyTerms] = useState<WarrantyTerm[]>([]);
@@ -529,6 +530,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     hide_services_pdf: false,
     hide_products_pdf: false,
     separate_services_materials: false,
+    manual_total_enabled: false,
+    manual_total_value: null,
+    manual_total_reason: '',
     proposal_date: new Date().toISOString().split('T')[0]
   });
 
@@ -632,6 +636,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           hide_services_pdf: proposal.hide_services_pdf,
           hide_products_pdf: proposal.hide_products_pdf,
           separate_services_materials: proposal.separate_services_materials,
+          manual_total_enabled: proposal.manual_total_enabled === true,
+          manual_total_value: proposal.manual_total_enabled === true
+            ? Number(proposal.manual_total_value) || 0
+            : null,
+          manual_total_reason: proposal.manual_total_reason || null,
           proposal_date: proposal.proposal_date,
           project_id: selectedProjectId,
           user_id: user.id,
@@ -679,6 +688,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     proposal.hide_services_pdf,
     proposal.hide_products_pdf,
     proposal.separate_services_materials,
+    proposal.manual_total_enabled,
+    proposal.manual_total_value,
+    proposal.manual_total_reason,
     proposal.proposal_date,
     selectedProjectId
   ]);
@@ -706,7 +718,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       loading ||
       !selectedProjectId ||
       proposal.project_id !== selectedProjectId ||
-      !budgetItems.length
+      !budgetItems.length ||
+      !markupEditedByUserRef.current
     ) return;
 
     // We only auto-recalculate if explicitly enabled or if standard behavior
@@ -909,6 +922,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
   const loadProposalData = async (projectId: string) => {
     setLoading(true);
+    // Hydrating a proposal must be read-only. Only a direct user edit of
+    // BDI/Lucro is allowed to trigger automatic item recalculation.
+    markupEditedByUserRef.current = false;
 
     // Reset local state immediately to avoid cross-project contamination
     setBudgetItems([]);
@@ -917,7 +933,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       project_id: projectId,
       bdi_percent: 0,
       profit_percent: 0,
-      discount_value: 0
+      discount_value: 0,
+      manual_total_enabled: false,
+      manual_total_value: null,
+      manual_total_reason: ''
     }));
 
     // 1. Fetch Existing Proposal FIRST to establish BDI and Profit
@@ -971,6 +990,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         cost_material_base: totalCost, // Always refresh cost base from items
         hide_products_pdf: existingProposal.hide_products_pdf ?? false,
         separate_services_materials: existingProposal.separate_services_materials ?? false,
+        manual_total_enabled: existingProposal.manual_total_enabled === true,
+        manual_total_value: existingProposal.manual_total_value == null
+          ? null
+          : Number(existingProposal.manual_total_value) || 0,
+        manual_total_reason: existingProposal.manual_total_reason || '',
         proposal_number: existingProposal.proposal_number,
         proposal_date: existingProposal.proposal_date || new Date().toISOString().split('T')[0]
       });
@@ -982,6 +1006,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         hide_services_pdf: false,
         hide_products_pdf: false,
         separate_services_materials: false,
+        manual_total_enabled: false,
+        manual_total_value: null,
+        manual_total_reason: '',
         proposal_number: undefined
       }));
     }
@@ -1014,19 +1041,9 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const itemProfitFactor = (item.apply_profit !== false) ? profitFactor : 1;
       const itemCombinedFactor = itemBdiFactor * itemProfitFactor;
 
-      // FALLBACK: If cost is 0, we try to LOOKUP from catalog first instead of back-calculating
-      if (cost <= 0) {
-        const cleanName = item.name.includes('[') && item.name.includes(']')
-          ? item.name.split(']')[1]?.trim() || item.name
-          : item.name.trim();
-
-        const catalogItem = catalogItems.find(p => p.name.trim().toLowerCase() === cleanName.toLowerCase());
-        if (catalogItem && catalogItem.cost_price > 0) {
-          cost = catalogItem.cost_price;
-        } else if (currentSale > 0) {
-          cost = currentSale / (itemCombinedFactor || 1);
-        }
-      }
+      // A missing base cost is not a cost. Never infer it from the proposal
+      // sale price: doing so makes the financial summary disagree with the
+      // Composition and makes BDI/Lucro depend on the current sale value.
 
       const lineCostTotal = cost * q;
       const lineFinalPrice = currentSale * q;
@@ -1061,6 +1078,17 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       discountVal = actualVendaGlobal * ((Number(proposal.discount_value) || 0) / 100);
     }
 
+    const calculatedFinal = money(actualVendaGlobal - discountVal);
+    const manualTotalEnabled = proposal.manual_total_enabled === true
+      && Number.isFinite(Number(proposal.manual_total_value))
+      && Number(proposal.manual_total_value) >= 0;
+    const manualTotalValue = manualTotalEnabled
+      ? money(Number(proposal.manual_total_value))
+      : calculatedFinal;
+    const manualAdjustment = manualTotalEnabled
+      ? money(manualTotalValue - calculatedFinal)
+      : 0;
+
     return {
       productsBase: Number(totalProductsCost.toFixed(2)),
       productsFinal: Number(totalProductsFinal.toFixed(2)),
@@ -1069,8 +1097,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       bdiVal: Number(bdiVal.toFixed(2)),
       profitVal: Number(profitVal.toFixed(2)),
       discountVal: Number(discountVal.toFixed(2)),
-      final: Number((actualVendaGlobal - discountVal).toFixed(2)),
-      actualFinal: Number((actualVendaGlobal - discountVal).toFixed(2))
+      calculatedFinal,
+      manualAdjustment,
+      manualTotalEnabled,
+      final: manualTotalValue,
+      actualFinal: calculatedFinal
     };
   };
 
@@ -1124,6 +1155,11 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const proposalPayload = {
         bdi_percent: bdiPct,
         profit_percent: profitPct,
+        manual_total_enabled: proposal.manual_total_enabled === true,
+        manual_total_value: proposal.manual_total_enabled === true
+          ? Number(proposal.manual_total_value) || 0
+          : null,
+        manual_total_reason: proposal.manual_total_reason || null,
         project_id: selectedProjectId,
         updated_at: new Date().toISOString()
       };
@@ -1186,7 +1222,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         await supabase.from('budget_items').upsert(itemsPayload);
       }
 
-      // Sync project value with the final calculated global price
+      // Sync project value with the final commercial total (including an
+      // optional manual target, without changing item prices).
       const { final } = calculateValues();
       await supabase
         .from('projects')
@@ -1213,26 +1250,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       quantity_final: newItem.quantity,
       unit_price: newItem.price,
       proposal_unit_price: newItem.price,
-      cost_price: newItem.cost_price || newItem.price, // Default Cost to Price if 0 (Manual Entry)
+      // A manually entered sale price is not a cost. Keep the base cost at
+      // zero until the user provides one explicitly.
+      cost_price: Number(newItem.cost_price) > 0 ? newItem.cost_price : 0,
       observation: newItem.observation,
       origin: 'MANUAL' as const,
       item_type: modalTab === 'service' ? 'SERVICE' : (modalTab === 'custom' ? 'CUSTOM' : 'PRODUCT'),
       product_id: modalTab === 'product' ? newItem.product_id : null,
       sync_with_catalog: modalTab === 'product' && newItem.sync_with_catalog
     };
-
-    // If we have markups, we should probably reverse-calculate the Cost so the Price matches what was typed
-    // BUT only if the user didn't explicitly type a cost.
-    // However, the modal usually just asks for "Preço de Venda" (Price) for manual items?
-    // If so, Cost = Price / Factor.
-    if (!newItem.cost_price && newItem.price > 0) {
-      const bdiPct = Number(proposal.bdi_percent) || 0;
-      const profitPct = Number(proposal.profit_percent) || 0;
-      const combinedFactor = (1 + (bdiPct / 100)) * (1 + (profitPct / 100));
-      if (combinedFactor > 1) {
-        newItemData.cost_price = newItem.price / combinedFactor;
-      }
-    }
 
     if (itemToReplace || itemToEdit) {
       // Update existing item
@@ -2045,6 +2071,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 
       if (pdfSettings.show_discount !== false && vals.discountVal > 0) {
         financeBody.push(['Descontos Aplicados', `- R$ ${vals.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]);
+      }
+
+      if (vals.manualTotalEnabled && Math.abs(vals.manualAdjustment) > 0.005) {
+        const adjustmentPrefix = vals.manualAdjustment < 0 ? '- ' : '+ ';
+        financeBody.push([
+          'Ajuste comercial manual',
+          `${adjustmentPrefix}R$ ${Math.abs(vals.manualAdjustment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+        ]);
       }
 
       if (pdfSettings.show_total !== false) {
@@ -2917,7 +2951,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             type="number"
                             className="w-full bg-background-dark/50 border border-white/10 rounded-xl px-4 py-2.5 text-white text-lg font-black outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center"
                             value={proposal.bdi_percent}
-                            onChange={e => setProposal({ ...proposal, bdi_percent: Number(e.target.value) })}
+                            onChange={e => {
+                              markupEditedByUserRef.current = true;
+                              setProposal({ ...proposal, bdi_percent: Number(e.target.value) });
+                            }}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 font-bold">%</span>
                         </div>
@@ -2933,7 +2970,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                             type="number"
                             className="w-full bg-background-dark/50 border border-white/10 rounded-xl px-4 py-2.5 text-white text-lg font-black outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-center"
                             value={proposal.profit_percent}
-                            onChange={e => setProposal({ ...proposal, profit_percent: Number(e.target.value) })}
+                            onChange={e => {
+                              markupEditedByUserRef.current = true;
+                              setProposal({ ...proposal, profit_percent: Number(e.target.value) });
+                            }}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 font-bold">%</span>
                         </div>
@@ -2966,12 +3006,52 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         <p className="text-white text-3xl font-black font-mono tracking-tighter">
                           R$ {values.final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </p>
-                        {Math.abs(values.final - (values.actualFinal || 0)) > 0.05 && (
+                        {values.manualTotalEnabled && (
                           <div className="flex items-center gap-1 mt-1 text-[8px] font-black text-amber-500 uppercase tracking-tighter bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                            <span className="material-symbols-outlined text-[10px]">sync_problem</span>
-                            Sincronização pendente
+                            <span className="material-symbols-outlined text-[10px]">tune</span>
+                            Total manual aplicado
                           </div>
                         )}
+                      </div>
+
+                      <div className="mt-4 space-y-2 rounded-lg border border-emerald-500/20 bg-background-dark/30 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[9px] font-black uppercase tracking-tight text-emerald-300">
+                            Total final desejado (opcional)
+                          </label>
+                          {values.manualTotalEnabled && (
+                            <button
+                              type="button"
+                              onClick={() => setProposal({
+                                ...proposal,
+                                manual_total_enabled: false,
+                                manual_total_value: null
+                              })}
+                              className="text-[8px] font-black uppercase text-slate-400 hover:text-white"
+                            >
+                              Usar calculado
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder={values.calculatedFinal.toFixed(2)}
+                          value={proposal.manual_total_enabled === true ? (proposal.manual_total_value ?? '') : ''}
+                          onChange={e => {
+                            const rawValue = e.target.value;
+                            setProposal({
+                              ...proposal,
+                              manual_total_enabled: rawValue !== '',
+                              manual_total_value: rawValue === '' ? null : Math.max(0, Number(rawValue) || 0)
+                            });
+                          }}
+                          className="w-full rounded-lg border border-white/10 bg-background-dark px-3 py-2 text-right font-mono text-sm font-bold text-white outline-none focus:border-emerald-500"
+                        />
+                        <p className="text-[8px] leading-tight text-slate-500">
+                          Ajusta somente o total comercial. BDI, Lucro, composição e itens permanecem iguais.
+                        </p>
                       </div>
                     </div>
 
@@ -2982,9 +3062,17 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                           <span className="text-[10px] font-bold text-rose-400">- R$ {values.discountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         </div>
                       )}
+                      {values.manualTotalEnabled && Math.abs(values.manualAdjustment) > 0.005 && (
+                        <div className="flex justify-between items-center px-3 py-1.5 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                          <span className="text-[9px] font-black text-amber-300 uppercase">Ajuste comercial</span>
+                          <span className="text-[10px] font-bold text-amber-300">
+                            {values.manualAdjustment < 0 ? '- ' : '+ '}R$ {Math.abs(values.manualAdjustment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center text-[9px] font-bold text-slate-500 uppercase px-1">
-                        <span>Margem Bruta Estimada</span>
-                        <span className="text-emerald-500">~ R$ {(values.final - (values.productsBase + values.servicesTotal)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        <span>Margem calculada</span>
+                        <span className="text-emerald-500">~ R$ {(values.calculatedFinal - (values.productsBase + values.servicesTotal)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                       </div>
                     </div>
                   </div>
@@ -3106,26 +3194,15 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                       {budgetItems.map(item => {
                         const bdiPctVal = Number(proposal.bdi_percent || 0) / 100;
                         const profitPctVal = Number(proposal.profit_percent || 0) / 100;
-                        const bdiFact = 1 + bdiPctVal;
-                        const profitFact = 1 + profitPctVal;
 
                         // Per-item flags
                         const itemApplyBdi = item.apply_bdi !== false;
                         const itemApplyProfit = item.apply_profit !== false;
 
-                        // Calculate informative BDI and Profit values
-                        let costBase = Number(item.cost_price || 0);
-                        if (costBase <= 0) {
-                          const cleanName = item.name.includes('[') && item.name.includes(']')
-                            ? item.name.split(']')[1]?.trim() || item.name
-                            : item.name.trim();
-                          const catalogItem = catalogItems.find(p => p.name.trim().toLowerCase() === cleanName.toLowerCase());
-                          if (catalogItem && catalogItem.cost_price > 0) {
-                            costBase = catalogItem.cost_price;
-                          } else if (Number(item.unit_price) > 0) {
-                            costBase = Number(item.unit_price) / (bdiFact * profitFact);
-                          }
-                        }
+                        // BDI/Lucro indicators use only the item's explicit
+                        // base cost. A proposal sale price must never become
+                        // an inferred cost when the base is missing.
+                        const costBase = Number(item.cost_price || 0);
 
                         const qty = Number(item.quantity_final || 0);
                         const bdiValUnit = itemApplyBdi ? costBase * bdiPctVal : 0;
@@ -4113,3 +4190,4 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
 };
 
 export default EngineeringProposal;
+
