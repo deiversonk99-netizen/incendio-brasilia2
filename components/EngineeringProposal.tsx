@@ -624,6 +624,10 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const timer = setTimeout(async () => {
       setIsAutoSaving(true);
       try {
+        const manualTotalValue = Number(proposal.manual_total_value);
+        const manualTotalEnabled = proposal.manual_total_enabled === true
+          && Number.isFinite(manualTotalValue)
+          && manualTotalValue > 0;
         const payload = {
           bdi_percent: proposal.bdi_percent,
           profit_percent: proposal.profit_percent,
@@ -636,10 +640,8 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
           hide_services_pdf: proposal.hide_services_pdf,
           hide_products_pdf: proposal.hide_products_pdf,
           separate_services_materials: proposal.separate_services_materials,
-          manual_total_enabled: proposal.manual_total_enabled === true,
-          manual_total_value: proposal.manual_total_enabled === true
-            ? Number(proposal.manual_total_value) || 0
-            : null,
+          manual_total_enabled: manualTotalEnabled,
+          manual_total_value: manualTotalEnabled ? money(manualTotalValue) : null,
           manual_total_reason: proposal.manual_total_reason || null,
           proposal_date: proposal.proposal_date,
           project_id: selectedProjectId,
@@ -990,10 +992,14 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
         cost_material_base: totalCost, // Always refresh cost base from items
         hide_products_pdf: existingProposal.hide_products_pdf ?? false,
         separate_services_materials: existingProposal.separate_services_materials ?? false,
-        manual_total_enabled: existingProposal.manual_total_enabled === true,
+        manual_total_enabled: existingProposal.manual_total_enabled === true
+          && Number.isFinite(Number(existingProposal.manual_total_value))
+          && Number(existingProposal.manual_total_value) > 0,
         manual_total_value: existingProposal.manual_total_value == null
+          || !Number.isFinite(Number(existingProposal.manual_total_value))
+          || Number(existingProposal.manual_total_value) <= 0
           ? null
-          : Number(existingProposal.manual_total_value) || 0,
+          : money(Number(existingProposal.manual_total_value)),
         manual_total_reason: existingProposal.manual_total_reason || '',
         proposal_number: existingProposal.proposal_number,
         proposal_date: existingProposal.proposal_date || new Date().toISOString().split('T')[0]
@@ -1081,7 +1087,7 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
     const calculatedFinal = money(actualVendaGlobal - discountVal);
     const manualTotalEnabled = proposal.manual_total_enabled === true
       && Number.isFinite(Number(proposal.manual_total_value))
-      && Number(proposal.manual_total_value) >= 0;
+      && Number(proposal.manual_total_value) > 0;
     const manualTotalValue = manualTotalEnabled
       ? money(Number(proposal.manual_total_value))
       : calculatedFinal;
@@ -1155,9 +1161,13 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
       const proposalPayload = {
         bdi_percent: bdiPct,
         profit_percent: profitPct,
-        manual_total_enabled: proposal.manual_total_enabled === true,
+        manual_total_enabled: proposal.manual_total_enabled === true
+          && Number.isFinite(Number(proposal.manual_total_value))
+          && Number(proposal.manual_total_value) > 0,
         manual_total_value: proposal.manual_total_enabled === true
-          ? Number(proposal.manual_total_value) || 0
+          && Number.isFinite(Number(proposal.manual_total_value))
+          && Number(proposal.manual_total_value) > 0
+          ? money(Number(proposal.manual_total_value))
           : null,
         manual_total_reason: proposal.manual_total_reason || null,
         project_id: selectedProjectId,
@@ -3038,13 +3048,20 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                           min="0"
                           step="0.01"
                           placeholder={values.calculatedFinal.toFixed(2)}
-                          value={proposal.manual_total_enabled === true ? (proposal.manual_total_value ?? '') : ''}
+                          value={proposal.manual_total_enabled === true
+                            && Number(proposal.manual_total_value) > 0
+                            ? (proposal.manual_total_value ?? '')
+                            : ''}
                           onChange={e => {
                             const rawValue = e.target.value;
+                            const numericValue = Number(rawValue);
+                            const hasManualTarget = rawValue.trim() !== ''
+                              && Number.isFinite(numericValue)
+                              && numericValue > 0;
                             setProposal({
                               ...proposal,
-                              manual_total_enabled: rawValue !== '',
-                              manual_total_value: rawValue === '' ? null : Math.max(0, Number(rawValue) || 0)
+                              manual_total_enabled: hasManualTarget,
+                              manual_total_value: hasManualTarget ? money(numericValue) : null
                             });
                           }}
                           className="w-full rounded-lg border border-white/10 bg-background-dark px-3 py-2 text-right font-mono text-sm font-bold text-white outline-none focus:border-emerald-500"

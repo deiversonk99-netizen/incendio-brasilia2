@@ -71,7 +71,9 @@ begin
     manual_total_value_value := null;
   end if;
 
-  if manual_total_enabled_value and manual_total_value_value is not null then
+  if manual_total_enabled_value
+     and manual_total_value_value is not null
+     and manual_total_value_value > 0 then
     calculated_value := greatest(manual_total_value_value, 0);
   elsif proposal_discount_type = 'FIXED' then
     calculated_value := gross_value - proposal_discount_value;
