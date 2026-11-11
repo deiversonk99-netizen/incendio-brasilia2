@@ -2999,6 +2999,25 @@ const EngineeringProposal: React.FC<EngineeringProposalProps> = ({ selectedProje
                         Recalcular Todos os Itens
                       </button>
                       <p className="text-[8px] text-slate-500 mt-2 font-medium tracking-tight">Aplica as taxas acima sobre o custo de cada item abaixo</p>
+
+                      <div className="mt-4 rounded-lg border border-indigo-400/20 bg-indigo-500/5 px-3 py-2.5 text-[8px] leading-relaxed text-slate-400">
+                        <div className="mb-1.5 flex items-center gap-1.5 font-black uppercase tracking-widest text-indigo-300">
+                          <span className="material-symbols-outlined text-[13px]">info</span>
+                          Como os percentuais são calculados
+                        </div>
+                        <p>
+                          <span className="font-bold text-slate-300">Preço do item:</span>{' '}
+                          custo × (1 + BDI/100) × (1 + Lucro/100).
+                        </p>
+                        <p>
+                          O BDI incide sobre o custo; o Lucro incide sobre o custo já com BDI.
+                          Com os dois percentuais em 0%, o item volta ao custo-base.
+                        </p>
+                        <p>
+                          Itens sem custo cadastrado não recebem markup automaticamente. O total manual,
+                          quando informado, altera somente o total comercial e não a composição.
+                        </p>
+                      </div>
                     </div>
                   </div>
 
